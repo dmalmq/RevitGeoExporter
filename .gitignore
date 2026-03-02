@@ -1,0 +1,32 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# User/IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# ReSharper / Rider
+_ReSharper*/
+*.DotSettings.user
+
+# JetBrains
+.idea/

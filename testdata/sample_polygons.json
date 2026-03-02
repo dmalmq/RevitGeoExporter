@@ -1,0 +1,31 @@
+{
+  "layers": [
+    {
+      "name": "floors",
+      "geometryType": "MULTIPOLYGON",
+      "features": [
+        {
+          "attributes": {
+            "zone_name": "Concourse",
+            "type_name": "j Concourse_床",
+            "fill_color": "FEFEF2",
+            "element_id": 1001,
+            "area_sqm": 25.0
+          },
+          "polygons": [
+            {
+              "exteriorRing": [
+                [0.0, 0.0],
+                [5.0, 0.0],
+                [5.0, 5.0],
+                [0.0, 5.0],
+                [0.0, 0.0]
+              ],
+              "interiorRings": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
