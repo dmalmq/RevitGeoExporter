@@ -34,6 +34,19 @@ public sealed class App : IExternalApplication
                 "Select floor/ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.";
         }
 
+        PushButtonData settingsButton = new(
+            name: "ExportSettingsButton",
+            text: "Settings",
+            assemblyName: assemblyPath,
+            className: typeof(OpenSettingsCommand).FullName);
+
+        PushButton? settings = panel.AddItem(settingsButton) as PushButton;
+        if (settings != null)
+        {
+            settings.ToolTip = "Edit default export output directory and CRS.";
+            settings.LongDescription = "Saves defaults used by the export dialog.";
+        }
+
         return Result.Succeeded;
     }
 

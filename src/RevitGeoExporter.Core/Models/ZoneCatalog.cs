@@ -123,7 +123,7 @@ public sealed class ZoneCatalog
 
         AddZoneAliases(
             zones,
-            new ZoneInfo("unspecified", "F3F3F3", null),
+            new ZoneInfo("nonpublic", "F3F3F3", null),
             "その他",
             "縺昴・莉・",
             "Other / miscellaneous");
