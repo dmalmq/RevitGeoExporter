@@ -10,7 +10,7 @@ public sealed class ZoneCatalogTests
     {
         ZoneCatalog catalog = ZoneCatalog.CreateDefault();
 
-        bool found = catalog.TryGetZoneInfo("ラチ内コンコース", out ZoneInfo info);
+        bool found = catalog.TryGetZoneInfo("Circulation (inside fare gates)", out ZoneInfo info);
 
         Assert.True(found);
         Assert.Equal("walkway", info.Category);
@@ -32,13 +32,25 @@ public sealed class ZoneCatalogTests
     }
 
     [Fact]
+    public void OtherZone_MapsToNonpublic()
+    {
+        ZoneCatalog catalog = ZoneCatalog.CreateDefault();
+
+        ZoneInfo info = catalog.GetZoneInfoOrDefault("\u305D\u306E\u4ED6");
+
+        Assert.Equal("nonpublic", info.Category);
+    }
+
+    [Fact]
     public void RestroomCategories_AreMapped()
     {
         ZoneCatalog catalog = ZoneCatalog.CreateDefault();
 
-        Assert.Equal("restroom.male", catalog.GetZoneInfoOrDefault("男子トイレ").Category);
-        Assert.Equal("restroom.female", catalog.GetZoneInfoOrDefault("女子トイレ").Category);
-        Assert.Equal("restroom.unisex", catalog.GetZoneInfoOrDefault("多目的トイレ").Category);
+        Assert.Equal("restroom.male", catalog.GetZoneInfoOrDefault("Men's restroom").Category);
+        Assert.Equal("restroom.female", catalog.GetZoneInfoOrDefault("Women's restroom").Category);
+        Assert.Equal(
+            "restroom.unisex",
+            catalog.GetZoneInfoOrDefault("Accessible / multipurpose restroom").Category);
     }
 
     [Fact]
@@ -47,7 +59,7 @@ public sealed class ZoneCatalogTests
         ZoneCatalog catalog = ZoneCatalog.CreateDefault();
 
         bool foundElevator = catalog.TryGetFamilyInfo("j EV", out ZoneInfo elevator);
-        bool foundEscalator = catalog.TryGetFamilyInfo("j エスカレーター-lightweight", out ZoneInfo escalator);
+        bool foundEscalator = catalog.TryGetFamilyInfo("j \u30A8\u30B9\u30AB\u30EC\u30FC\u30BF\u30FC-lightweight", out ZoneInfo escalator);
 
         Assert.True(foundElevator);
         Assert.Equal("elevator", elevator.Category);

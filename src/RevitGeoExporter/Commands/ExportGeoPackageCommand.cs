@@ -2,12 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Windows.Forms;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.UI;
 
 namespace RevitGeoExporter.Commands;
 
@@ -29,14 +29,30 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             return Result.Failed;
         }
 
-        IReadOnlyList<ViewPlan>? selectedViews = PromptForViewSelection(document);
-        if (selectedViews == null || selectedViews.Count == 0)
+        ViewCollector collector = new();
+        IReadOnlyList<ViewPlan> views = collector.GetExportablePlanViews(document);
+        if (views.Count == 0)
         {
-            return Result.Cancelled;
+            TaskDialog.Show(ProjectInfo.Name, "No exportable plan views were found.");
+            return Result.Failed;
         }
 
-        string? outputDirectory = PromptForOutputDirectory();
-        if (string.IsNullOrWhiteSpace(outputDirectory))
+        ExportDialogSettingsStore settingsStore = new();
+        ExportDialogSettings settings = settingsStore.Load();
+
+        ExportDialogResult? request = null;
+        using (ExportDialog dialog = new(views, settings))
+        {
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK || dialog.Result == null)
+            {
+                return Result.Cancelled;
+            }
+
+            request = dialog.Result;
+            settingsStore.Save(dialog.BuildSettings());
+        }
+
+        if (request == null || request.SelectedViews.Count == 0)
         {
             return Result.Cancelled;
         }
@@ -44,11 +60,26 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         try
         {
             FloorGeoPackageExporter exporter = new(document);
-            FloorGeoPackageExportResult result =
-                exporter.ExportSelectedViews(
-                    outputDirectory!,
-                    targetEpsg: ProjectInfo.DefaultTargetEpsg,
-                    selectedViews);
+            FloorGeoPackageExportResult result;
+            using (ExportProgressForm progressForm = new())
+            {
+                progressForm.Show();
+                System.Windows.Forms.Application.DoEvents();
+
+                result = exporter.ExportSelectedViews(
+                    request.OutputDirectory,
+                    targetEpsg: request.TargetEpsg,
+                    selectedViews: request.SelectedViews,
+                    featureTypes: request.FeatureTypes,
+                    splitUnitsByWalls: request.SplitUnitsByWalls,
+                    progressCallback: update =>
+                    {
+                        progressForm.UpdateProgress(update);
+                        System.Windows.Forms.Application.DoEvents();
+                    });
+
+                progressForm.Close();
+            }
 
             TaskDialog.Show(ProjectInfo.Name, BuildSummary(result));
             return Result.Succeeded;
@@ -58,157 +89,6 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             message = ex.Message;
             TaskDialog.Show(ProjectInfo.Name, $"Export failed.\n\n{ex}");
             return Result.Failed;
-        }
-    }
-
-    private static string? PromptForOutputDirectory()
-    {
-        using FolderBrowserDialog dialog = new()
-        {
-            Description = "Select output folder for GeoPackage files",
-            ShowNewFolderButton = true,
-        };
-
-        DialogResult result = dialog.ShowDialog();
-        return result == DialogResult.OK ? dialog.SelectedPath : null;
-    }
-
-    private static IReadOnlyList<ViewPlan>? PromptForViewSelection(Document document)
-    {
-        ViewCollector collector = new();
-        IReadOnlyList<ViewPlan> views = collector.GetExportablePlanViews(document);
-        if (views.Count == 0)
-        {
-            TaskDialog.Show(ProjectInfo.Name, "No exportable plan views were found.");
-            return null;
-        }
-
-        List<ViewSelectionItem> items = views
-            .Select(view => new ViewSelectionItem(view))
-            .ToList();
-
-        using System.Windows.Forms.Form form = new()
-        {
-            Text = "Select Plan Views",
-            Width = 600,
-            Height = 650,
-            StartPosition = FormStartPosition.CenterScreen,
-            MinimizeBox = false,
-            MaximizeBox = false,
-            FormBorderStyle = FormBorderStyle.Sizable,
-        };
-
-        Label header = new()
-        {
-            Dock = DockStyle.Top,
-            Height = 38,
-            Text = "Select plan views to export",
-            TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-            Padding = new Padding(10, 0, 0, 0),
-        };
-
-        CheckedListBox list = new()
-        {
-            Dock = DockStyle.Fill,
-            CheckOnClick = true,
-            HorizontalScrollbar = true,
-            IntegralHeight = false,
-        };
-
-        foreach (ViewSelectionItem item in items)
-        {
-            list.Items.Add(item, isChecked: true);
-        }
-
-        Button selectAllButton = new()
-        {
-            Text = "Select All",
-            Width = 90,
-            Height = 28,
-        };
-        selectAllButton.Click += (_, _) =>
-        {
-            for (int i = 0; i < list.Items.Count; i++)
-            {
-                list.SetItemChecked(i, true);
-            }
-        };
-
-        Button clearAllButton = new()
-        {
-            Text = "Clear All",
-            Width = 90,
-            Height = 28,
-        };
-        clearAllButton.Click += (_, _) =>
-        {
-            for (int i = 0; i < list.Items.Count; i++)
-            {
-                list.SetItemChecked(i, false);
-            }
-        };
-
-        Button okButton = new()
-        {
-            Text = "Export",
-            Width = 90,
-            Height = 28,
-            DialogResult = DialogResult.OK,
-        };
-
-        Button cancelButton = new()
-        {
-            Text = "Cancel",
-            Width = 90,
-            Height = 28,
-            DialogResult = DialogResult.Cancel,
-        };
-
-        FlowLayoutPanel actions = new()
-        {
-            Dock = DockStyle.Bottom,
-            Height = 42,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(8, 6, 8, 6),
-        };
-        actions.Controls.Add(cancelButton);
-        actions.Controls.Add(okButton);
-        actions.Controls.Add(clearAllButton);
-        actions.Controls.Add(selectAllButton);
-
-        form.Controls.Add(list);
-        form.Controls.Add(actions);
-        form.Controls.Add(header);
-        form.AcceptButton = okButton;
-        form.CancelButton = cancelButton;
-
-        while (true)
-        {
-            DialogResult dialogResult = form.ShowDialog();
-            if (dialogResult != DialogResult.OK)
-            {
-                return null;
-            }
-
-            List<ViewPlan> selected = new();
-            foreach (object checkedItem in list.CheckedItems)
-            {
-                if (checkedItem is ViewSelectionItem selectedItem)
-                {
-                    selected.Add(selectedItem.View);
-                }
-            }
-
-            if (selected.Count > 0)
-            {
-                return selected;
-            }
-
-            MessageBox.Show(
-                "Select at least one plan view to export.",
-                ProjectInfo.Name,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
         }
     }
 
@@ -248,21 +128,5 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         }
 
         return builder.ToString();
-    }
-
-    private sealed class ViewSelectionItem
-    {
-        public ViewSelectionItem(ViewPlan view)
-        {
-            View = view ?? throw new ArgumentNullException(nameof(view));
-        }
-
-        public ViewPlan View { get; }
-
-        public override string ToString()
-        {
-            string levelName = View.GenLevel?.Name ?? "<no level>";
-            return $"{View.Name}  [Level: {levelName}]";
-        }
     }
 }

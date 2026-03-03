@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.Operation.Union;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Models;
@@ -13,6 +15,10 @@ namespace RevitGeoExporter.Export;
 
 public sealed class FloorGeoPackageExporter
 {
+    private const double ElevatorExpansionMeters = 0.20d;
+    private const double MinimumUnitAreaSquareMeters = 0.01d;
+    private static readonly GeometryFactory GeometryFactory = new();
+
     private readonly Document _document;
     private readonly LevelCollector _levelCollector;
     private readonly SharedCoordinateValidator _coordinateValidator;
@@ -27,7 +33,10 @@ public sealed class FloorGeoPackageExporter
     public FloorGeoPackageExportResult ExportSelectedViews(
         string outputDirectory,
         int targetEpsg,
-        IReadOnlyList<ViewPlan> selectedViews)
+        IReadOnlyList<ViewPlan> selectedViews,
+        ExportFeatureType featureTypes = ExportFeatureType.All,
+        bool splitUnitsByWalls = false,
+        Action<ExportProgressUpdate>? progressCallback = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -37,6 +46,11 @@ public sealed class FloorGeoPackageExporter
         if (selectedViews is null)
         {
             throw new ArgumentNullException(nameof(selectedViews));
+        }
+
+        if (featureTypes == ExportFeatureType.None)
+        {
+            throw new ArgumentException("At least one feature type must be selected.", nameof(featureTypes));
         }
 
         List<ViewPlan> exportViews = selectedViews
@@ -64,6 +78,11 @@ public sealed class FloorGeoPackageExporter
             throw new InvalidOperationException("Selected views did not contain any exportable level context.");
         }
 
+        int featureTypeCount = CountSelectedFeatureTypes(featureTypes);
+        int totalSteps = Math.Max(1, contexts.Count * featureTypeCount);
+        int completedSteps = 0;
+        progressCallback?.Invoke(new ExportProgressUpdate(0, totalSteps, "Preparing export..."));
+
         SharedParameterManager parameterManager = new(_document);
         EnsureSharedParameters(parameterManager, warnings);
         EnsureStableIds(parameterManager, contexts, warnings);
@@ -81,7 +100,7 @@ public sealed class FloorGeoPackageExporter
 
         UnitExtractor unitExtractor = new(_document, zoneCatalog, parameterManager, sourceModelName);
         DetailExtractor detailExtractor = new(_document);
-        OpeningExtractor openingExtractor = new(_document, parameterManager);
+        OpeningExtractor openingExtractor = new(_document, parameterManager, zoneCatalog);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
         GpkgWriter writer = new();
 
@@ -96,50 +115,6 @@ public sealed class FloorGeoPackageExporter
                 continue;
             }
 
-            ExportLayer unitLayer = LayerDefinition.CreateUnitLayer();
-            AddFloorUnits(levelId, context.Floors, unitExtractor, unitLayer, warnings);
-            AddStairsUnits(levelId, context.Stairs, unitExtractor, unitLayer, warnings);
-            AddFamilyUnits(levelId, context.FamilyUnits, unitExtractor, unitLayer, warnings);
-
-            ExportLayer detailLayer = LayerDefinition.CreateDetailLayer();
-            foreach (ExportLineString detailFeature in detailExtractor.ExtractForLevel(
-                         level,
-                         levelId,
-                         context.DetailCurves,
-                         warnings))
-            {
-                detailLayer.AddFeature(detailFeature);
-            }
-
-            ExportLayer openingLayer = LayerDefinition.CreateOpeningLayer();
-            foreach (ExportLineString openingFeature in openingExtractor.ExtractForLevel(
-                         level,
-                         levelId,
-                         context.Openings,
-                         warnings))
-            {
-                openingLayer.AddFeature(openingFeature);
-            }
-
-            ExportLayer levelLayer = LayerDefinition.CreateLevelLayer();
-            List<ExportPolygon> unitFeatures = unitLayer.Features.OfType<ExportPolygon>().ToList();
-            int ordinal = ordinalByLevelId.TryGetValue(level.Id.Value, out int computedOrdinal) ? computedOrdinal : 0;
-            if (levelBoundaryBuilder.TryBuild(
-                    levelId,
-                    level.Name,
-                    ordinal,
-                    level.Elevation,
-                    unitFeatures,
-                    out ExportPolygon? levelBoundary) &&
-                levelBoundary != null)
-            {
-                levelLayer.AddFeature(levelBoundary);
-            }
-            else
-            {
-                warnings.Add($"Level boundary could not be derived for view '{context.View.Name}'.");
-            }
-
             string safeViewName = SanitizeFileName(context.View.Name);
             string fileStem = BuildUniqueFileStem(
                 safeModelName,
@@ -147,28 +122,157 @@ public sealed class FloorGeoPackageExporter
                 context.View.Id.Value,
                 usedFileStems);
 
-            string unitFile = Path.Combine(outputDirectory, $"{fileStem}_unit.gpkg");
-            string detailFile = Path.Combine(outputDirectory, $"{fileStem}_detail.gpkg");
-            string openingFile = Path.Combine(outputDirectory, $"{fileStem}_opening.gpkg");
-            string levelFile = Path.Combine(outputDirectory, $"{fileStem}_level.gpkg");
+            ExportLayer? unitLayer = null;
+            List<ExportPolygon> unitFeatures = new();
+            if (featureTypes.HasFlag(ExportFeatureType.Unit) || featureTypes.HasFlag(ExportFeatureType.Level))
+            {
+                unitLayer = LayerDefinition.CreateUnitLayer();
+                AddFloorUnits(
+                    levelId,
+                    context.Floors,
+                    context.Walls,
+                    splitUnitsByWalls,
+                    unitExtractor,
+                    unitLayer,
+                    warnings);
+                AddStairsUnits(levelId, context.Stairs, unitExtractor, unitLayer, warnings);
+                AddFamilyUnits(levelId, context.FamilyUnits, unitExtractor, unitLayer, warnings);
+                List<ExportPolygon> rawUnitFeatures = unitLayer.Features.OfType<ExportPolygon>().ToList();
+                unitFeatures = NormalizeUnitFeatures(rawUnitFeatures, warnings);
+                unitLayer = LayerDefinition.CreateUnitLayer();
+                foreach (ExportPolygon feature in unitFeatures)
+                {
+                    unitLayer.AddFeature(feature);
+                }
+            }
 
-            writer.Write(unitFile, targetEpsg, new[] { unitLayer });
-            writer.Write(detailFile, targetEpsg, new[] { detailLayer });
-            writer.Write(openingFile, targetEpsg, new[] { openingLayer });
-            writer.Write(levelFile, targetEpsg, new[] { levelLayer });
+            if (featureTypes.HasFlag(ExportFeatureType.Unit) && unitLayer != null)
+            {
+                string unitFile = Path.Combine(outputDirectory, $"{fileStem}_unit.gpkg");
+                writer.Write(unitFile, targetEpsg, new[] { unitLayer });
+                result.AddViewResult(
+                    new ViewExportResult(context.View.Name, level.Name, "unit", unitFile, unitLayer.Features.Count));
+                completedSteps++;
+                progressCallback?.Invoke(
+                    new ExportProgressUpdate(
+                        completedSteps,
+                        totalSteps,
+                        $"Exported {context.View.Name} [unit]"));
+            }
 
-            result.AddViewResult(
-                new ViewExportResult(context.View.Name, level.Name, "unit", unitFile, unitLayer.Features.Count));
-            result.AddViewResult(
-                new ViewExportResult(context.View.Name, level.Name, "detail", detailFile, detailLayer.Features.Count));
-            result.AddViewResult(
-                new ViewExportResult(context.View.Name, level.Name, "opening", openingFile, openingLayer.Features.Count));
-            result.AddViewResult(
-                new ViewExportResult(context.View.Name, level.Name, "level", levelFile, levelLayer.Features.Count));
+            if (featureTypes.HasFlag(ExportFeatureType.Detail))
+            {
+                ExportLayer detailLayer = LayerDefinition.CreateDetailLayer();
+                foreach (ExportLineString detailFeature in detailExtractor.ExtractForLevel(
+                             level,
+                             levelId,
+                             context.DetailCurves,
+                             context.Stairs,
+                             warnings))
+                {
+                    detailLayer.AddFeature(detailFeature);
+                }
+
+                string detailFile = Path.Combine(outputDirectory, $"{fileStem}_detail.gpkg");
+                writer.Write(detailFile, targetEpsg, new[] { detailLayer });
+                result.AddViewResult(
+                    new ViewExportResult(context.View.Name, level.Name, "detail", detailFile, detailLayer.Features.Count));
+                completedSteps++;
+                progressCallback?.Invoke(
+                    new ExportProgressUpdate(
+                        completedSteps,
+                        totalSteps,
+                        $"Exported {context.View.Name} [detail]"));
+            }
+
+            if (featureTypes.HasFlag(ExportFeatureType.Opening))
+            {
+                ExportLayer openingLayer = LayerDefinition.CreateOpeningLayer();
+                foreach (ExportLineString openingFeature in openingExtractor.ExtractForLevel(
+                             level,
+                             levelId,
+                             context.Openings,
+                             context.Stairs,
+                             context.FamilyUnits,
+                             unitFeatures,
+                             warnings))
+                {
+                    openingLayer.AddFeature(openingFeature);
+                }
+
+                string openingFile = Path.Combine(outputDirectory, $"{fileStem}_opening.gpkg");
+                writer.Write(openingFile, targetEpsg, new[] { openingLayer });
+                result.AddViewResult(
+                    new ViewExportResult(context.View.Name, level.Name, "opening", openingFile, openingLayer.Features.Count));
+                completedSteps++;
+                progressCallback?.Invoke(
+                    new ExportProgressUpdate(
+                        completedSteps,
+                        totalSteps,
+                        $"Exported {context.View.Name} [opening]"));
+            }
+
+            if (featureTypes.HasFlag(ExportFeatureType.Level))
+            {
+                ExportLayer levelLayer = LayerDefinition.CreateLevelLayer();
+                int ordinal = ordinalByLevelId.TryGetValue(level.Id.Value, out int computedOrdinal) ? computedOrdinal : 0;
+                if (levelBoundaryBuilder.TryBuild(
+                        levelId,
+                        level.Name,
+                        ordinal,
+                        level.Elevation,
+                        unitFeatures,
+                        out ExportPolygon? levelBoundary) &&
+                    levelBoundary != null)
+                {
+                    levelLayer.AddFeature(levelBoundary);
+                }
+                else
+                {
+                    warnings.Add($"Level boundary could not be derived for view '{context.View.Name}'.");
+                }
+
+                string levelFile = Path.Combine(outputDirectory, $"{fileStem}_level.gpkg");
+                writer.Write(levelFile, targetEpsg, new[] { levelLayer });
+                result.AddViewResult(
+                    new ViewExportResult(context.View.Name, level.Name, "level", levelFile, levelLayer.Features.Count));
+                completedSteps++;
+                progressCallback?.Invoke(
+                    new ExportProgressUpdate(
+                        completedSteps,
+                        totalSteps,
+                        $"Exported {context.View.Name} [level]"));
+            }
         }
 
         result.AddWarnings(warnings);
         return result;
+    }
+
+    private static int CountSelectedFeatureTypes(ExportFeatureType featureTypes)
+    {
+        int count = 0;
+        if (featureTypes.HasFlag(ExportFeatureType.Unit))
+        {
+            count++;
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Detail))
+        {
+            count++;
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Opening))
+        {
+            count++;
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Level))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private List<ViewExportContext> BuildViewContexts(
@@ -189,6 +293,7 @@ public sealed class FloorGeoPackageExporter
                     view,
                     level,
                     CollectFloorsInView(_document, view.Id),
+                    CollectWallsInView(_document, view.Id),
                     CollectStairsInView(_document, view.Id),
                     CollectFamilyUnitsInView(_document, view.Id, zoneCatalog),
                     CollectOpeningInstancesInView(_document, view.Id),
@@ -246,13 +351,29 @@ public sealed class FloorGeoPackageExporter
     private static void AddFloorUnits(
         string levelId,
         IReadOnlyList<Floor> floors,
+        IReadOnlyList<Wall> walls,
+        bool splitUnitsByWalls,
         UnitExtractor extractor,
         ExportLayer unitLayer,
         ICollection<string> warnings)
     {
+        UnitExtractor.FloorSplitMask? splitMask = splitUnitsByWalls
+            ? extractor.CreateFloorSplitMask(walls, warnings)
+            : null;
+
         foreach (Floor floor in floors)
         {
-            if (extractor.TryCreateFloorUnit(floor, levelId, warnings, out ExportPolygon? feature) && feature != null)
+            if (!extractor.TryCreateFloorUnits(
+                    floor,
+                    levelId,
+                    splitMask,
+                    warnings,
+                    out IReadOnlyList<ExportPolygon> features))
+            {
+                continue;
+            }
+
+            foreach (ExportPolygon feature in features)
             {
                 unitLayer.AddFeature(feature);
             }
@@ -292,6 +413,273 @@ public sealed class FloorGeoPackageExporter
         }
     }
 
+    private static List<ExportPolygon> NormalizeUnitFeatures(
+        IReadOnlyList<ExportPolygon> unitFeatures,
+        ICollection<string> warnings)
+    {
+        if (unitFeatures.Count == 0)
+        {
+            return new List<ExportPolygon>();
+        }
+
+        List<UnitGeometryRecord> converted = new(unitFeatures.Count);
+        List<Geometry> expandedElevators = new();
+        for (int i = 0; i < unitFeatures.Count; i++)
+        {
+            ExportPolygon feature = unitFeatures[i];
+            Geometry geometry = ToMultiPolygonGeometry(feature);
+            if (geometry.IsEmpty)
+            {
+                continue;
+            }
+
+            string category = GetCategory(feature);
+            bool isElevator = string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
+            if (isElevator)
+            {
+                geometry = geometry.Buffer(ElevatorExpansionMeters).Buffer(0d);
+                if (!geometry.IsEmpty)
+                {
+                    expandedElevators.Add(geometry);
+                }
+            }
+
+            converted.Add(new UnitGeometryRecord(feature.Attributes, category, isElevator, geometry));
+        }
+
+        if (expandedElevators.Count == 0)
+        {
+            return converted
+                .Select(record => ToExportPolygon(record.Geometry, record.Attributes))
+                .Where(feature => feature != null)
+                .Cast<ExportPolygon>()
+                .ToList();
+        }
+
+        Geometry expandedElevatorUnion = UnaryUnionOp.Union(expandedElevators).Buffer(0d);
+        List<ExportPolygon> normalized = new();
+        for (int i = 0; i < converted.Count; i++)
+        {
+            UnitGeometryRecord record = converted[i];
+            Geometry geometry = record.IsElevator
+                ? record.Geometry
+                : record.Geometry.Difference(expandedElevatorUnion).Buffer(0d);
+            ExportPolygon? feature = ToExportPolygon(geometry, record.Attributes);
+            if (feature == null)
+            {
+                if (!record.IsElevator)
+                {
+                    warnings.Add("A unit feature became empty after elevator expansion cleanup and was skipped.");
+                }
+
+                continue;
+            }
+
+            normalized.Add(feature);
+        }
+
+        return normalized;
+    }
+
+    private static ExportPolygon? ToExportPolygon(
+        Geometry geometry,
+        IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return null;
+        }
+
+        List<Polygon2D> polygons = ExtractPolygons(geometry);
+        if (polygons.Count == 0)
+        {
+            return null;
+        }
+
+        Dictionary<string, object?> copiedAttributes = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> kvp in attributes)
+        {
+            copiedAttributes[kvp.Key] = kvp.Value;
+        }
+
+        return new ExportPolygon(polygons, copiedAttributes);
+    }
+
+    private static Geometry ToMultiPolygonGeometry(ExportPolygon feature)
+    {
+        List<Geometry> geometries = new();
+        foreach (Polygon2D polygon in feature.Polygons)
+        {
+            Polygon? nts = ToNtsPolygon(polygon);
+            if (nts != null && !nts.IsEmpty)
+            {
+                geometries.Add(nts);
+            }
+        }
+
+        return geometries.Count switch
+        {
+            0 => GeometryFactory.CreateGeometryCollection(),
+            1 => geometries[0],
+            _ => UnaryUnionOp.Union(geometries).Buffer(0d),
+        };
+    }
+
+    private static Polygon? ToNtsPolygon(Polygon2D polygon)
+    {
+        if (!TryCreateLinearRing(polygon.ExteriorRing, out LinearRing? shell))
+        {
+            return null;
+        }
+
+        List<LinearRing> holes = new();
+        for (int i = 0; i < polygon.InteriorRings.Count; i++)
+        {
+            if (TryCreateLinearRing(polygon.InteriorRings[i], out LinearRing? hole) && hole != null)
+            {
+                holes.Add(hole);
+            }
+        }
+
+        Polygon created = GeometryFactory.CreatePolygon(shell, holes.ToArray());
+        if (!created.IsValid)
+        {
+            Geometry healed = created.Buffer(0d);
+            if (healed is Polygon healedPolygon)
+            {
+                return healedPolygon;
+            }
+
+            if (healed is MultiPolygon healedMulti && healedMulti.NumGeometries > 0)
+            {
+                return healedMulti.GetGeometryN(0) as Polygon;
+            }
+        }
+
+        return created;
+    }
+
+    private static bool TryCreateLinearRing(IReadOnlyList<Point2D> ringPoints, out LinearRing? ring)
+    {
+        ring = null;
+        if (ringPoints == null || ringPoints.Count < 4)
+        {
+            return false;
+        }
+
+        List<Coordinate> coords = new(ringPoints.Count + 1);
+        for (int i = 0; i < ringPoints.Count; i++)
+        {
+            coords.Add(new Coordinate(ringPoints[i].X, ringPoints[i].Y));
+        }
+
+        Coordinate first = coords[0];
+        Coordinate last = coords[coords.Count - 1];
+        if (!first.Equals2D(last))
+        {
+            coords.Add(new Coordinate(first.X, first.Y));
+        }
+
+        if (coords.Count < 4)
+        {
+            return false;
+        }
+
+        ring = GeometryFactory.CreateLinearRing(coords.ToArray());
+        return !ring.IsEmpty;
+    }
+
+    private static List<Polygon2D> ExtractPolygons(Geometry geometry)
+    {
+        List<Polygon2D> polygons = new();
+        switch (geometry)
+        {
+            case Polygon polygon:
+                AddPolygonIfValid(polygons, polygon);
+                break;
+            case MultiPolygon multiPolygon:
+                for (int i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    if (multiPolygon.GetGeometryN(i) is Polygon child)
+                    {
+                        AddPolygonIfValid(polygons, child);
+                    }
+                }
+
+                break;
+            case GeometryCollection collection:
+                for (int i = 0; i < collection.NumGeometries; i++)
+                {
+                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i)));
+                }
+
+                break;
+        }
+
+        return polygons;
+    }
+
+    private static void AddPolygonIfValid(ICollection<Polygon2D> target, Polygon polygon)
+    {
+        if (polygon.IsEmpty || polygon.Area < MinimumUnitAreaSquareMeters)
+        {
+            return;
+        }
+
+        Polygon2D? converted = ToPolygon2D(polygon);
+        if (converted != null)
+        {
+            target.Add(converted);
+        }
+    }
+
+    private static Polygon2D? ToPolygon2D(Polygon polygon)
+    {
+        IReadOnlyList<Point2D>? exterior = ToPointList(polygon.ExteriorRing.Coordinates);
+        if (exterior == null)
+        {
+            return null;
+        }
+
+        List<IReadOnlyList<Point2D>> interior = new();
+        for (int i = 0; i < polygon.NumInteriorRings; i++)
+        {
+            IReadOnlyList<Point2D>? ring = ToPointList(polygon.GetInteriorRingN(i).Coordinates);
+            if (ring != null)
+            {
+                interior.Add(ring);
+            }
+        }
+
+        return new Polygon2D(exterior, interior);
+    }
+
+    private static IReadOnlyList<Point2D>? ToPointList(Coordinate[] coordinates)
+    {
+        if (coordinates == null || coordinates.Length < 4)
+        {
+            return null;
+        }
+
+        List<Point2D> points = new(coordinates.Length);
+        for (int i = 0; i < coordinates.Length; i++)
+        {
+            points.Add(new Point2D(coordinates[i].X, coordinates[i].Y));
+        }
+
+        return points;
+    }
+
+    private static string GetCategory(ExportPolygon feature)
+    {
+        if (feature.Attributes.TryGetValue("category", out object? value))
+        {
+            return value?.ToString()?.Trim() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
     private static Dictionary<long, string> BuildLevelIdMap(
         IReadOnlyList<Level> levels,
         SharedParameterManager parameterManager,
@@ -325,6 +713,15 @@ public sealed class FloorGeoPackageExporter
             .OfClass(typeof(Stairs))
             .WhereElementIsNotElementType()
             .Cast<Stairs>()
+            .ToList();
+    }
+
+    private static List<Wall> CollectWallsInView(Document document, ElementId viewId)
+    {
+        return new FilteredElementCollector(document, viewId)
+            .OfClass(typeof(Wall))
+            .WhereElementIsNotElementType()
+            .Cast<Wall>()
             .ToList();
     }
 
@@ -452,6 +849,7 @@ public sealed class FloorGeoPackageExporter
             ViewPlan view,
             Level level,
             IReadOnlyList<Floor> floors,
+            IReadOnlyList<Wall> walls,
             IReadOnlyList<Stairs> stairs,
             IReadOnlyList<FamilyInstance> familyUnits,
             IReadOnlyList<FamilyInstance> openings,
@@ -460,6 +858,7 @@ public sealed class FloorGeoPackageExporter
             View = view;
             Level = level;
             Floors = floors;
+            Walls = walls;
             Stairs = stairs;
             FamilyUnits = familyUnits;
             Openings = openings;
@@ -472,6 +871,8 @@ public sealed class FloorGeoPackageExporter
 
         public IReadOnlyList<Floor> Floors { get; }
 
+        public IReadOnlyList<Wall> Walls { get; }
+
         public IReadOnlyList<Stairs> Stairs { get; }
 
         public IReadOnlyList<FamilyInstance> FamilyUnits { get; }
@@ -479,6 +880,29 @@ public sealed class FloorGeoPackageExporter
         public IReadOnlyList<FamilyInstance> Openings { get; }
 
         public IReadOnlyList<CurveElement> DetailCurves { get; }
+    }
+
+    private readonly struct UnitGeometryRecord
+    {
+        public UnitGeometryRecord(
+            IReadOnlyDictionary<string, object?> attributes,
+            string category,
+            bool isElevator,
+            Geometry geometry)
+        {
+            Attributes = attributes;
+            Category = category;
+            IsElevator = isElevator;
+            Geometry = geometry;
+        }
+
+        public IReadOnlyDictionary<string, object?> Attributes { get; }
+
+        public string Category { get; }
+
+        public bool IsElevator { get; }
+
+        public Geometry Geometry { get; }
     }
 
     private sealed class LevelIdComparer : IEqualityComparer<Level>
