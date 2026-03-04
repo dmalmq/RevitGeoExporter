@@ -9,9 +9,18 @@ public sealed class SettingsDialog : Form
 {
     private readonly ExportDialogSettings _original;
     private readonly TextBox _outputDirectoryTextBox = new();
+    private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
     private readonly TextBox _epsgTextBox = new();
     private readonly CheckBox _splitByWallsCheckBox = new();
+    private readonly Label _languageLabel = new();
+    private readonly Label _outputDirectoryLabel = new();
+    private readonly Label _presetLabel = new();
+    private readonly Label _epsgLabel = new();
+    private readonly Button _browseButton = new();
+    private readonly Button _cancelButton = new();
+    private readonly Button _saveButton = new();
+    private UiLanguage _language;
 
     public SettingsDialog(ExportDialogSettings settings)
     {
@@ -21,6 +30,10 @@ public sealed class SettingsDialog : Form
         }
 
         _original = settings;
+        _language = Enum.IsDefined(typeof(UiLanguage), settings.UiLanguage)
+            ? settings.UiLanguage
+            : UiLanguage.English;
+
         InitializeComponents();
         LoadSettings(settings);
     }
@@ -38,14 +51,14 @@ public sealed class SettingsDialog : Form
             FeatureTypes = _original.FeatureTypes,
             SplitUnitsByWalls = _splitByWallsCheckBox.Checked,
             SelectedViewIds = _original.SelectedViewIds ?? new System.Collections.Generic.List<long>(),
+            UiLanguage = _language,
         };
     }
 
     private void InitializeComponents()
     {
-        Text = "GeoExporter Settings";
         Width = 520;
-        Height = 260;
+        Height = 300;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MinimizeBox = false;
@@ -66,22 +79,38 @@ public sealed class SettingsDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 4,
+            RowCount = 5,
         };
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130f));
         form.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        form.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         form.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         form.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));
         form.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         form.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         root.Controls.Add(form, 0, 0);
 
-        form.Controls.Add(new Label
+        _languageLabel.Dock = DockStyle.Fill;
+        _languageLabel.TextAlign = ContentAlignment.MiddleLeft;
+        form.Controls.Add(_languageLabel, 0, 0);
+
+        _languageComboBox.Dock = DockStyle.Fill;
+        _languageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
+        _languageComboBox.Items.Add(new LanguageItem(UiLanguage.Japanese));
+        _languageComboBox.SelectedIndexChanged += (_, _) =>
         {
-            Text = "Output Directory",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 0);
+            if (_languageComboBox.SelectedItem is LanguageItem selected)
+            {
+                _language = selected.Language;
+                ApplyLanguage();
+            }
+        };
+        form.Controls.Add(_languageComboBox, 1, 0);
+
+        _outputDirectoryLabel.Dock = DockStyle.Fill;
+        _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
+        form.Controls.Add(_outputDirectoryLabel, 0, 1);
 
         TableLayoutPanel outputPanel = new()
         {
@@ -94,18 +123,17 @@ public sealed class SettingsDialog : Form
         _outputDirectoryTextBox.Dock = DockStyle.Fill;
         outputPanel.Controls.Add(_outputDirectoryTextBox, 0, 0);
 
-        Button browseButton = new()
-        {
-            Text = "Browse...",
-            Width = 88,
-            Height = 28,
-            Anchor = AnchorStyles.Right | AnchorStyles.Top,
-        };
-        browseButton.Click += (_, _) =>
+        _browseButton.Width = 88;
+        _browseButton.Height = 28;
+        _browseButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+        _browseButton.Click += (_, _) =>
         {
             using FolderBrowserDialog folderDialog = new()
             {
-                Description = "Select default output directory",
+                Description = UiLanguageText.Select(
+                    _language,
+                    "Select default output directory",
+                    "既定の出力フォルダを選択してください"),
                 ShowNewFolderButton = true,
                 SelectedPath = _outputDirectoryTextBox.Text,
             };
@@ -115,15 +143,12 @@ public sealed class SettingsDialog : Form
                 _outputDirectoryTextBox.Text = folderDialog.SelectedPath;
             }
         };
-        outputPanel.Controls.Add(browseButton, 1, 0);
-        form.Controls.Add(outputPanel, 1, 0);
+        outputPanel.Controls.Add(_browseButton, 1, 0);
+        form.Controls.Add(outputPanel, 1, 1);
 
-        form.Controls.Add(new Label
-        {
-            Text = "CRS Preset",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 1);
+        _presetLabel.Dock = DockStyle.Fill;
+        _presetLabel.TextAlign = ContentAlignment.MiddleLeft;
+        form.Controls.Add(_presetLabel, 0, 2);
 
         _presetComboBox.Dock = DockStyle.Fill;
         _presetComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -139,21 +164,17 @@ public sealed class SettingsDialog : Form
                 _epsgTextBox.Text = selected.Epsg.ToString();
             }
         };
-        form.Controls.Add(_presetComboBox, 1, 1);
+        form.Controls.Add(_presetComboBox, 1, 2);
 
-        form.Controls.Add(new Label
-        {
-            Text = "Target EPSG",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 2);
+        _epsgLabel.Dock = DockStyle.Fill;
+        _epsgLabel.TextAlign = ContentAlignment.MiddleLeft;
+        form.Controls.Add(_epsgLabel, 0, 3);
 
         _epsgTextBox.Dock = DockStyle.Fill;
-        form.Controls.Add(_epsgTextBox, 1, 2);
+        form.Controls.Add(_epsgTextBox, 1, 3);
 
-        _splitByWallsCheckBox.Text = "Split floor units by walls by default";
         _splitByWallsCheckBox.Dock = DockStyle.Fill;
-        form.Controls.Add(_splitByWallsCheckBox, 0, 3);
+        form.Controls.Add(_splitByWallsCheckBox, 0, 4);
         form.SetColumnSpan(_splitByWallsCheckBox, 2);
 
         FlowLayoutPanel actions = new()
@@ -162,27 +183,23 @@ public sealed class SettingsDialog : Form
             FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(0, 6, 0, 0),
         };
-        Button cancelButton = new()
-        {
-            Text = "Cancel",
-            Width = 90,
-            Height = 28,
-            DialogResult = DialogResult.Cancel,
-        };
 
-        Button saveButton = new()
-        {
-            Text = "Save",
-            Width = 90,
-            Height = 28,
-        };
-        saveButton.Click += (_, _) =>
+        _cancelButton.Width = 90;
+        _cancelButton.Height = 28;
+        _cancelButton.DialogResult = DialogResult.Cancel;
+
+        _saveButton.Width = 90;
+        _saveButton.Height = 28;
+        _saveButton.Click += (_, _) =>
         {
             if (!int.TryParse(_epsgTextBox.Text, out int epsg) || epsg <= 0)
             {
                 MessageBox.Show(
                     this,
-                    "Enter a valid EPSG code.",
+                    UiLanguageText.Select(
+                        _language,
+                        "Enter a valid EPSG code.",
+                        "有効なEPSGコードを入力してください。"),
                     ProjectInfo.Name,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -193,16 +210,17 @@ public sealed class SettingsDialog : Form
             Close();
         };
 
-        actions.Controls.Add(cancelButton);
-        actions.Controls.Add(saveButton);
+        actions.Controls.Add(_cancelButton);
+        actions.Controls.Add(_saveButton);
         root.Controls.Add(actions, 0, 1);
 
-        AcceptButton = saveButton;
-        CancelButton = cancelButton;
+        AcceptButton = _saveButton;
+        CancelButton = _cancelButton;
     }
 
     private void LoadSettings(ExportDialogSettings settings)
     {
+        SelectLanguage(_language);
         _outputDirectoryTextBox.Text = settings.OutputDirectory ?? string.Empty;
         int epsg = settings.TargetEpsg > 0 ? settings.TargetEpsg : ProjectInfo.DefaultTargetEpsg;
         _epsgTextBox.Text = epsg.ToString();
@@ -215,6 +233,53 @@ public sealed class SettingsDialog : Form
                 _presetComboBox.SelectedIndex = i;
                 break;
             }
+        }
+
+        ApplyLanguage();
+    }
+
+    private void ApplyLanguage()
+    {
+        Text = UiLanguageText.Select(_language, "GeoExporter Settings", "GeoExporter 設定");
+        _languageLabel.Text = UiLanguageText.Select(_language, "Language", "言語");
+        _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
+        _presetLabel.Text = UiLanguageText.Select(_language, "CRS Preset", "CRSプリセット");
+        _epsgLabel.Text = UiLanguageText.Select(_language, "Target EPSG", "対象EPSG");
+        _splitByWallsCheckBox.Text = UiLanguageText.Select(
+            _language,
+            "Split floor units by walls by default",
+            "既定で壁によるフロアユニット分割を有効にする");
+        _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "参照...");
+        _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
+        _saveButton.Text = UiLanguageText.Select(_language, "Save", "保存");
+    }
+
+    private void SelectLanguage(UiLanguage language)
+    {
+        for (int i = 0; i < _languageComboBox.Items.Count; i++)
+        {
+            if (_languageComboBox.Items[i] is LanguageItem item && item.Language == language)
+            {
+                _languageComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _languageComboBox.SelectedIndex = 0;
+    }
+
+    private sealed class LanguageItem
+    {
+        public LanguageItem(UiLanguage language)
+        {
+            Language = language;
+        }
+
+        public UiLanguage Language { get; }
+
+        public override string ToString()
+        {
+            return UiLanguageText.DisplayName(Language);
         }
     }
 

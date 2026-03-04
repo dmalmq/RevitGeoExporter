@@ -22,8 +22,11 @@ public sealed class OpenSettingsCommand : IExternalCommand
                 return Result.Cancelled;
             }
 
-            store.Save(dialog.BuildSettings());
-            TaskDialog.Show(ProjectInfo.Name, "Settings saved.");
+            ExportDialogSettings updatedSettings = dialog.BuildSettings();
+            store.Save(updatedSettings);
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                UiLanguageText.Select(updatedSettings.UiLanguage, "Settings saved.", "設定を保存しました。"));
             return Result.Succeeded;
         }
         catch (Exception ex)
