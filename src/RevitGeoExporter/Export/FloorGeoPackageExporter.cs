@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Union;
+using NetTopologySuite.Precision;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Models;
@@ -15,6 +16,14 @@ namespace RevitGeoExporter.Export;
 
 public sealed class FloorGeoPackageExporter
 {
+    // Temporary diagnostic mode to isolate floor extraction issues.
+    // When enabled:
+    // - only floor units are exported
+    // - stairs/elevators/escalators are excluded from unit export
+    // - wall-based floor splitting is disabled
+    // - unit normalization/joining logic is bypassed
+    private static readonly bool RawFloorOnlyDebugMode = false;
+
     private const double ElevatorExpansionMeters = 0.20d;
     private const double MaxUnitGapMeters = 0.15d;
     private const double MaxElevatorWalkwayProximityMeters = 0.50d;
@@ -135,14 +144,21 @@ public sealed class FloorGeoPackageExporter
                     levelId,
                     context.Floors,
                     context.Walls,
-                    splitUnitsByWalls,
+                    splitUnitsByWalls && !RawFloorOnlyDebugMode,
                     unitExtractor,
                     unitLayer,
                     warnings);
-                AddStairsUnits(levelId, context.Stairs, unitExtractor, unitLayer, warnings);
-                AddFamilyUnits(levelId, context.FamilyUnits, unitExtractor, unitLayer, warnings);
+
+                if (!RawFloorOnlyDebugMode)
+                {
+                    AddStairsUnits(levelId, context.View, context.Stairs, unitExtractor, unitLayer, warnings);
+                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, unitLayer, warnings);
+                }
+
                 List<ExportPolygon> rawUnitFeatures = unitLayer.Features.OfType<ExportPolygon>().ToList();
-                unitFeatures = NormalizeUnitFeatures(rawUnitFeatures, warnings, out elevatorOpeningLines);
+                unitFeatures = RawFloorOnlyDebugMode
+                    ? rawUnitFeatures
+                    : NormalizeUnitFeatures(rawUnitFeatures, warnings, out elevatorOpeningLines);
                 unitLayer = LayerDefinition.CreateUnitLayer();
                 foreach (ExportPolygon feature in unitFeatures)
                 {
@@ -387,6 +403,7 @@ public sealed class FloorGeoPackageExporter
 
     private static void AddStairsUnits(
         string levelId,
+        ViewPlan view,
         IReadOnlyList<Stairs> stairs,
         UnitExtractor extractor,
         ExportLayer unitLayer,
@@ -394,7 +411,8 @@ public sealed class FloorGeoPackageExporter
     {
         foreach (Stairs stair in stairs)
         {
-            if (extractor.TryCreateStairsUnit(stair, levelId, warnings, out ExportPolygon? feature) && feature != null)
+            if (extractor.TryCreateStairsUnit(stair, view, levelId, warnings, out ExportPolygon? feature) &&
+                feature != null)
             {
                 unitLayer.AddFeature(feature);
             }
@@ -403,6 +421,7 @@ public sealed class FloorGeoPackageExporter
 
     private static void AddFamilyUnits(
         string levelId,
+        ViewPlan view,
         IReadOnlyList<FamilyInstance> familyUnits,
         UnitExtractor extractor,
         ExportLayer unitLayer,
@@ -410,7 +429,7 @@ public sealed class FloorGeoPackageExporter
     {
         foreach (FamilyInstance familyUnit in familyUnits)
         {
-            if (extractor.TryCreateFamilyUnit(familyUnit, levelId, warnings, out ExportPolygon? feature) &&
+            if (extractor.TryCreateFamilyUnit(familyUnit, view, levelId, warnings, out ExportPolygon? feature) &&
                 feature != null)
             {
                 unitLayer.AddFeature(feature);
@@ -430,7 +449,6 @@ public sealed class FloorGeoPackageExporter
         }
 
         List<UnitGeometryRecord> converted = new(unitFeatures.Count);
-        List<UnitGeometryRecord> elevatorRecords = new();
         List<UnitGeometryRecord> walkwayRecords = new();
         for (int i = 0; i < unitFeatures.Count; i++)
         {
@@ -446,17 +464,28 @@ public sealed class FloorGeoPackageExporter
             bool isWalkway = string.Equals(category, "walkway", StringComparison.OrdinalIgnoreCase);
             UnitGeometryRecord record = new(feature.Attributes, category, isElevator, geometry);
             converted.Add(record);
-            if (isElevator)
-            {
-                elevatorRecords.Add(record);
-            }
-
             if (isWalkway)
             {
                 walkwayRecords.Add(record);
             }
         }
 
+        if (converted.Count == 0)
+        {
+            return new List<ExportPolygon>();
+        }
+
+        for (int i = 0; i < converted.Count; i++)
+        {
+            UnitGeometryRecord record = converted[i];
+            Geometry preservedVoids = BuildInteriorVoidMask(record.Geometry, warnings);
+            converted[i] = new UnitGeometryRecord(
+                record.Attributes,
+                record.Category,
+                record.IsElevator,
+                record.Geometry,
+                preservedVoids);
+        }
         CloseSmallGaps(converted);
 
         List<Geometry> expandedElevators = new();
@@ -487,21 +516,38 @@ public sealed class FloorGeoPackageExporter
 
         if (expandedElevators.Count == 0)
         {
-            return converted
-                .Select(record => ToExportPolygon(record.Geometry, record.Attributes))
-                .Where(feature => feature != null)
-                .Cast<ExportPolygon>()
-                .ToList();
+            return BuildExportPolygons(converted, warnings);
         }
 
-        Geometry expandedElevatorUnion = UnaryUnionOp.Union(expandedElevators).Buffer(0d);
+        Geometry expandedElevatorUnion;
+        try
+        {
+            expandedElevatorUnion = UnaryUnionOp.Union(expandedElevators).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = expandedElevators.Select(g => reducer.Reduce(g)).ToList();
+                expandedElevatorUnion = UnaryUnionOp.Union(reduced).Buffer(0d);
+                warnings.Add("Elevator union required reduced precision and may be slightly approximated.");
+            }
+            catch (TopologyException)
+            {
+                warnings.Add("Elevator union failed even with reduced precision; elevator expansion cleanup was skipped.");
+                return BuildExportPolygons(converted, warnings);
+            }
+        }
+
         List<ExportPolygon> normalized = new();
         for (int i = 0; i < converted.Count; i++)
         {
             UnitGeometryRecord record = converted[i];
             Geometry geometry = record.IsElevator
                 ? record.Geometry
-                : record.Geometry.Difference(expandedElevatorUnion).Buffer(0d);
+                : SafeOverlay(record.Geometry, expandedElevatorUnion, (a, b) => a.Difference(b).Buffer(0d), warnings);
+            geometry = CarvePreservedVoids(geometry, record.PreservedVoids, warnings);
             ExportPolygon? feature = ToExportPolygon(geometry, record.Attributes);
             if (feature == null)
             {
@@ -519,6 +565,118 @@ public sealed class FloorGeoPackageExporter
         return normalized;
     }
 
+    private static List<ExportPolygon> BuildExportPolygons(
+        IReadOnlyList<UnitGeometryRecord> records,
+        ICollection<string> warnings)
+    {
+        List<ExportPolygon> exported = new(records.Count);
+        for (int i = 0; i < records.Count; i++)
+        {
+            Geometry geometry = CarvePreservedVoids(records[i].Geometry, records[i].PreservedVoids, warnings);
+            ExportPolygon? feature = ToExportPolygon(geometry, records[i].Attributes);
+            if (feature != null)
+            {
+                exported.Add(feature);
+            }
+        }
+
+        return exported;
+    }
+
+    private static Geometry CarvePreservedVoids(
+        Geometry geometry,
+        Geometry preservedVoidMask,
+        ICollection<string> warnings)
+    {
+        if (geometry.IsEmpty || preservedVoidMask.IsEmpty)
+        {
+            return geometry;
+        }
+
+        return SafeOverlay(geometry, preservedVoidMask, (a, b) => a.Difference(b).Buffer(0d), warnings);
+    }
+
+    private static Geometry BuildInteriorVoidMask(
+        Geometry geometry,
+        ICollection<string> warnings)
+    {
+        List<Geometry> voidPolygons = new();
+        CollectInteriorVoids(geometry, voidPolygons);
+
+        if (voidPolygons.Count == 0)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        try
+        {
+            Geometry unioned = UnaryUnionOp.Union(voidPolygons).Buffer(0d);
+            return unioned.IsEmpty
+                ? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>())
+                : unioned;
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = voidPolygons.Select(g => reducer.Reduce(g)).ToList();
+                Geometry unioned = UnaryUnionOp.Union(reduced).Buffer(0d);
+                warnings.Add("Interior void preservation required reduced precision and may be slightly approximated.");
+                return unioned.IsEmpty
+                    ? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>())
+                    : unioned;
+            }
+            catch (TopologyException)
+            {
+                warnings.Add("Interior void preservation failed; shaft/no-floor holes may be less accurate.");
+                return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+            }
+        }
+    }
+
+    private static void CollectInteriorVoids(Geometry geometry, ICollection<Geometry> voidPolygons)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return;
+        }
+
+        if (geometry is Polygon polygon)
+        {
+            for (int i = 0; i < polygon.NumInteriorRings; i++)
+            {
+                Coordinate[] ringCoords = polygon.GetInteriorRingN(i).Coordinates;
+                if (ringCoords.Length < 4)
+                {
+                    continue;
+                }
+
+                LinearRing ring = GeometryFactory.CreateLinearRing(ringCoords);
+                if (ring.IsEmpty)
+                {
+                    continue;
+                }
+
+                Polygon voidPolygon = GeometryFactory.CreatePolygon(ring);
+                if (!voidPolygon.IsEmpty && voidPolygon.Area >= MinimumUnitAreaSquareMeters)
+                {
+                    voidPolygons.Add(voidPolygon);
+                }
+            }
+
+            return;
+        }
+
+        if (geometry is GeometryCollection collection)
+        {
+            for (int i = 0; i < collection.NumGeometries; i++)
+            {
+                CollectInteriorVoids(collection.GetGeometryN(i), voidPolygons);
+            }
+        }
+    }
+
     private static void CloseSmallGaps(List<UnitGeometryRecord> records)
     {
         double halfGap = MaxUnitGapMeters / 2d;
@@ -534,7 +692,7 @@ public sealed class FloorGeoPackageExporter
             for (int j = 0; j < records.Count; j++)
             {
                 if (j == i) continue;
-                buffered = buffered.Difference(originals[j]);
+                buffered = SafeOverlay(buffered, originals[j], (a, b) => a.Difference(b));
             }
 
             buffered = buffered.Buffer(0d); // topology healing
@@ -648,7 +806,12 @@ public sealed class FloorGeoPackageExporter
             new Coordinate(edgeA.X, edgeA.Y),
         });
 
-        Geometry expanded = elevator.Union(slab).Buffer(0d);
+        Geometry expanded = SafeOverlay(elevator, slab, (a, b) => a.Union(b).Buffer(0d));
+        if (ReferenceEquals(expanded, elevator))
+        {
+            // SafeOverlay fell back to the original — skip expansion for this elevator.
+            return elevator;
+        }
 
         opening = new LineString2D(new[]
         {
@@ -715,10 +878,10 @@ public sealed class FloorGeoPackageExporter
         List<Geometry> geometries = new();
         foreach (Polygon2D polygon in feature.Polygons)
         {
-            Polygon? nts = ToNtsPolygon(polygon);
+            Geometry? nts = ToNtsGeometry(polygon);
             if (nts != null && !nts.IsEmpty)
             {
-                geometries.Add(nts);
+                AddPolygonGeometryParts(geometries, nts);
             }
         }
 
@@ -730,7 +893,7 @@ public sealed class FloorGeoPackageExporter
         };
     }
 
-    private static Polygon? ToNtsPolygon(Polygon2D polygon)
+    private static Geometry? ToNtsGeometry(Polygon2D polygon)
     {
         if (!TryCreateLinearRing(polygon.ExteriorRing, out LinearRing? shell))
         {
@@ -750,18 +913,39 @@ public sealed class FloorGeoPackageExporter
         if (!created.IsValid)
         {
             Geometry healed = created.Buffer(0d);
-            if (healed is Polygon healedPolygon)
-            {
-                return healedPolygon;
-            }
-
-            if (healed is MultiPolygon healedMulti && healedMulti.NumGeometries > 0)
-            {
-                return healedMulti.GetGeometryN(0) as Polygon;
-            }
+            return healed;
         }
 
         return created;
+    }
+
+    private static void AddPolygonGeometryParts(ICollection<Geometry> target, Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return;
+        }
+
+        switch (geometry)
+        {
+            case Polygon polygon:
+                target.Add(polygon);
+                break;
+            case MultiPolygon multiPolygon:
+                for (int i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, multiPolygon.GetGeometryN(i));
+                }
+
+                break;
+            case GeometryCollection collection:
+                for (int i = 0; i < collection.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, collection.GetGeometryN(i));
+                }
+
+                break;
+        }
     }
 
     private static bool TryCreateLinearRing(IReadOnlyList<Point2D> ringPoints, out LinearRing? ring)
@@ -1048,6 +1232,35 @@ public sealed class FloorGeoPackageExporter
         return sanitized.Trim();
     }
 
+    private static Geometry SafeOverlay(
+        Geometry a,
+        Geometry b,
+        Func<Geometry, Geometry, Geometry> operation,
+        ICollection<string>? warnings = null)
+    {
+        try
+        {
+            return operation(a, b);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reducedA = reducer.Reduce(a);
+                Geometry reducedB = reducer.Reduce(b);
+                Geometry result = operation(reducedA, reducedB);
+                warnings?.Add("A geometry overlay required reduced precision and may be slightly approximated.");
+                return result;
+            }
+            catch (TopologyException)
+            {
+                warnings?.Add("A geometry overlay failed even with reduced precision; the original geometry was kept unchanged.");
+                return a;
+            }
+        }
+    }
+
     private sealed class ViewExportContext
     {
         public ViewExportContext(
@@ -1093,12 +1306,14 @@ public sealed class FloorGeoPackageExporter
             IReadOnlyDictionary<string, object?> attributes,
             string category,
             bool isElevator,
-            Geometry geometry)
+            Geometry geometry,
+            Geometry? preservedVoids = null)
         {
             Attributes = attributes;
             Category = category;
             IsElevator = isElevator;
             Geometry = geometry;
+            PreservedVoids = preservedVoids ?? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
         }
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
@@ -1108,6 +1323,8 @@ public sealed class FloorGeoPackageExporter
         public bool IsElevator { get; }
 
         public Geometry Geometry { get; }
+
+        public Geometry PreservedVoids { get; }
     }
 
     private sealed class LevelIdComparer : IEqualityComparer<Level>

@@ -70,20 +70,20 @@ public sealed class LevelBoundaryBuilder
         {
             foreach (Polygon2D polygon in feature.Polygons)
             {
-                Polygon? ntsPolygon = ToNtsPolygon(polygon);
-                if (ntsPolygon == null || ntsPolygon.IsEmpty)
+                Geometry? ntsGeometry = ToNtsGeometry(polygon);
+                if (ntsGeometry == null || ntsGeometry.IsEmpty)
                 {
                     continue;
                 }
 
-                geometries.Add(ntsPolygon);
+                AddPolygonGeometryParts(geometries, ntsGeometry);
             }
         }
 
         return geometries;
     }
 
-    private static Polygon? ToNtsPolygon(Polygon2D polygon)
+    private static Geometry? ToNtsGeometry(Polygon2D polygon)
     {
         if (!TryCreateLinearRing(polygon.ExteriorRing, out LinearRing? shell))
         {
@@ -103,18 +103,39 @@ public sealed class LevelBoundaryBuilder
         if (!created.IsValid)
         {
             Geometry healed = created.Buffer(0d);
-            if (healed is Polygon healedPolygon)
-            {
-                return healedPolygon;
-            }
-
-            if (healed is MultiPolygon healedMulti && healedMulti.NumGeometries > 0)
-            {
-                return healedMulti.GetGeometryN(0) as Polygon;
-            }
+            return healed;
         }
 
         return created;
+    }
+
+    private static void AddPolygonGeometryParts(ICollection<Geometry> target, Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return;
+        }
+
+        switch (geometry)
+        {
+            case Polygon polygon:
+                target.Add(polygon);
+                break;
+            case MultiPolygon multiPolygon:
+                for (int i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, multiPolygon.GetGeometryN(i));
+                }
+
+                break;
+            case GeometryCollection collection:
+                for (int i = 0; i < collection.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, collection.GetGeometryN(i));
+                }
+
+                break;
+        }
     }
 
     private static bool TryCreateLinearRing(IReadOnlyList<Point2D> ringPoints, out LinearRing? ring)
