@@ -204,6 +204,7 @@ public sealed class ZoneCatalog
         {
             ["j EV"] = new ZoneInfo("elevator", "E0E0E0", null),
             ["j エスカレーター-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
+            ["j エスカレータ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
             ["j 繧ｨ繧ｹ繧ｫ繝ｬ繝ｼ繧ｿ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
         };
 

@@ -15,6 +15,8 @@ public sealed class OpeningExtractor
     private const double MinOpeningLengthMeters = 0.10d;
     private const double EndpointInsetMeters = 0.05d;
     private const double MaxOutlineSnapDistanceMeters = 5.0d;
+    private const double MaxOpeningSnapDistanceMeters = 0.20d;
+    private const double MaxElevatorOpeningSnapDistanceMeters = 0.50d;
     private const double StairLevelElevationToleranceFeet = 0.75d;
 
     private readonly Document _document;
@@ -43,6 +45,7 @@ public sealed class OpeningExtractor
         IReadOnlyList<Stairs> stairs,
         IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<ExportPolygon> unitFeatures,
+        IReadOnlyList<LineString2D> elevatorOpeningLines,
         ICollection<string> warnings)
     {
         if (level is null)
@@ -75,6 +78,11 @@ public sealed class OpeningExtractor
             throw new ArgumentNullException(nameof(unitFeatures));
         }
 
+        if (elevatorOpeningLines is null)
+        {
+            throw new ArgumentNullException(nameof(elevatorOpeningLines));
+        }
+
         if (warnings is null)
         {
             throw new ArgumentNullException(nameof(warnings));
@@ -82,6 +90,7 @@ public sealed class OpeningExtractor
 
         List<ExportLineString> features = new();
         HashSet<string> seenGeometryKeys = new(StringComparer.Ordinal);
+        List<BoundarySegment> snapSegments = BuildSnapSegments(unitFeatures);
 
         foreach (FamilyInstance opening in openingInstances)
         {
@@ -96,6 +105,8 @@ public sealed class OpeningExtractor
                 continue;
             }
 
+            lineString = SnapToClosestOutline(lineString, snapSegments, MaxOpeningSnapDistanceMeters);
+
             string id = _parameterManager.GetOrCreateElementId(opening, warnings);
             AddFeature(
                 features,
@@ -108,7 +119,8 @@ public sealed class OpeningExtractor
         }
 
         AddStairEntrances(features, seenGeometryKeys, stairs, level.Elevation, levelId, warnings);
-        AddEscalatorEntrances(features, seenGeometryKeys, familyUnits, unitFeatures, levelId);
+        AddEscalatorEntrances(features, seenGeometryKeys, familyUnits, snapSegments, levelId);
+        AddElevatorEntrances(features, seenGeometryKeys, elevatorOpeningLines, levelId);
         return features;
     }
 
@@ -202,10 +214,9 @@ public sealed class OpeningExtractor
         ICollection<ExportLineString> target,
         ISet<string> seenGeometryKeys,
         IReadOnlyList<FamilyInstance> familyUnits,
-        IReadOnlyList<ExportPolygon> unitFeatures,
+        IReadOnlyList<BoundarySegment> snapSegments,
         string levelId)
     {
-        List<BoundarySegment> snapSegments = BuildSnapSegments(unitFeatures);
         foreach (FamilyInstance escalator in familyUnits)
         {
             if (!IsEscalatorFamily(escalator))
@@ -237,6 +248,87 @@ public sealed class OpeningExtractor
                 AddFeature(target, seenGeometryKeys, snapped, id, "pedestrian", levelId, escalator.Id.Value);
             }
         }
+    }
+
+    private void AddElevatorEntrances(
+        List<ExportLineString> target,
+        ISet<string> seenGeometryKeys,
+        IReadOnlyList<LineString2D> elevatorOpeningLines,
+        string levelId)
+    {
+        for (int i = 0; i < elevatorOpeningLines.Count; i++)
+        {
+            LineString2D line = elevatorOpeningLines[i];
+            if (line.Points.Count < 2)
+            {
+                continue;
+            }
+
+            double dx = line.Points[1].X - line.Points[0].X;
+            double dy = line.Points[1].Y - line.Points[0].Y;
+            if (Math.Sqrt((dx * dx) + (dy * dy)) < MinOpeningLengthMeters)
+            {
+                continue;
+            }
+
+            Point2D elevatorMidpoint = Midpoint(line);
+            int existingIndex = FindNearestExistingOpening(
+                target, elevatorMidpoint, MaxElevatorOpeningSnapDistanceMeters);
+
+            if (existingIndex >= 0)
+            {
+                ExportLineString existing = target[existingIndex];
+                string oldGeometryKey = BuildGeometryKey(existing.LineString);
+                seenGeometryKeys.Remove(oldGeometryKey);
+                target.RemoveAt(existingIndex);
+
+                string newGeometryKey = BuildGeometryKey(line);
+                if (seenGeometryKeys.Add(newGeometryKey))
+                {
+                    Dictionary<string, object?> snappedAttributes = new();
+                    foreach (KeyValuePair<string, object?> kvp in existing.Attributes)
+                    {
+                        snappedAttributes[kvp.Key] = kvp.Value;
+                    }
+
+                    target.Add(new ExportLineString(line, snappedAttributes));
+                }
+            }
+            else
+            {
+                string id = StableIdGenerator.Create("opening.elevator", i + 1, levelId);
+                AddFeature(target, seenGeometryKeys, line, id, "pedestrian", levelId, elementId: 0L);
+            }
+        }
+    }
+
+    private static int FindNearestExistingOpening(
+        List<ExportLineString> features,
+        Point2D elevatorOpeningMidpoint,
+        double maxDistance)
+    {
+        int bestIndex = -1;
+        double bestDistance = double.MaxValue;
+
+        for (int i = 0; i < features.Count; i++)
+        {
+            Point2D mid = Midpoint(features[i].LineString);
+            double dist = Distance(mid, elevatorOpeningMidpoint);
+            if (dist < bestDistance && dist <= maxDistance)
+            {
+                bestDistance = dist;
+                bestIndex = i;
+            }
+        }
+
+        return bestIndex;
+    }
+
+    private static Point2D Midpoint(LineString2D line)
+    {
+        Point2D start = line.Points[0];
+        Point2D end = line.Points[line.Points.Count - 1];
+        return new Point2D((start.X + end.X) * 0.5d, (start.Y + end.Y) * 0.5d);
     }
 
     private static List<BoundarySegment> BuildSnapSegments(IReadOnlyList<ExportPolygon> unitFeatures)
@@ -285,6 +377,12 @@ public sealed class OpeningExtractor
 
     private static LineString2D SnapToClosestOutline(LineString2D line, IReadOnlyList<BoundarySegment> segments)
     {
+        return SnapToClosestOutline(line, segments, MaxOutlineSnapDistanceMeters);
+    }
+
+    private static LineString2D SnapToClosestOutline(
+        LineString2D line, IReadOnlyList<BoundarySegment> segments, double maxDistance)
+    {
         if (segments == null || segments.Count == 0 || line.Points.Count < 2)
         {
             return line;
@@ -317,7 +415,7 @@ public sealed class OpeningExtractor
             }
         }
 
-        if (nearest == null || bestDistance > MaxOutlineSnapDistanceMeters)
+        if (nearest == null || bestDistance > maxDistance)
         {
             return line;
         }

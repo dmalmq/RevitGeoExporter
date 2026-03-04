@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Commands;
+using RevitGeoExporter.Resources;
 
 namespace RevitGeoExporter;
 
@@ -32,6 +33,8 @@ public sealed class App : IExternalApplication
             button.ToolTip = "Export IMDF GeoPackages from selected plan views.";
             button.LongDescription =
                 "Select floor/ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.";
+            button.LargeImage = RibbonIcons.CreateExportIcon(32);
+            button.Image = RibbonIcons.CreateExportIcon(16);
         }
 
         PushButtonData settingsButton = new(
@@ -45,6 +48,8 @@ public sealed class App : IExternalApplication
         {
             settings.ToolTip = "Edit default export output directory and CRS.";
             settings.LongDescription = "Saves defaults used by the export dialog.";
+            settings.LargeImage = RibbonIcons.CreateSettingsIcon(32);
+            settings.Image = RibbonIcons.CreateSettingsIcon(16);
         }
 
         return Result.Succeeded;
