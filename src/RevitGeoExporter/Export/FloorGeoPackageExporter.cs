@@ -16,6 +16,9 @@ namespace RevitGeoExporter.Export;
 public sealed class FloorGeoPackageExporter
 {
     private const double ElevatorExpansionMeters = 0.20d;
+    private const double MaxUnitGapMeters = 0.15d;
+    private const double MaxElevatorWalkwayProximityMeters = 0.50d;
+    private const double MinEdgeLengthMeters = 0.10d;
     private const double MinimumUnitAreaSquareMeters = 0.01d;
     private static readonly GeometryFactory GeometryFactory = new();
 
@@ -124,6 +127,7 @@ public sealed class FloorGeoPackageExporter
 
             ExportLayer? unitLayer = null;
             List<ExportPolygon> unitFeatures = new();
+            List<LineString2D> elevatorOpeningLines = new();
             if (featureTypes.HasFlag(ExportFeatureType.Unit) || featureTypes.HasFlag(ExportFeatureType.Level))
             {
                 unitLayer = LayerDefinition.CreateUnitLayer();
@@ -138,7 +142,7 @@ public sealed class FloorGeoPackageExporter
                 AddStairsUnits(levelId, context.Stairs, unitExtractor, unitLayer, warnings);
                 AddFamilyUnits(levelId, context.FamilyUnits, unitExtractor, unitLayer, warnings);
                 List<ExportPolygon> rawUnitFeatures = unitLayer.Features.OfType<ExportPolygon>().ToList();
-                unitFeatures = NormalizeUnitFeatures(rawUnitFeatures, warnings);
+                unitFeatures = NormalizeUnitFeatures(rawUnitFeatures, warnings, out elevatorOpeningLines);
                 unitLayer = LayerDefinition.CreateUnitLayer();
                 foreach (ExportPolygon feature in unitFeatures)
                 {
@@ -195,6 +199,7 @@ public sealed class FloorGeoPackageExporter
                              context.Stairs,
                              context.FamilyUnits,
                              unitFeatures,
+                             elevatorOpeningLines,
                              warnings))
                 {
                     openingLayer.AddFeature(openingFeature);
@@ -415,15 +420,18 @@ public sealed class FloorGeoPackageExporter
 
     private static List<ExportPolygon> NormalizeUnitFeatures(
         IReadOnlyList<ExportPolygon> unitFeatures,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        out List<LineString2D> elevatorOpenings)
     {
+        elevatorOpenings = new List<LineString2D>();
         if (unitFeatures.Count == 0)
         {
             return new List<ExportPolygon>();
         }
 
         List<UnitGeometryRecord> converted = new(unitFeatures.Count);
-        List<Geometry> expandedElevators = new();
+        List<UnitGeometryRecord> elevatorRecords = new();
+        List<UnitGeometryRecord> walkwayRecords = new();
         for (int i = 0; i < unitFeatures.Count; i++)
         {
             ExportPolygon feature = unitFeatures[i];
@@ -435,16 +443,46 @@ public sealed class FloorGeoPackageExporter
 
             string category = GetCategory(feature);
             bool isElevator = string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
+            bool isWalkway = string.Equals(category, "walkway", StringComparison.OrdinalIgnoreCase);
+            UnitGeometryRecord record = new(feature.Attributes, category, isElevator, geometry);
+            converted.Add(record);
             if (isElevator)
             {
-                geometry = geometry.Buffer(ElevatorExpansionMeters).Buffer(0d);
-                if (!geometry.IsEmpty)
-                {
-                    expandedElevators.Add(geometry);
-                }
+                elevatorRecords.Add(record);
             }
 
-            converted.Add(new UnitGeometryRecord(feature.Attributes, category, isElevator, geometry));
+            if (isWalkway)
+            {
+                walkwayRecords.Add(record);
+            }
+        }
+
+        CloseSmallGaps(converted);
+
+        List<Geometry> expandedElevators = new();
+        for (int i = 0; i < converted.Count; i++)
+        {
+            if (!converted[i].IsElevator)
+            {
+                continue;
+            }
+
+            UnitGeometryRecord record = converted[i];
+            Geometry expanded = ExpandElevatorTowardWalkway(
+                record.Geometry,
+                walkwayRecords,
+                ElevatorExpansionMeters,
+                out LineString2D? opening);
+            converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, true, expanded);
+            if (!expanded.IsEmpty)
+            {
+                expandedElevators.Add(expanded);
+            }
+
+            if (opening != null)
+            {
+                elevatorOpenings.Add(opening);
+            }
         }
 
         if (expandedElevators.Count == 0)
@@ -479,6 +517,173 @@ public sealed class FloorGeoPackageExporter
         }
 
         return normalized;
+    }
+
+    private static void CloseSmallGaps(List<UnitGeometryRecord> records)
+    {
+        double halfGap = MaxUnitGapMeters / 2d;
+
+        // Collect all original geometries for subtraction.
+        List<Geometry> originals = records.Select(r => r.Geometry).ToList();
+
+        for (int i = 0; i < records.Count; i++)
+        {
+            Geometry buffered = records[i].Geometry.Buffer(halfGap);
+
+            // Subtract every other unit's original geometry.
+            for (int j = 0; j < records.Count; j++)
+            {
+                if (j == i) continue;
+                buffered = buffered.Difference(originals[j]);
+            }
+
+            buffered = buffered.Buffer(0d); // topology healing
+            if (!buffered.IsEmpty)
+            {
+                UnitGeometryRecord r = records[i];
+                records[i] = new UnitGeometryRecord(r.Attributes, r.Category, r.IsElevator, buffered);
+            }
+        }
+    }
+
+    private static Geometry ExpandElevatorTowardWalkway(
+        Geometry elevator,
+        List<UnitGeometryRecord> walkways,
+        double expansionMeters,
+        out LineString2D? opening)
+    {
+        opening = null;
+        if (walkways.Count == 0)
+        {
+            return elevator;
+        }
+
+        Geometry elevatorPolygon = GetLargestPolygon(elevator);
+        if (elevatorPolygon.IsEmpty)
+        {
+            return elevator;
+        }
+
+        Geometry? closestWalkway = null;
+        double closestDistance = double.MaxValue;
+        for (int i = 0; i < walkways.Count; i++)
+        {
+            double distance = elevatorPolygon.Distance(walkways[i].Geometry);
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestWalkway = walkways[i].Geometry;
+            }
+        }
+
+        if (closestWalkway == null || closestDistance > MaxElevatorWalkwayProximityMeters)
+        {
+            return elevator;
+        }
+
+        Coordinate[] ring = ((Polygon)elevatorPolygon).ExteriorRing.Coordinates;
+        int bestEdge = -1;
+        double bestEdgeDistance = double.MaxValue;
+        for (int i = 0; i < ring.Length - 1; i++)
+        {
+            Coordinate a = ring[i];
+            Coordinate b = ring[i + 1];
+            double edgeLength = Math.Sqrt(
+                ((b.X - a.X) * (b.X - a.X)) + ((b.Y - a.Y) * (b.Y - a.Y)));
+            if (edgeLength < MinEdgeLengthMeters)
+            {
+                continue;
+            }
+
+            double midX = (a.X + b.X) * 0.5d;
+            double midY = (a.Y + b.Y) * 0.5d;
+            Geometry midPoint = GeometryFactory.CreatePoint(new Coordinate(midX, midY));
+            double distance = midPoint.Distance(closestWalkway);
+            if (distance < bestEdgeDistance)
+            {
+                bestEdgeDistance = distance;
+                bestEdge = i;
+            }
+        }
+
+        if (bestEdge < 0)
+        {
+            return elevator;
+        }
+
+        Coordinate edgeA = ring[bestEdge];
+        Coordinate edgeB = ring[bestEdge + 1];
+        double edgeDx = edgeB.X - edgeA.X;
+        double edgeDy = edgeB.Y - edgeA.Y;
+        double edgeLen = Math.Sqrt((edgeDx * edgeDx) + (edgeDy * edgeDy));
+        if (edgeLen < 1e-9d)
+        {
+            return elevator;
+        }
+
+        double normalX = -edgeDy / edgeLen;
+        double normalY = edgeDx / edgeLen;
+
+        Coordinate centroid = elevatorPolygon.Centroid.Coordinate;
+        double edgeMidX = (edgeA.X + edgeB.X) * 0.5d;
+        double edgeMidY = (edgeA.Y + edgeB.Y) * 0.5d;
+        double toCentroidX = centroid.X - edgeMidX;
+        double toCentroidY = centroid.Y - edgeMidY;
+        double dot = (toCentroidX * normalX) + (toCentroidY * normalY);
+        if (dot > 0d)
+        {
+            normalX = -normalX;
+            normalY = -normalY;
+        }
+
+        Coordinate slabC = new(edgeA.X + (normalX * expansionMeters), edgeA.Y + (normalY * expansionMeters));
+        Coordinate slabD = new(edgeB.X + (normalX * expansionMeters), edgeB.Y + (normalY * expansionMeters));
+
+        Polygon slab = GeometryFactory.CreatePolygon(new[]
+        {
+            edgeA,
+            edgeB,
+            slabD,
+            slabC,
+            new Coordinate(edgeA.X, edgeA.Y),
+        });
+
+        Geometry expanded = elevator.Union(slab).Buffer(0d);
+
+        opening = new LineString2D(new[]
+        {
+            new Point2D(slabC.X, slabC.Y),
+            new Point2D(slabD.X, slabD.Y),
+        });
+
+        return expanded;
+    }
+
+    private static Geometry GetLargestPolygon(Geometry geometry)
+    {
+        if (geometry is Polygon)
+        {
+            return geometry;
+        }
+
+        if (geometry is not GeometryCollection collection || collection.NumGeometries == 0)
+        {
+            return geometry;
+        }
+
+        Geometry best = Geometry.DefaultFactory.CreateEmpty(NetTopologySuite.Geometries.Dimension.Surface);
+        double bestArea = 0d;
+        for (int i = 0; i < collection.NumGeometries; i++)
+        {
+            Geometry child = collection.GetGeometryN(i);
+            if (child is Polygon && child.Area > bestArea)
+            {
+                bestArea = child.Area;
+                best = child;
+            }
+        }
+
+        return best;
     }
 
     private static ExportPolygon? ToExportPolygon(

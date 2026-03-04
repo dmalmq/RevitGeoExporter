@@ -111,7 +111,7 @@ public sealed class UnitExtractor
         }
 
         long elementId = floor.Id.Value;
-        if (!TryExtractElementPolygon(floor, out Polygon2D polygon))
+        if (!TryExtractElementPolygons(floor, out List<Polygon2D> basePolygons))
         {
             warnings.Add($"Floor {elementId} geometry could not be extracted.");
             return false;
@@ -136,18 +136,35 @@ public sealed class UnitExtractor
         string? name = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfNameParameterName);
         string? altName = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfAltNameParameterName);
 
-        List<Polygon2D> splitPolygons = splitMask == null
-            ? new List<Polygon2D>()
-            : SplitPolygonByWalls(polygon, splitMask.Geometry);
-
-        if (splitPolygons.Count <= 1)
+        // Split each base polygon independently by walls and collect all results.
+        List<Polygon2D> allPolygons = new();
+        foreach (Polygon2D basePoly in basePolygons)
         {
-            Polygon2D singlePolygon = splitPolygons.Count == 1 ? splitPolygons[0] : polygon;
+            if (splitMask != null)
+            {
+                List<Polygon2D> splitResult = SplitPolygonByWalls(basePoly, splitMask.Geometry);
+                if (splitResult.Count > 0)
+                {
+                    allPolygons.AddRange(splitResult);
+                }
+                else
+                {
+                    allPolygons.Add(basePoly);
+                }
+            }
+            else
+            {
+                allPolygons.Add(basePoly);
+            }
+        }
+
+        if (allPolygons.Count == 1)
+        {
             features = new[]
             {
                 CreateFeature(
                     baseId,
-                    singlePolygon,
+                    allPolygons[0],
                     levelId,
                     zoneInfo,
                     name,
@@ -156,7 +173,7 @@ public sealed class UnitExtractor
             return true;
         }
 
-        List<(Polygon2D Polygon, Point2D Centroid)> orderedParts = splitPolygons
+        List<(Polygon2D Polygon, Point2D Centroid)> orderedParts = allPolygons
             .Select(p => (Polygon: p, Centroid: DisplayPointCalculator.CalculateCentroid(p)))
             .OrderBy(part => part.Centroid.Y)
             .ThenBy(part => part.Centroid.X)
@@ -244,7 +261,7 @@ public sealed class UnitExtractor
         }
 
         long elementId = familyInstance.Id.Value;
-        if (!TryExtractElementPolygon(familyInstance, out Polygon2D polygon))
+        if (!TryExtractElementPolygons(familyInstance, out List<Polygon2D> polygons))
         {
             warnings.Add($"Family instance {elementId} ({familyName}) geometry could not be extracted.");
             return false;
@@ -252,7 +269,7 @@ public sealed class UnitExtractor
 
         feature = CreateFeature(
             sourceElement: familyInstance,
-            polygon: polygon,
+            polygons: polygons,
             levelId: levelId,
             zoneInfo: zoneInfo,
             warnings: warnings);
@@ -478,12 +495,12 @@ public sealed class UnitExtractor
 
         if (footprintPolygons.Count == 0)
         {
-            if (!TryExtractElementPolygon(stairs, out Polygon2D fallback))
+            if (!TryExtractElementPolygons(stairs, out List<Polygon2D> fallbackPolygons))
             {
                 return false;
             }
 
-            polygons = new[] { fallback };
+            polygons = fallbackPolygons;
             return true;
         }
 
@@ -537,9 +554,9 @@ public sealed class UnitExtractor
         return true;
     }
 
-    private bool TryExtractElementPolygon(Element element, out Polygon2D polygon)
+    private bool TryExtractElementPolygons(Element element, out List<Polygon2D> polygons)
     {
-        polygon = null!;
+        polygons = null!;
 
         if (element is Floor floor)
         {
@@ -567,10 +584,10 @@ public sealed class UnitExtractor
             // 5. Sketch — the definitive user-drawn boundary; most reliable fallback.
             if (loops.Count == 0)
             {
-                return TryExtractFloorPolygonFromSketch(floor, out polygon);
+                return TryExtractFloorPolygonsFromSketch(floor, out polygons);
             }
 
-            return BuildPolygonFromLoops(loops, out polygon);
+            return BuildPolygonsFromLoops(loops, out polygons);
         }
         else
         {
@@ -580,13 +597,13 @@ public sealed class UnitExtractor
                 return false;
             }
 
-            return BuildPolygonFromLoops(loops, out polygon);
+            return BuildPolygonsFromLoops(loops, out polygons);
         }
     }
 
-    private bool BuildPolygonFromLoops(List<List<XYZ>> loops, out Polygon2D polygon)
+    private bool BuildPolygonsFromLoops(List<List<XYZ>> loops, out List<Polygon2D> polygons)
     {
-        polygon = null!;
+        polygons = null!;
 
         List<List<Point2D>> projectedLoops = new();
         foreach (List<XYZ> loop in loops)
@@ -603,24 +620,13 @@ public sealed class UnitExtractor
             return false;
         }
 
-        int exteriorIndex = GetExteriorLoopIndex(projectedLoops);
-        IReadOnlyList<Point2D> exterior = projectedLoops[exteriorIndex];
-        List<IReadOnlyList<Point2D>> holes = new();
-        for (int i = 0; i < projectedLoops.Count; i++)
-        {
-            if (i != exteriorIndex)
-            {
-                holes.Add(projectedLoops[i]);
-            }
-        }
-
-        polygon = new Polygon2D(exterior, holes);
-        return true;
+        polygons = ClassifyLoopsIntoPolygons(projectedLoops);
+        return polygons.Count > 0;
     }
 
-    private bool TryExtractFloorPolygonFromSketch(Floor floor, out Polygon2D polygon)
+    private bool TryExtractFloorPolygonsFromSketch(Floor floor, out List<Polygon2D> polygons)
     {
-        polygon = null!;
+        polygons = null!;
         if (floor.SketchId == ElementId.InvalidElementId)
         {
             return false;
@@ -647,13 +653,8 @@ public sealed class UnitExtractor
             return false;
         }
 
-        int exteriorIndex = GetExteriorLoopIndex(projectedLoops);
-        List<IReadOnlyList<Point2D>> holes = projectedLoops
-            .Where((_, i) => i != exteriorIndex)
-            .Cast<IReadOnlyList<Point2D>>()
-            .ToList();
-        polygon = new Polygon2D(projectedLoops[exteriorIndex], holes);
-        return true;
+        polygons = ClassifyLoopsIntoPolygons(projectedLoops);
+        return polygons.Count > 0;
     }
 
     private static List<List<XYZ>> ExtractLoopsFromFloorBottomFaces(Floor floor)
@@ -996,7 +997,19 @@ public sealed class UnitExtractor
 
             if (healed is MultiPolygon healedMulti && healedMulti.NumGeometries > 0)
             {
-                return healedMulti.GetGeometryN(0) as Polygon;
+                // Return the largest polygon by area instead of arbitrary first element.
+                Polygon? largest = null;
+                double largestArea = 0d;
+                for (int i = 0; i < healedMulti.NumGeometries; i++)
+                {
+                    if (healedMulti.GetGeometryN(i) is Polygon candidate && candidate.Area > largestArea)
+                    {
+                        largestArea = candidate.Area;
+                        largest = candidate;
+                    }
+                }
+
+                return largest;
             }
         }
 
@@ -1112,6 +1125,114 @@ public sealed class UnitExtractor
         }
 
         return points;
+    }
+
+    private static List<Polygon2D> ClassifyLoopsIntoPolygons(List<List<Point2D>> projectedLoops)
+    {
+        // Build shell-only NTS polygons for each loop to leverage spatial containment checks.
+        var loopPolygons = new List<(List<Point2D> Points, Polygon NtsPolygon, double Area)>();
+        foreach (List<Point2D> loop in projectedLoops)
+        {
+            if (!TryCreateLinearRing(loop, out LinearRing? ring) || ring == null)
+            {
+                continue;
+            }
+
+            Polygon ntsPoly = GeometryFactory.CreatePolygon(ring);
+            if (ntsPoly.IsEmpty)
+            {
+                continue;
+            }
+
+            loopPolygons.Add((loop, ntsPoly, ntsPoly.Area));
+        }
+
+        if (loopPolygons.Count == 0)
+        {
+            return new List<Polygon2D>();
+        }
+
+        // Classify each loop: if no larger loop contains its interior point, it's an exterior.
+        int count = loopPolygons.Count;
+        var isExterior = new bool[count];
+        var parentIndex = new int[count]; // index of the smallest containing exterior, or -1
+
+        for (int i = 0; i < count; i++)
+        {
+            parentIndex[i] = -1;
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            NetTopologySuite.Geometries.Point interiorPoint = loopPolygons[i].NtsPolygon.InteriorPoint;
+            bool contained = false;
+            for (int j = 0; j < count; j++)
+            {
+                if (j == i)
+                {
+                    continue;
+                }
+
+                if (loopPolygons[j].Area > loopPolygons[i].Area &&
+                    loopPolygons[j].NtsPolygon.Contains(interiorPoint))
+                {
+                    contained = true;
+                    // Track the smallest containing loop as potential parent.
+                    if (parentIndex[i] == -1 || loopPolygons[j].Area < loopPolygons[parentIndex[i]].Area)
+                    {
+                        parentIndex[i] = j;
+                    }
+                }
+            }
+
+            if (!contained)
+            {
+                isExterior[i] = true;
+            }
+        }
+
+        // Safety fallback: if nothing classified as exterior, use largest-area heuristic.
+        if (!isExterior.Any(e => e))
+        {
+            int largestIndex = 0;
+            for (int i = 1; i < count; i++)
+            {
+                if (loopPolygons[i].Area > loopPolygons[largestIndex].Area)
+                {
+                    largestIndex = i;
+                }
+            }
+
+            isExterior[largestIndex] = true;
+        }
+
+        // Assemble polygons: each exterior collects its direct hole children.
+        var result = new List<Polygon2D>();
+        for (int i = 0; i < count; i++)
+        {
+            if (!isExterior[i])
+            {
+                continue;
+            }
+
+            var holes = new List<IReadOnlyList<Point2D>>();
+            for (int j = 0; j < count; j++)
+            {
+                if (j == i || isExterior[j])
+                {
+                    continue;
+                }
+
+                if (parentIndex[j] == i)
+                {
+                    holes.Add(loopPolygons[j].Points);
+                }
+            }
+
+            result.Add(new Polygon2D(loopPolygons[i].Points, holes));
+        }
+
+        return result;
     }
 
     private static int GetExteriorLoopIndex(IReadOnlyList<IReadOnlyList<Point2D>> loops)
