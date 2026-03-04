@@ -12,13 +12,15 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
-        bool splitUnitsByWalls)
+        bool splitUnitsByWalls,
+        UiLanguage uiLanguage)
     {
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
         TargetEpsg = targetEpsg;
         FeatureTypes = featureTypes;
         SplitUnitsByWalls = splitUnitsByWalls;
+        UiLanguage = uiLanguage;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -30,4 +32,6 @@ public sealed class ExportDialogResult
     public ExportFeatureType FeatureTypes { get; }
 
     public bool SplitUnitsByWalls { get; }
+
+    public UiLanguage UiLanguage { get; }
 }

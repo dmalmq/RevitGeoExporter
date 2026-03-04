@@ -469,7 +469,8 @@ public sealed class ExportDialog : WinFormsForm
             outputDirectory,
             epsg,
             featureTypes,
-            _splitByWallsCheckBox.Checked);
+            _splitByWallsCheckBox.Checked,
+            _language);
         DialogResult = DialogResult.OK;
         Close();
     }
