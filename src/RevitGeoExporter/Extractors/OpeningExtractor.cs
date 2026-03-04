@@ -336,12 +336,6 @@ public sealed class OpeningExtractor
         List<BoundarySegment> segments = new();
         foreach (ExportPolygon feature in unitFeatures)
         {
-            if (TryGetCategory(feature, out string category) &&
-                string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
             foreach (Polygon2D polygon in feature.Polygons)
             {
                 AddRingSegments(segments, polygon.ExteriorRing);

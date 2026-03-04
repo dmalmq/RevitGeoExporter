@@ -20,6 +20,20 @@ namespace RevitGeoExporter.Extractors;
 public sealed class UnitExtractor
 {
     private const double MinSplitAreaSquareMeters = 0.05d;
+    private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
+    private const double SquareFeetToSquareMeters = 0.09290304d;
+    private const double MinEscalatorLengthMeters = 0.50d;
+    private const double MinEscalatorWidthMeters = 0.30d;
+    private const double EscalatorFootprintPaddingMeters = 0.02d;
+    private const double FloorAreaFallbackRatio = 0.85d;
+    private const double MinFloorAreaForSanityCheckSquareMeters = 0.25d;
+    private static readonly string[] FloorNamePrefixes = { "j ", "j　", "j" };
+    private static readonly string[] FloorNameSuffixes =
+    {
+        ZoneNameParser.DefaultSuffix,
+        "_床",
+        "＿床",
+    };
 
     private static readonly GeometryFactory GeometryFactory =
         new(new PrecisionModel(1_000_000d));
@@ -111,18 +125,41 @@ public sealed class UnitExtractor
         }
 
         long elementId = floor.Id.Value;
+        string typeName = GetElementTypeName(floor);
+        if (!TryResolveFloorZoneName(typeName, out string zoneName, out bool prefixMatched))
+        {
+            warnings.Add(
+                $"Floor {elementId} type '{typeName}' was skipped because it does not match the export floor naming convention.");
+            return false;
+        }
+
+        if (!prefixMatched)
+        {
+            warnings.Add(
+                $"Floor {elementId} type '{typeName}' is missing the expected '{ZoneNameParser.DefaultPrefix}' prefix. Parsed zone '{zoneName}' using suffix matching.");
+        }
+
         if (!TryExtractElementPolygons(floor, out List<Polygon2D> basePolygons))
         {
             warnings.Add($"Floor {elementId} geometry could not be extracted.");
             return false;
         }
 
-        string typeName = GetElementTypeName(floor);
-        ZoneNameParseResult parsed = ZoneNameParser.Parse(typeName);
-        string zoneName = parsed.PatternMatched ? parsed.ZoneName : typeName;
-        if (!parsed.PatternMatched)
+        if (TryGetFloorAreaSquareMeters(floor, out double expectedFloorAreaSquareMeters) &&
+            expectedFloorAreaSquareMeters >= MinFloorAreaForSanityCheckSquareMeters)
         {
-            warnings.Add($"Floor {elementId} type '{typeName}' did not match expected pattern.");
+            double extractedAreaSquareMeters = ComputeTotalAreaSquareMeters(basePolygons);
+            if (extractedAreaSquareMeters < (expectedFloorAreaSquareMeters * FloorAreaFallbackRatio) &&
+                TryExtractFloorPolygonsFromSketch(floor, out List<Polygon2D> sketchPolygons))
+            {
+                double sketchAreaSquareMeters = ComputeTotalAreaSquareMeters(sketchPolygons);
+                if (sketchAreaSquareMeters > extractedAreaSquareMeters)
+                {
+                    warnings.Add(
+                        $"Floor {elementId} geometry extraction area ({extractedAreaSquareMeters:F2} m²) was significantly below Revit floor area ({expectedFloorAreaSquareMeters:F2} m²). Using sketch profile fallback ({sketchAreaSquareMeters:F2} m²).");
+                    basePolygons = sketchPolygons;
+                }
+            }
         }
 
         bool foundZone = _zoneCatalog.TryGetZoneInfo(zoneName, out ZoneInfo zoneInfo);
@@ -216,6 +253,7 @@ public sealed class UnitExtractor
 
     public bool TryCreateStairsUnit(
         Stairs stairs,
+        ViewPlan? view,
         string levelId,
         ICollection<string> warnings,
         out ExportPolygon? feature)
@@ -227,7 +265,7 @@ public sealed class UnitExtractor
         }
 
         long elementId = stairs.Id.Value;
-        if (!TryExtractStairsPolygons(stairs, warnings, out IReadOnlyList<Polygon2D> polygons) || polygons.Count == 0)
+        if (!TryExtractStairsPolygons(stairs, view, warnings, out IReadOnlyList<Polygon2D> polygons) || polygons.Count == 0)
         {
             warnings.Add($"Stairs {elementId} geometry could not be extracted.");
             return false;
@@ -244,6 +282,7 @@ public sealed class UnitExtractor
 
     public bool TryCreateFamilyUnit(
         FamilyInstance familyInstance,
+        ViewPlan? view,
         string levelId,
         ICollection<string> warnings,
         out ExportPolygon? feature)
@@ -258,6 +297,23 @@ public sealed class UnitExtractor
         if (!_zoneCatalog.TryGetFamilyInfo(familyName, out ZoneInfo zoneInfo))
         {
             return false;
+        }
+
+        if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryCreateEscalatorRectangle(familyInstance, view, warnings, out Polygon2D escalatorPolygon))
+            {
+                feature = CreateFeature(
+                    sourceElement: familyInstance,
+                    polygon: escalatorPolygon,
+                    levelId: levelId,
+                    zoneInfo: zoneInfo,
+                    warnings: warnings);
+                return true;
+            }
+
+            warnings.Add(
+                $"Escalator {familyInstance.Id.Value} rectangle footprint could not be derived. Falling back to solid geometry.");
         }
 
         long elementId = familyInstance.Id.Value;
@@ -364,28 +420,28 @@ public sealed class UnitExtractor
 
     private List<Polygon2D> SplitPolygonByWalls(Polygon2D polygon, Geometry wallLines)
     {
-        Polygon? sourcePolygon = ToNtsPolygon(polygon);
-        if (sourcePolygon == null || sourcePolygon.IsEmpty)
+        Geometry? sourceGeometry = ToNtsGeometry(polygon);
+        if (sourceGeometry == null || sourceGeometry.IsEmpty)
         {
             return new List<Polygon2D>();
         }
 
         // Extend wall lines well beyond the polygon bounds so they fully cross it.
-        double extendDist = sourcePolygon.EnvelopeInternal.Diameter * 2.0;
+        double extendDist = sourceGeometry.EnvelopeInternal.Diameter * 2.0;
         Geometry extendedLines = ExtendLineStrings(wallLines, extendDist);
 
         Geometry nodedLines;
         try
         {
             // Node the boundary and wall lines together so intersections become shared vertices.
-            nodedLines = sourcePolygon.Boundary.Union(extendedLines);
+            nodedLines = sourceGeometry.Boundary.Union(extendedLines);
         }
         catch (TopologyException)
         {
             // Fall back to reduced precision when near-coincident coordinates
             // cause a non-noded intersection in the overlay engine.
             var reducer = new GeometryPrecisionReducer(new PrecisionModel(100_000d));
-            Geometry reducedBoundary = reducer.Reduce(sourcePolygon.Boundary);
+            Geometry reducedBoundary = reducer.Reduce(sourceGeometry.Boundary);
             Geometry reducedLines = reducer.Reduce(extendedLines);
             try
             {
@@ -409,7 +465,7 @@ public sealed class UnitExtractor
             }
 
             // Keep only faces whose interior lies inside the original polygon.
-            if (sourcePolygon.Contains(resultPoly.InteriorPoint))
+            if (sourceGeometry.Contains(resultPoly.InteriorPoint))
             {
                 AddPolygonIfValid(results, resultPoly);
             }
@@ -445,10 +501,20 @@ public sealed class UnitExtractor
 
     private bool TryExtractStairsPolygons(
         Stairs stairs,
+        ViewPlan? view,
         ICollection<string> warnings,
         out IReadOnlyList<Polygon2D> polygons)
     {
         polygons = Array.Empty<Polygon2D>();
+
+        if (view != null &&
+            TryExtractElementPolygonsInView(stairs, view, out List<Polygon2D> viewPolygons) &&
+            viewPolygons.Count > 0)
+        {
+            polygons = viewPolygons;
+            return true;
+        }
+
         List<Polygon2D> footprintPolygons = new();
 
         foreach (ElementId runId in stairs.GetStairsRuns())
@@ -507,10 +573,10 @@ public sealed class UnitExtractor
         List<Geometry> geometries = new();
         foreach (Polygon2D poly in footprintPolygons)
         {
-            Polygon? ntsPolygon = ToNtsPolygon(poly);
-            if (ntsPolygon != null && !ntsPolygon.IsEmpty)
+            Geometry? ntsGeometry = ToNtsGeometry(poly);
+            if (ntsGeometry != null && !ntsGeometry.IsEmpty)
             {
-                geometries.Add(ntsPolygon);
+                AddPolygonGeometryParts(geometries, ntsGeometry);
             }
         }
 
@@ -554,34 +620,70 @@ public sealed class UnitExtractor
         return true;
     }
 
+    private bool TryExtractElementPolygonsInView(Element element, View view, out List<Polygon2D> polygons)
+    {
+        polygons = null!;
+        if (element == null || view == null)
+        {
+            return false;
+        }
+
+        List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(
+            element,
+            includeNonVisibleObjects: false,
+            view: view);
+
+        if (loops.Count == 0)
+        {
+            loops = ExtractLoopsFromSolidGeometry(
+                element,
+                includeNonVisibleObjects: true,
+                view: view);
+        }
+
+        if (loops.Count == 0)
+        {
+            return false;
+        }
+
+        return BuildPolygonsFromLoops(loops, out polygons);
+    }
+
     private bool TryExtractElementPolygons(Element element, out List<Polygon2D> polygons)
     {
         polygons = null!;
 
         if (element is Floor floor)
         {
-            // 1. Bottom faces — most reliable for slabs modelled correctly.
+            // 1. Sketch profile — authoritative user-drawn footprint and most
+            // robust for complex floors with large interior voids.
+            if (TryExtractFloorPolygonsFromSketch(floor, out polygons))
+            {
+                return true;
+            }
+
+            // 2. Bottom faces.
             List<List<XYZ>> loops = ExtractLoopsFromFloorBottomFaces(floor);
 
-            // 2. Top faces — same projected footprint; helps thin/reversed floors.
+            // 3. Top faces — same projected footprint; helps thin/reversed floors.
             if (loops.Count == 0)
             {
                 loops = ExtractLoopsFromFloorTopFaces(floor);
             }
 
-            // 3. Solid geometry (visible objects only).
+            // 4. Solid geometry (visible objects only).
             if (loops.Count == 0)
             {
                 loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: false);
             }
 
-            // 4. Solid geometry (include non-visible objects).
+            // 5. Solid geometry (include non-visible objects).
             if (loops.Count == 0)
             {
                 loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: true);
             }
 
-            // 5. Sketch — the definitive user-drawn boundary; most reliable fallback.
+            // 6. Last fallback to sketch (in case sketch became available after API retries).
             if (loops.Count == 0)
             {
                 return TryExtractFloorPolygonsFromSketch(floor, out polygons);
@@ -697,7 +799,10 @@ public sealed class UnitExtractor
         return loops;
     }
 
-    private static List<List<XYZ>> ExtractLoopsFromSolidGeometry(Element element, bool includeNonVisibleObjects)
+    private static List<List<XYZ>> ExtractLoopsFromSolidGeometry(
+        Element element,
+        bool includeNonVisibleObjects,
+        View? view = null)
     {
         Options options = new()
         {
@@ -705,6 +810,10 @@ public sealed class UnitExtractor
             ComputeReferences = false,
             IncludeNonVisibleObjects = includeNonVisibleObjects,
         };
+        if (view != null)
+        {
+            options.View = view;
+        }
 
         GeometryElement? geometry = element.get_Geometry(options);
         if (geometry == null)
@@ -970,7 +1079,7 @@ public sealed class UnitExtractor
         return GeometryFactory.CreateLineString(newCoords);
     }
 
-    private static Polygon? ToNtsPolygon(Polygon2D polygon)
+    private static Geometry? ToNtsGeometry(Polygon2D polygon)
     {
         if (!TryCreateLinearRing(polygon.ExteriorRing, out LinearRing? shell))
         {
@@ -990,30 +1099,39 @@ public sealed class UnitExtractor
         if (!created.IsValid)
         {
             Geometry healed = created.Buffer(0d);
-            if (healed is Polygon healedPolygon)
-            {
-                return healedPolygon;
-            }
-
-            if (healed is MultiPolygon healedMulti && healedMulti.NumGeometries > 0)
-            {
-                // Return the largest polygon by area instead of arbitrary first element.
-                Polygon? largest = null;
-                double largestArea = 0d;
-                for (int i = 0; i < healedMulti.NumGeometries; i++)
-                {
-                    if (healedMulti.GetGeometryN(i) is Polygon candidate && candidate.Area > largestArea)
-                    {
-                        largestArea = candidate.Area;
-                        largest = candidate;
-                    }
-                }
-
-                return largest;
-            }
+            return healed;
         }
 
         return created;
+    }
+
+    private static void AddPolygonGeometryParts(ICollection<Geometry> target, Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return;
+        }
+
+        switch (geometry)
+        {
+            case Polygon polygon:
+                target.Add(polygon);
+                break;
+            case MultiPolygon multiPolygon:
+                for (int i = 0; i < multiPolygon.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, multiPolygon.GetGeometryN(i));
+                }
+
+                break;
+            case GeometryCollection collection:
+                for (int i = 0; i < collection.NumGeometries; i++)
+                {
+                    AddPolygonGeometryParts(target, collection.GetGeometryN(i));
+                }
+
+                break;
+        }
     }
 
     private static bool TryCreateLinearRing(IReadOnlyList<Point2D> ringPoints, out LinearRing? ring)
@@ -1297,5 +1415,284 @@ public sealed class UnitExtractor
         }
 
         return string.IsNullOrWhiteSpace(familyName) ? "<unknown-family>" : familyName!.Trim();
+    }
+
+    private bool TryCreateEscalatorRectangle(
+        FamilyInstance escalator,
+        ViewPlan? view,
+        ICollection<string> warnings,
+        out Polygon2D polygon)
+    {
+        polygon = null!;
+        BoundingBoxXYZ? box = escalator.get_BoundingBox(view) ?? escalator.get_BoundingBox(null);
+        if (box == null)
+        {
+            return false;
+        }
+
+        if (!TryGetEscalatorAxis(escalator, out Point2D axis))
+        {
+            warnings.Add($"Escalator {escalator.Id.Value} axis could not be determined.");
+            return false;
+        }
+
+        Point2D perpendicular = new(-axis.Y, axis.X);
+        Point2D center = GetEscalatorCenter(escalator, box);
+        List<Point2D> corners = GetBoundingBoxCorners(box).Select(ProjectPoint).ToList();
+        if (corners.Count == 0)
+        {
+            return false;
+        }
+
+        double minAlong = double.MaxValue;
+        double maxAlong = double.MinValue;
+        double minAcross = double.MaxValue;
+        double maxAcross = double.MinValue;
+        for (int i = 0; i < corners.Count; i++)
+        {
+            Point2D point = corners[i];
+            double dx = point.X - center.X;
+            double dy = point.Y - center.Y;
+            double along = (dx * axis.X) + (dy * axis.Y);
+            double across = (dx * perpendicular.X) + (dy * perpendicular.Y);
+
+            if (along < minAlong)
+            {
+                minAlong = along;
+            }
+
+            if (along > maxAlong)
+            {
+                maxAlong = along;
+            }
+
+            if (across < minAcross)
+            {
+                minAcross = across;
+            }
+
+            if (across > maxAcross)
+            {
+                maxAcross = across;
+            }
+        }
+
+        if ((maxAlong - minAlong) < MinEscalatorLengthMeters ||
+            (maxAcross - minAcross) < MinEscalatorWidthMeters)
+        {
+            return false;
+        }
+
+        minAlong -= EscalatorFootprintPaddingMeters;
+        maxAlong += EscalatorFootprintPaddingMeters;
+        minAcross -= EscalatorFootprintPaddingMeters;
+        maxAcross += EscalatorFootprintPaddingMeters;
+
+        Point2D p1 = ToWorldPoint(center, axis, perpendicular, minAlong, minAcross);
+        Point2D p2 = ToWorldPoint(center, axis, perpendicular, maxAlong, minAcross);
+        Point2D p3 = ToWorldPoint(center, axis, perpendicular, maxAlong, maxAcross);
+        Point2D p4 = ToWorldPoint(center, axis, perpendicular, minAlong, maxAcross);
+
+        polygon = new Polygon2D(new[] { p1, p2, p3, p4, p1 });
+        return true;
+    }
+
+    private bool TryGetEscalatorAxis(FamilyInstance escalator, out Point2D axis)
+    {
+        axis = default;
+        if (escalator.Location is LocationCurve locationCurve && locationCurve.Curve != null)
+        {
+            List<Point2D> curvePoints = ProjectCurve(locationCurve.Curve);
+            if (curvePoints.Count >= 2 &&
+                TryNormalize(
+                    curvePoints[curvePoints.Count - 1].X - curvePoints[0].X,
+                    curvePoints[curvePoints.Count - 1].Y - curvePoints[0].Y,
+                    out axis))
+            {
+                return true;
+            }
+        }
+
+        Point2D facing = ProjectVector(escalator.FacingOrientation);
+        if (TryNormalize(facing.X, facing.Y, out axis))
+        {
+            return true;
+        }
+
+        Point2D hand = ProjectVector(escalator.HandOrientation);
+        return TryNormalize(hand.X, hand.Y, out axis);
+    }
+
+    private Point2D GetEscalatorCenter(FamilyInstance escalator, BoundingBoxXYZ box)
+    {
+        if (escalator.Location is LocationPoint locationPoint)
+        {
+            return ProjectPoint(locationPoint.Point);
+        }
+
+        if (escalator.Location is LocationCurve locationCurve && locationCurve.Curve != null)
+        {
+            List<Point2D> points = ProjectCurve(locationCurve.Curve);
+            if (points.Count >= 2)
+            {
+                return new Point2D(
+                    (points[0].X + points[points.Count - 1].X) * 0.5d,
+                    (points[0].Y + points[points.Count - 1].Y) * 0.5d);
+            }
+        }
+
+        XYZ center3d = new(
+            (box.Min.X + box.Max.X) * 0.5d,
+            (box.Min.Y + box.Max.Y) * 0.5d,
+            (box.Min.Z + box.Max.Z) * 0.5d);
+        return ProjectPoint(center3d);
+    }
+
+    private Point2D ProjectVector(XYZ vector)
+    {
+        XYZ sharedVector = _internalToSharedTransform.OfVector(vector);
+        return new Point2D(sharedVector.X * FeetToMeters, sharedVector.Y * FeetToMeters);
+    }
+
+    private static Point2D ToWorldPoint(
+        Point2D center,
+        Point2D axis,
+        Point2D perpendicular,
+        double along,
+        double across)
+    {
+        return new Point2D(
+            center.X + (axis.X * along) + (perpendicular.X * across),
+            center.Y + (axis.Y * along) + (perpendicular.Y * across));
+    }
+
+    private static bool TryNormalize(double x, double y, out Point2D result)
+    {
+        result = default;
+        double length = Math.Sqrt((x * x) + (y * y));
+        if (length <= 1e-9d)
+        {
+            return false;
+        }
+
+        result = new Point2D(x / length, y / length);
+        return true;
+    }
+
+    private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
+    {
+        return new List<XYZ>
+        {
+            new(box.Min.X, box.Min.Y, box.Min.Z),
+            new(box.Max.X, box.Min.Y, box.Min.Z),
+            new(box.Max.X, box.Max.Y, box.Min.Z),
+            new(box.Min.X, box.Max.Y, box.Min.Z),
+            new(box.Min.X, box.Min.Y, box.Max.Z),
+            new(box.Max.X, box.Min.Y, box.Max.Z),
+            new(box.Max.X, box.Max.Y, box.Max.Z),
+            new(box.Min.X, box.Max.Y, box.Max.Z),
+        };
+    }
+
+    private static bool TryResolveFloorZoneName(
+        string typeName,
+        out string zoneName,
+        out bool prefixMatched)
+    {
+        zoneName = string.Empty;
+        prefixMatched = false;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            return false;
+        }
+
+        string trimmed = typeName.Trim();
+        if (!TryStripFloorSuffix(trimmed, out string withoutSuffix))
+        {
+            return false;
+        }
+
+        if (TryStripFloorPrefix(withoutSuffix, out string withoutPrefix))
+        {
+            prefixMatched = true;
+            zoneName = withoutPrefix.Trim();
+            return zoneName.Length > 0;
+        }
+
+        zoneName = withoutSuffix.Trim();
+        return zoneName.Length > 0;
+    }
+
+    private static bool TryStripFloorPrefix(string value, out string stripped)
+    {
+        for (int i = 0; i < FloorNamePrefixes.Length; i++)
+        {
+            string prefix = FloorNamePrefixes[i];
+            if (value.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                stripped = value.Substring(prefix.Length);
+                return true;
+            }
+        }
+
+        stripped = value;
+        return false;
+    }
+
+    private static bool TryStripFloorSuffix(string value, out string stripped)
+    {
+        for (int i = 0; i < FloorNameSuffixes.Length; i++)
+        {
+            string suffix = FloorNameSuffixes[i];
+            if (value.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                stripped = value.Substring(0, value.Length - suffix.Length);
+                return true;
+            }
+        }
+
+        stripped = value;
+        return false;
+    }
+
+    private static bool TryGetFloorAreaSquareMeters(Floor floor, out double areaSquareMeters)
+    {
+        areaSquareMeters = 0d;
+        Parameter? areaParameter = floor.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+        if (areaParameter == null || areaParameter.StorageType != StorageType.Double)
+        {
+            return false;
+        }
+
+        double squareFeet = areaParameter.AsDouble();
+        if (squareFeet <= 0d)
+        {
+            return false;
+        }
+
+        areaSquareMeters = squareFeet * SquareFeetToSquareMeters;
+        return true;
+    }
+
+    private static double ComputeTotalAreaSquareMeters(IReadOnlyList<Polygon2D> polygons)
+    {
+        double total = 0d;
+        for (int i = 0; i < polygons.Count; i++)
+        {
+            total += ComputePolygonAreaSquareMeters(polygons[i]);
+        }
+
+        return total;
+    }
+
+    private static double ComputePolygonAreaSquareMeters(Polygon2D polygon)
+    {
+        double area = Math.Abs(GetSignedArea(polygon.ExteriorRing));
+        for (int i = 0; i < polygon.InteriorRings.Count; i++)
+        {
+            area -= Math.Abs(GetSignedArea(polygon.InteriorRings[i]));
+        }
+
+        return Math.Max(0d, area);
     }
 }
