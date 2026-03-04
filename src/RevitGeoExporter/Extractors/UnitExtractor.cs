@@ -126,17 +126,21 @@ public sealed class UnitExtractor
 
         long elementId = floor.Id.Value;
         string typeName = GetElementTypeName(floor);
-        if (!TryResolveFloorZoneName(typeName, out string zoneName, out bool prefixMatched))
+        string zoneName;
+        if (TryResolveFloorZoneName(typeName, out string parsedZoneName, out bool prefixMatched))
         {
-            warnings.Add(
-                $"Floor {elementId} type '{typeName}' was skipped because it does not match the export floor naming convention.");
-            return false;
+            zoneName = parsedZoneName;
+            if (!prefixMatched)
+            {
+                warnings.Add(
+                    $"Floor {elementId} type '{typeName}' is missing the expected '{ZoneNameParser.DefaultPrefix}' prefix. Parsed zone '{zoneName}' using suffix matching.");
+            }
         }
-
-        if (!prefixMatched)
+        else
         {
+            zoneName = string.IsNullOrWhiteSpace(typeName) ? $"<floor-{elementId}>" : typeName.Trim();
             warnings.Add(
-                $"Floor {elementId} type '{typeName}' is missing the expected '{ZoneNameParser.DefaultPrefix}' prefix. Parsed zone '{zoneName}' using suffix matching.");
+                $"Floor {elementId} type '{typeName}' does not match the expected floor naming convention. Using full type name '{zoneName}' for zone lookup.");
         }
 
         if (!TryExtractElementPolygons(floor, out List<Polygon2D> basePolygons))
