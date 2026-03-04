@@ -29,6 +29,8 @@ public sealed class FloorGeoPackageExporter
     private const double MaxElevatorWalkwayProximityMeters = 0.50d;
     private const double MinEdgeLengthMeters = 0.10d;
     private const double MinimumUnitAreaSquareMeters = 0.01d;
+    private const double MinVoidCoverageForVerticalFill = 0.25d;
+    private const double MaxVoidToVerticalAreaRatio = 4.0d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
@@ -486,6 +488,8 @@ public sealed class FloorGeoPackageExporter
                 record.Geometry,
                 preservedVoids);
         }
+
+        ReassignInteriorVoidsToVerticalUnits(converted, warnings);
         CloseSmallGaps(converted);
 
         List<Geometry> expandedElevators = new();
@@ -635,6 +639,121 @@ public sealed class FloorGeoPackageExporter
         }
     }
 
+    private static void ReassignInteriorVoidsToVerticalUnits(
+        List<UnitGeometryRecord> records,
+        ICollection<string> warnings)
+    {
+        List<int> verticalIndices = new();
+        for (int i = 0; i < records.Count; i++)
+        {
+            if (IsVerticalFillCategory(records[i].Category))
+            {
+                verticalIndices.Add(i);
+            }
+        }
+
+        if (verticalIndices.Count == 0)
+        {
+            return;
+        }
+
+        for (int i = 0; i < records.Count; i++)
+        {
+            UnitGeometryRecord owner = records[i];
+            if (owner.PreservedVoids.IsEmpty || IsVerticalFillCategory(owner.Category))
+            {
+                continue;
+            }
+
+            List<Geometry> ownerVoids = new();
+            AddPolygonGeometryParts(ownerVoids, owner.PreservedVoids);
+            if (ownerVoids.Count == 0)
+            {
+                continue;
+            }
+
+            Geometry updatedMask = owner.PreservedVoids;
+            bool maskChanged = false;
+
+            for (int voidIndex = 0; voidIndex < ownerVoids.Count; voidIndex++)
+            {
+                Geometry voidPolygon = ownerVoids[voidIndex];
+                if (voidPolygon.IsEmpty || voidPolygon.Area < MinimumUnitAreaSquareMeters)
+                {
+                    continue;
+                }
+
+                int bestVerticalIndex = -1;
+                double bestOverlapArea = 0d;
+                for (int verticalListIndex = 0; verticalListIndex < verticalIndices.Count; verticalListIndex++)
+                {
+                    int verticalIndex = verticalIndices[verticalListIndex];
+                    if (verticalIndex == i)
+                    {
+                        continue;
+                    }
+
+                    double overlapArea = ComputeIntersectionArea(records[verticalIndex].Geometry, voidPolygon);
+                    if (overlapArea > bestOverlapArea)
+                    {
+                        bestOverlapArea = overlapArea;
+                        bestVerticalIndex = verticalIndex;
+                    }
+                }
+
+                if (bestVerticalIndex < 0 || bestOverlapArea <= 0d)
+                {
+                    continue;
+                }
+
+                Geometry targetGeometry = records[bestVerticalIndex].Geometry;
+                double targetArea = targetGeometry.Area;
+                if (targetArea <= 0d)
+                {
+                    continue;
+                }
+
+                double voidArea = voidPolygon.Area;
+                bool hasSufficientOverlap = bestOverlapArea >= (voidArea * MinVoidCoverageForVerticalFill);
+                bool isComparableSize = voidArea <= (targetArea * MaxVoidToVerticalAreaRatio);
+                if (!hasSufficientOverlap || !isComparableSize)
+                {
+                    continue;
+                }
+
+                UnitGeometryRecord target = records[bestVerticalIndex];
+                Geometry expandedTarget = SafeOverlay(
+                    target.Geometry,
+                    voidPolygon,
+                    (a, b) => a.Union(b).Buffer(0d),
+                    warnings);
+                records[bestVerticalIndex] = new UnitGeometryRecord(
+                    target.Attributes,
+                    target.Category,
+                    target.IsElevator,
+                    expandedTarget,
+                    target.PreservedVoids);
+
+                updatedMask = SafeOverlay(
+                    updatedMask,
+                    voidPolygon,
+                    (a, b) => a.Difference(b).Buffer(0d),
+                    warnings);
+                maskChanged = true;
+            }
+
+            if (maskChanged)
+            {
+                records[i] = new UnitGeometryRecord(
+                    owner.Attributes,
+                    owner.Category,
+                    owner.IsElevator,
+                    owner.Geometry,
+                    updatedMask);
+            }
+        }
+    }
+
     private static void CollectInteriorVoids(Geometry geometry, ICollection<Geometry> voidPolygons)
     {
         if (geometry == null || geometry.IsEmpty)
@@ -673,6 +792,33 @@ public sealed class FloorGeoPackageExporter
             for (int i = 0; i < collection.NumGeometries; i++)
             {
                 CollectInteriorVoids(collection.GetGeometryN(i), voidPolygons);
+            }
+        }
+    }
+
+    private static double ComputeIntersectionArea(Geometry a, Geometry b)
+    {
+        if (a == null || b == null || a.IsEmpty || b.IsEmpty)
+        {
+            return 0d;
+        }
+
+        try
+        {
+            return a.Intersection(b).Area;
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reducedA = reducer.Reduce(a);
+                Geometry reducedB = reducer.Reduce(b);
+                return reducedA.Intersection(reducedB).Area;
+            }
+            catch (TopologyException)
+            {
+                return 0d;
             }
         }
     }
@@ -1067,6 +1213,12 @@ public sealed class FloorGeoPackageExporter
         }
 
         return string.Empty;
+    }
+
+    private static bool IsVerticalFillCategory(string category)
+    {
+        return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Dictionary<long, string> BuildLevelIdMap(
