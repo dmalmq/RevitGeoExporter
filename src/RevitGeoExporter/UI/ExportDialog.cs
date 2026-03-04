@@ -13,6 +13,7 @@ namespace RevitGeoExporter.UI;
 
 public sealed class ExportDialog : WinFormsForm
 {
+    private readonly ComboBox _languageComboBox = new();
     private readonly CheckedListBox _viewList = new();
     private readonly TextBox _outputDirectoryTextBox = new();
     private readonly ComboBox _crsPresetComboBox = new();
@@ -22,6 +23,18 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
     private readonly CheckBox _splitByWallsCheckBox = new();
+    private readonly GroupBox _viewsGroup = new();
+    private readonly GroupBox _optionsGroup = new();
+    private readonly Button _selectAllButton = new();
+    private readonly Button _clearAllButton = new();
+    private readonly Button _browseButton = new();
+    private readonly Button _cancelButton = new();
+    private readonly Button _exportButton = new();
+    private readonly Label _languageLabel = new();
+    private readonly Label _featureTypesLabel = new();
+    private readonly Label _outputDirectoryLabel = new();
+    private readonly Label _crsLabel = new();
+    private UiLanguage _language = UiLanguage.English;
 
     private readonly IReadOnlyList<ViewSelectionItem> _viewItems;
 
@@ -86,11 +99,7 @@ public sealed class ExportDialog : WinFormsForm
 
     private WinFormsControl BuildViewsPanel()
     {
-        GroupBox group = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = "Plan Views",
-        };
+        _viewsGroup.Dock = DockStyle.Fill;
 
         TableLayoutPanel panel = new()
         {
@@ -101,7 +110,7 @@ public sealed class ExportDialog : WinFormsForm
         };
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 42f));
-        group.Controls.Add(panel);
+        _viewsGroup.Controls.Add(panel);
 
         _viewList.Dock = DockStyle.Fill;
         _viewList.CheckOnClick = true;
@@ -115,13 +124,9 @@ public sealed class ExportDialog : WinFormsForm
             FlowDirection = FlowDirection.LeftToRight,
         };
 
-        Button selectAllButton = new()
-        {
-            Text = "Select All",
-            Width = 100,
-            Height = 28,
-        };
-        selectAllButton.Click += (_, _) =>
+        _selectAllButton.Width = 100;
+        _selectAllButton.Height = 28;
+        _selectAllButton.Click += (_, _) =>
         {
             for (int i = 0; i < _viewList.Items.Count; i++)
             {
@@ -129,13 +134,9 @@ public sealed class ExportDialog : WinFormsForm
             }
         };
 
-        Button clearAllButton = new()
-        {
-            Text = "Clear All",
-            Width = 100,
-            Height = 28,
-        };
-        clearAllButton.Click += (_, _) =>
+        _clearAllButton.Width = 100;
+        _clearAllButton.Height = 28;
+        _clearAllButton.Click += (_, _) =>
         {
             for (int i = 0; i < _viewList.Items.Count; i++)
             {
@@ -143,28 +144,26 @@ public sealed class ExportDialog : WinFormsForm
             }
         };
 
-        viewActions.Controls.Add(selectAllButton);
-        viewActions.Controls.Add(clearAllButton);
+        viewActions.Controls.Add(_selectAllButton);
+        viewActions.Controls.Add(_clearAllButton);
         panel.Controls.Add(viewActions, 0, 1);
 
-        return group;
+        return _viewsGroup;
     }
 
     private WinFormsControl BuildOptionsPanel()
     {
-        GroupBox group = new()
-        {
-            Dock = DockStyle.Fill,
-            Text = "Export Options",
-        };
+        _optionsGroup.Dock = DockStyle.Fill;
 
         TableLayoutPanel panel = new()
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 8,
+            RowCount = 10,
             Padding = new Padding(10),
         };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 120f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
@@ -173,14 +172,31 @@ public sealed class ExportDialog : WinFormsForm
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 70f));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        group.Controls.Add(panel);
+        _optionsGroup.Controls.Add(panel);
 
-        panel.Controls.Add(new Label
+        _languageLabel.Dock = DockStyle.Fill;
+        _languageLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_languageLabel, 0, 0);
+
+        _languageComboBox.Dock = DockStyle.Fill;
+        _languageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
+        _languageComboBox.Items.Add(new LanguageItem(UiLanguage.Japanese));
+        _languageComboBox.SelectedIndexChanged += (_, _) =>
         {
-            Text = "Feature Types",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 0);
+            if (_languageComboBox.SelectedItem is LanguageItem selected)
+            {
+                _language = selected.Language;
+                ViewSelectionItem.DisplayLanguage = _language;
+                _viewList.Refresh();
+                ApplyLanguage();
+            }
+        };
+        panel.Controls.Add(_languageComboBox, 0, 1);
+
+        _featureTypesLabel.Dock = DockStyle.Fill;
+        _featureTypesLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_featureTypesLabel, 0, 2);
 
         FlowLayoutPanel featuresPanel = new()
         {
@@ -197,18 +213,14 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
-        panel.Controls.Add(featuresPanel, 0, 1);
+        panel.Controls.Add(featuresPanel, 0, 3);
 
-        _splitByWallsCheckBox.Text = "Split floor units by walls";
         _splitByWallsCheckBox.Dock = DockStyle.Fill;
-        panel.Controls.Add(_splitByWallsCheckBox, 0, 2);
+        panel.Controls.Add(_splitByWallsCheckBox, 0, 4);
 
-        panel.Controls.Add(new Label
-        {
-            Text = "Output Directory",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 3);
+        _outputDirectoryLabel.Dock = DockStyle.Fill;
+        _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_outputDirectoryLabel, 0, 5);
 
         TableLayoutPanel outputPanel = new()
         {
@@ -221,18 +233,17 @@ public sealed class ExportDialog : WinFormsForm
         _outputDirectoryTextBox.Dock = DockStyle.Fill;
         outputPanel.Controls.Add(_outputDirectoryTextBox, 0, 0);
 
-        Button browseButton = new()
-        {
-            Text = "Browse...",
-            Width = 84,
-            Height = 28,
-            Anchor = AnchorStyles.Right | AnchorStyles.Top,
-        };
-        browseButton.Click += (_, _) =>
+        _browseButton.Width = 84;
+        _browseButton.Height = 28;
+        _browseButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+        _browseButton.Click += (_, _) =>
         {
             using FolderBrowserDialog folderDialog = new()
             {
-                Description = "Select output folder for GeoPackage files",
+                Description = UiLanguageText.Select(
+                    _language,
+                    "Select output folder for GeoPackage files",
+                    "GeoPackage出力先フォルダを選択してください"),
                 ShowNewFolderButton = true,
                 SelectedPath = _outputDirectoryTextBox.Text,
             };
@@ -242,15 +253,12 @@ public sealed class ExportDialog : WinFormsForm
                 _outputDirectoryTextBox.Text = folderDialog.SelectedPath;
             }
         };
-        outputPanel.Controls.Add(browseButton, 1, 0);
-        panel.Controls.Add(outputPanel, 0, 4);
+        outputPanel.Controls.Add(_browseButton, 1, 0);
+        panel.Controls.Add(outputPanel, 0, 6);
 
-        panel.Controls.Add(new Label
-        {
-            Text = "CRS (EPSG)",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-        }, 0, 5);
+        _crsLabel.Dock = DockStyle.Fill;
+        _crsLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_crsLabel, 0, 7);
 
         TableLayoutPanel crsPanel = new()
         {
@@ -280,8 +288,8 @@ public sealed class ExportDialog : WinFormsForm
         _targetEpsgTextBox.Dock = DockStyle.Fill;
         crsPanel.Controls.Add(_targetEpsgTextBox, 0, 1);
 
-        panel.Controls.Add(crsPanel, 0, 6);
-        return group;
+        panel.Controls.Add(crsPanel, 0, 8);
+        return _optionsGroup;
     }
 
     private WinFormsControl BuildActionsPanel()
@@ -293,32 +301,29 @@ public sealed class ExportDialog : WinFormsForm
             Padding = new Padding(10, 8, 10, 8),
         };
 
-        Button cancelButton = new()
-        {
-            Text = "Cancel",
-            Width = 90,
-            Height = 30,
-            DialogResult = DialogResult.Cancel,
-        };
+        _cancelButton.Width = 90;
+        _cancelButton.Height = 30;
+        _cancelButton.DialogResult = DialogResult.Cancel;
 
-        Button exportButton = new()
-        {
-            Text = "Export",
-            Width = 90,
-            Height = 30,
-        };
-        exportButton.Click += (_, _) => ConfirmExport();
+        _exportButton.Width = 90;
+        _exportButton.Height = 30;
+        _exportButton.Click += (_, _) => ConfirmExport();
 
-        actions.Controls.Add(cancelButton);
-        actions.Controls.Add(exportButton);
-        AcceptButton = exportButton;
-        CancelButton = cancelButton;
+        actions.Controls.Add(_cancelButton);
+        actions.Controls.Add(_exportButton);
+        AcceptButton = _exportButton;
+        CancelButton = _cancelButton;
 
         return actions;
     }
 
     private void LoadValues(ExportDialogSettings settings)
     {
+        _language = Enum.IsDefined(typeof(UiLanguage), settings.UiLanguage)
+            ? settings.UiLanguage
+            : UiLanguage.English;
+        ViewSelectionItem.DisplayLanguage = _language;
+
         foreach (ViewSelectionItem item in _viewItems)
         {
             _viewList.Items.Add(item, false);
@@ -360,6 +365,42 @@ public sealed class ExportDialog : WinFormsForm
             : ProjectInfo.DefaultTargetEpsg.ToString();
 
         SelectPresetIfAvailable(settings.TargetEpsg);
+        SelectLanguage(_language);
+        ApplyLanguage();
+    }
+
+    private void ApplyLanguage()
+    {
+        Text = UiLanguageText.Select(_language, "Export GeoPackage", "GeoPackageをエクスポート");
+        _viewsGroup.Text = UiLanguageText.Select(_language, "Plan Views", "平面図ビュー");
+        _optionsGroup.Text = UiLanguageText.Select(_language, "Export Options", "エクスポート設定");
+        _languageLabel.Text = UiLanguageText.Select(_language, "Language", "言語");
+        _featureTypesLabel.Text = UiLanguageText.Select(_language, "Feature Types", "フィーチャ種別");
+        _splitByWallsCheckBox.Text = UiLanguageText.Select(
+            _language,
+            "Split floor units by walls",
+            "壁でフロアユニットを分割する");
+        _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
+        _crsLabel.Text = UiLanguageText.Select(_language, "CRS (EPSG)", "座標系 (EPSG)");
+        _selectAllButton.Text = UiLanguageText.Select(_language, "Select All", "すべて選択");
+        _clearAllButton.Text = UiLanguageText.Select(_language, "Clear All", "選択解除");
+        _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "参照...");
+        _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
+        _exportButton.Text = UiLanguageText.Select(_language, "Export", "エクスポート");
+    }
+
+    private void SelectLanguage(UiLanguage language)
+    {
+        for (int i = 0; i < _languageComboBox.Items.Count; i++)
+        {
+            if (_languageComboBox.Items[i] is LanguageItem item && item.Language == language)
+            {
+                _languageComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _languageComboBox.SelectedIndex = 0;
     }
 
     private void ConfirmExport()
@@ -369,7 +410,10 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                "Select at least one plan view to export.",
+                UiLanguageText.Select(
+                    _language,
+                    "Select at least one plan view to export.",
+                    "少なくとも1つの平面図ビューを選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -381,7 +425,10 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                "Select at least one feature type.",
+                UiLanguageText.Select(
+                    _language,
+                    "Select at least one feature type.",
+                    "少なくとも1つのフィーチャ種別を選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -393,7 +440,10 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                "Choose an output directory.",
+                UiLanguageText.Select(
+                    _language,
+                    "Choose an output directory.",
+                    "出力フォルダを選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -404,7 +454,10 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                "Enter a valid EPSG code.",
+                UiLanguageText.Select(
+                    _language,
+                    "Enter a valid EPSG code.",
+                    "有効なEPSGコードを入力してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -493,6 +546,7 @@ public sealed class ExportDialog : WinFormsForm
             FeatureTypes = GetSelectedFeatureTypes(),
             SplitUnitsByWalls = _splitByWallsCheckBox.Checked,
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
+            UiLanguage = _language,
         };
     }
 
@@ -507,6 +561,8 @@ public sealed class ExportDialog : WinFormsForm
 
     private sealed class ViewSelectionItem
     {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
         public ViewSelectionItem(ViewPlan view)
         {
             View = view ?? throw new ArgumentNullException(nameof(view));
@@ -516,8 +572,25 @@ public sealed class ExportDialog : WinFormsForm
 
         public override string ToString()
         {
-            string levelName = View.GenLevel?.Name ?? "<no level>";
-            return $"{View.Name}  [Level: {levelName}]";
+            string levelName = View.GenLevel?.Name ??
+                UiLanguageText.Select(DisplayLanguage, "<no level>", "<レベルなし>");
+            string levelLabel = UiLanguageText.Select(DisplayLanguage, "Level", "レベル");
+            return $"{View.Name}  [{levelLabel}: {levelName}]";
+        }
+    }
+
+    private sealed class LanguageItem
+    {
+        public LanguageItem(UiLanguage language)
+        {
+            Language = language;
+        }
+
+        public UiLanguage Language { get; }
+
+        public override string ToString()
+        {
+            return UiLanguageText.DisplayName(Language);
         }
     }
 

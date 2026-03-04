@@ -806,13 +806,16 @@ public sealed class UnitExtractor
     {
         Options options = new()
         {
-            DetailLevel = ViewDetailLevel.Fine,
             ComputeReferences = false,
             IncludeNonVisibleObjects = includeNonVisibleObjects,
         };
         if (view != null)
         {
             options.View = view;
+        }
+        else
+        {
+            options.DetailLevel = ViewDetailLevel.Fine;
         }
 
         GeometryElement? geometry = element.get_Geometry(options);
