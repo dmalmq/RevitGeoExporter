@@ -490,7 +490,7 @@ public sealed class FloorGeoPackageExporter
         }
 
         ReassignInteriorVoidsToVerticalUnits(converted, warnings);
-        CloseSmallGaps(converted);
+        CloseSmallGaps(converted, warnings);
 
         List<Geometry> expandedElevators = new();
         for (int i = 0; i < converted.Count; i++)
@@ -557,6 +557,17 @@ public sealed class FloorGeoPackageExporter
             {
                 if (!record.IsElevator)
                 {
+                    // Safer fallback: keep the original unit if cleanup erased it entirely.
+                    Geometry fallbackGeometry = CarvePreservedVoids(record.Geometry, record.PreservedVoids, warnings);
+                    ExportPolygon? fallbackFeature = ToExportPolygon(fallbackGeometry, record.Attributes);
+                    if (fallbackFeature != null)
+                    {
+                        warnings.Add(
+                            "A unit feature became empty after elevator expansion cleanup; original unit geometry was retained.");
+                        normalized.Add(fallbackFeature);
+                        continue;
+                    }
+
                     warnings.Add("A unit feature became empty after elevator expansion cleanup and was skipped.");
                 }
 
@@ -823,25 +834,42 @@ public sealed class FloorGeoPackageExporter
         }
     }
 
-    private static void CloseSmallGaps(List<UnitGeometryRecord> records)
+    private static void CloseSmallGaps(List<UnitGeometryRecord> records, ICollection<string>? warnings = null)
     {
         double halfGap = MaxUnitGapMeters / 2d;
 
         // Collect all original geometries for subtraction.
-        List<Geometry> originals = records.Select(r => r.Geometry).ToList();
+        List<Geometry> originals = records
+            .Select(r => ToOverlayPolygonalGeometry(r.Geometry))
+            .ToList();
 
         for (int i = 0; i < records.Count; i++)
         {
-            Geometry buffered = records[i].Geometry.Buffer(halfGap);
+            Geometry baseGeometry = ToOverlayPolygonalGeometry(records[i].Geometry);
+            if (baseGeometry.IsEmpty)
+            {
+                continue;
+            }
+
+            Geometry buffered = ToOverlayPolygonalGeometry(baseGeometry.Buffer(halfGap));
+            if (buffered.IsEmpty)
+            {
+                continue;
+            }
 
             // Subtract every other unit's original geometry.
             for (int j = 0; j < records.Count; j++)
             {
                 if (j == i) continue;
-                buffered = SafeOverlay(buffered, originals[j], (a, b) => a.Difference(b));
+                if (originals[j].IsEmpty)
+                {
+                    continue;
+                }
+
+                buffered = SafeOverlay(buffered, originals[j], (a, b) => a.Difference(b), warnings);
             }
 
-            buffered = buffered.Buffer(0d); // topology healing
+            buffered = ToOverlayPolygonalGeometry(buffered.Buffer(0d)); // topology healing
             if (!buffered.IsEmpty)
             {
                 UnitGeometryRecord r = records[i];
@@ -1091,6 +1119,49 @@ public sealed class FloorGeoPackageExporter
                 }
 
                 break;
+        }
+    }
+
+    private static Geometry ToOverlayPolygonalGeometry(Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (geometry is Polygon || geometry is MultiPolygon)
+        {
+            return geometry;
+        }
+
+        List<Geometry> polygons = new();
+        AddPolygonGeometryParts(polygons, geometry);
+        if (polygons.Count == 0)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (polygons.Count == 1)
+        {
+            return polygons[0];
+        }
+
+        try
+        {
+            return UnaryUnionOp.Union(polygons).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = polygons.Select(g => reducer.Reduce(g)).ToList();
+                return UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                return polygons[0];
+            }
         }
     }
 
@@ -1394,18 +1465,21 @@ public sealed class FloorGeoPackageExporter
         {
             return operation(a, b);
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
         {
             try
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(a);
-                Geometry reducedB = reducer.Reduce(b);
+                Geometry reducedA = reducer.Reduce(ToOverlayPolygonalGeometry(a));
+                Geometry reducedB = reducer.Reduce(ToOverlayPolygonalGeometry(b));
                 Geometry result = operation(reducedA, reducedB);
-                warnings?.Add("A geometry overlay required reduced precision and may be slightly approximated.");
+                warnings?.Add(
+                    ex is ArgumentException
+                        ? "A geometry overlay normalized GeometryCollection inputs to polygonal geometry."
+                        : "A geometry overlay required reduced precision and may be slightly approximated.");
                 return result;
             }
-            catch (TopologyException)
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
             {
                 warnings?.Add("A geometry overlay failed even with reduced precision; the original geometry was kept unchanged.");
                 return a;
