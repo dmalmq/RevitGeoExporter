@@ -557,6 +557,17 @@ public sealed class FloorGeoPackageExporter
             {
                 if (!record.IsElevator)
                 {
+                    // Safer fallback: keep the original unit if cleanup erased it entirely.
+                    Geometry fallbackGeometry = CarvePreservedVoids(record.Geometry, record.PreservedVoids, warnings);
+                    ExportPolygon? fallbackFeature = ToExportPolygon(fallbackGeometry, record.Attributes);
+                    if (fallbackFeature != null)
+                    {
+                        warnings.Add(
+                            "A unit feature became empty after elevator expansion cleanup; original unit geometry was retained.");
+                        normalized.Add(fallbackFeature);
+                        continue;
+                    }
+
                     warnings.Add("A unit feature became empty after elevator expansion cleanup and was skipped.");
                 }
 
