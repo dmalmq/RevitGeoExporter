@@ -557,6 +557,17 @@ public sealed class FloorGeoPackageExporter
             {
                 if (!record.IsElevator)
                 {
+                    // Safer fallback: keep the original unit if cleanup erased it entirely.
+                    Geometry fallbackGeometry = CarvePreservedVoids(record.Geometry, record.PreservedVoids, warnings);
+                    ExportPolygon? fallbackFeature = ToExportPolygon(fallbackGeometry, record.Attributes);
+                    if (fallbackFeature != null)
+                    {
+                        warnings.Add(
+                            "A unit feature became empty after elevator expansion cleanup; original unit geometry was retained.");
+                        normalized.Add(fallbackFeature);
+                        continue;
+                    }
+
                     warnings.Add("A unit feature became empty after elevator expansion cleanup and was skipped.");
                 }
 
@@ -701,8 +712,17 @@ public sealed class FloorGeoPackageExporter
                     }
                 }
 
+                double voidArea = voidPolygon.Area;
                 if (bestVerticalIndex < 0 || bestOverlapArea <= 0d)
                 {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A stair/escalator void had no visible vertical-unit overlap; surrounding unit area was retained.");
                     continue;
                 }
 
@@ -710,23 +730,68 @@ public sealed class FloorGeoPackageExporter
                 double targetArea = targetGeometry.Area;
                 if (targetArea <= 0d)
                 {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A stair/escalator void target had invalid geometry; surrounding unit area was retained.");
                     continue;
                 }
 
-                double voidArea = voidPolygon.Area;
                 bool hasSufficientOverlap = bestOverlapArea >= (voidArea * MinVoidCoverageForVerticalFill);
                 bool isComparableSize = voidArea <= (targetArea * MaxVoidToVerticalAreaRatio);
+                Geometry transferGeometry = voidPolygon;
                 if (!hasSufficientOverlap || !isComparableSize)
                 {
-                    continue;
+                    transferGeometry = SafeOverlay(
+                        voidPolygon,
+                        targetGeometry,
+                        (a, b) => a.Intersection(b).Buffer(0d),
+                        warnings);
+                    if (transferGeometry.IsEmpty || transferGeometry.Area < MinimumUnitAreaSquareMeters)
+                    {
+                        updatedMask = SafeOverlay(
+                            updatedMask,
+                            voidPolygon,
+                            (a, b) => a.Difference(b).Buffer(0d),
+                            warnings);
+                        maskChanged = true;
+                        warnings.Add(
+                            "A stair/escalator void did not overlap visible vertical geometry; surrounding unit area was retained.");
+                        continue;
+                    }
+
+                    warnings.Add(
+                        "A stair/escalator void only partially overlapped visible vertical geometry; only the overlapping portion was carved from surrounding units.");
                 }
 
                 UnitGeometryRecord target = records[bestVerticalIndex];
                 Geometry expandedTarget = SafeOverlay(
                     target.Geometry,
-                    voidPolygon,
+                    transferGeometry,
                     (a, b) => a.Union(b).Buffer(0d),
                     warnings);
+
+                // If the vertical unit cannot reliably cover this void after merge,
+                // keep the surrounding unit area instead of creating an empty gap.
+                double transferArea = transferGeometry.Area;
+                double filledAreaAfterMerge = ComputeIntersectionArea(expandedTarget, transferGeometry);
+                if (filledAreaAfterMerge < (transferArea * MinVoidCoverageForVerticalFill))
+                {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A void near stairs/escalator could not be merged into vertical-unit geometry; surrounding unit area was retained.");
+                    continue;
+                }
+
                 records[bestVerticalIndex] = new UnitGeometryRecord(
                     target.Attributes,
                     target.Category,
@@ -736,7 +801,7 @@ public sealed class FloorGeoPackageExporter
 
                 updatedMask = SafeOverlay(
                     updatedMask,
-                    voidPolygon,
+                    transferGeometry,
                     (a, b) => a.Difference(b).Buffer(0d),
                     warnings);
                 maskChanged = true;
@@ -803,20 +868,27 @@ public sealed class FloorGeoPackageExporter
             return 0d;
         }
 
+        Geometry normalizedA = ToOverlayPolygonalGeometry(a);
+        Geometry normalizedB = ToOverlayPolygonalGeometry(b);
+        if (normalizedA.IsEmpty || normalizedB.IsEmpty)
+        {
+            return 0d;
+        }
+
         try
         {
-            return a.Intersection(b).Area;
+            return normalizedA.Intersection(normalizedB).Area;
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
         {
             try
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(a);
-                Geometry reducedB = reducer.Reduce(b);
+                Geometry reducedA = reducer.Reduce(normalizedA);
+                Geometry reducedB = reducer.Reduce(normalizedB);
                 return reducedA.Intersection(reducedB).Area;
             }
-            catch (TopologyException)
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
             {
                 return 0d;
             }
@@ -1091,6 +1163,49 @@ public sealed class FloorGeoPackageExporter
                 }
 
                 break;
+        }
+    }
+
+    private static Geometry ToOverlayPolygonalGeometry(Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (geometry is Polygon || geometry is MultiPolygon)
+        {
+            return geometry;
+        }
+
+        List<Geometry> polygons = new();
+        AddPolygonGeometryParts(polygons, geometry);
+        if (polygons.Count == 0)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (polygons.Count == 1)
+        {
+            return polygons[0];
+        }
+
+        try
+        {
+            return UnaryUnionOp.Union(polygons).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = polygons.Select(g => reducer.Reduce(g)).ToList();
+                return UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                return polygons[0];
+            }
         }
     }
 
@@ -1394,18 +1509,21 @@ public sealed class FloorGeoPackageExporter
         {
             return operation(a, b);
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
         {
             try
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(a);
-                Geometry reducedB = reducer.Reduce(b);
+                Geometry reducedA = reducer.Reduce(ToOverlayPolygonalGeometry(a));
+                Geometry reducedB = reducer.Reduce(ToOverlayPolygonalGeometry(b));
                 Geometry result = operation(reducedA, reducedB);
-                warnings?.Add("A geometry overlay required reduced precision and may be slightly approximated.");
+                warnings?.Add(
+                    ex is ArgumentException
+                        ? "A geometry overlay normalized GeometryCollection inputs to polygonal geometry."
+                        : "A geometry overlay required reduced precision and may be slightly approximated.");
                 return result;
             }
-            catch (TopologyException)
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
             {
                 warnings?.Add("A geometry overlay failed even with reduced precision; the original geometry was kept unchanged.");
                 return a;
