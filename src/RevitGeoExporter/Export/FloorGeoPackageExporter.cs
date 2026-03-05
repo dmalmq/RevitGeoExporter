@@ -831,20 +831,27 @@ public sealed class FloorGeoPackageExporter
             return 0d;
         }
 
+        Geometry normalizedA = ToOverlayPolygonalGeometry(a);
+        Geometry normalizedB = ToOverlayPolygonalGeometry(b);
+        if (normalizedA.IsEmpty || normalizedB.IsEmpty)
+        {
+            return 0d;
+        }
+
         try
         {
-            return a.Intersection(b).Area;
+            return normalizedA.Intersection(normalizedB).Area;
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
         {
             try
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(a);
-                Geometry reducedB = reducer.Reduce(b);
+                Geometry reducedA = reducer.Reduce(normalizedA);
+                Geometry reducedB = reducer.Reduce(normalizedB);
                 return reducedA.Intersection(reducedB).Area;
             }
-            catch (TopologyException)
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
             {
                 return 0d;
             }
@@ -1119,6 +1126,49 @@ public sealed class FloorGeoPackageExporter
                 }
 
                 break;
+        }
+    }
+
+    private static Geometry ToOverlayPolygonalGeometry(Geometry geometry)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (geometry is Polygon || geometry is MultiPolygon)
+        {
+            return geometry;
+        }
+
+        List<Geometry> polygons = new();
+        AddPolygonGeometryParts(polygons, geometry);
+        if (polygons.Count == 0)
+        {
+            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        }
+
+        if (polygons.Count == 1)
+        {
+            return polygons[0];
+        }
+
+        try
+        {
+            return UnaryUnionOp.Union(polygons).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = polygons.Select(g => reducer.Reduce(g)).ToList();
+                return UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                return polygons[0];
+            }
         }
     }
 
@@ -1422,18 +1472,21 @@ public sealed class FloorGeoPackageExporter
         {
             return operation(a, b);
         }
-        catch (TopologyException)
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
         {
             try
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(a);
-                Geometry reducedB = reducer.Reduce(b);
+                Geometry reducedA = reducer.Reduce(ToOverlayPolygonalGeometry(a));
+                Geometry reducedB = reducer.Reduce(ToOverlayPolygonalGeometry(b));
                 Geometry result = operation(reducedA, reducedB);
-                warnings?.Add("A geometry overlay required reduced precision and may be slightly approximated.");
+                warnings?.Add(
+                    ex is ArgumentException
+                        ? "A geometry overlay normalized GeometryCollection inputs to polygonal geometry."
+                        : "A geometry overlay required reduced precision and may be slightly approximated.");
                 return result;
             }
-            catch (TopologyException)
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
             {
                 warnings?.Add("A geometry overlay failed even with reduced precision; the original geometry was kept unchanged.");
                 return a;
