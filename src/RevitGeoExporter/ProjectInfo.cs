@@ -44,7 +44,7 @@ internal static class ProjectInfo
             string? registryVersion = TryGetInstalledDisplayVersionFromRegistry();
             if (!string.IsNullOrWhiteSpace(registryVersion))
             {
-                return registryVersion;
+                return registryVersion!;
             }
 
             FileVersionInfo info = FileVersionInfo.GetVersionInfo(assemblyPath);
