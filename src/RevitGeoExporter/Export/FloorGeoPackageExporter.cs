@@ -712,8 +712,17 @@ public sealed class FloorGeoPackageExporter
                     }
                 }
 
+                double voidArea = voidPolygon.Area;
                 if (bestVerticalIndex < 0 || bestOverlapArea <= 0d)
                 {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A stair/escalator void had no visible vertical-unit overlap; surrounding unit area was retained.");
                     continue;
                 }
 
@@ -721,28 +730,56 @@ public sealed class FloorGeoPackageExporter
                 double targetArea = targetGeometry.Area;
                 if (targetArea <= 0d)
                 {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A stair/escalator void target had invalid geometry; surrounding unit area was retained.");
                     continue;
                 }
 
-                double voidArea = voidPolygon.Area;
                 bool hasSufficientOverlap = bestOverlapArea >= (voidArea * MinVoidCoverageForVerticalFill);
                 bool isComparableSize = voidArea <= (targetArea * MaxVoidToVerticalAreaRatio);
+                Geometry transferGeometry = voidPolygon;
                 if (!hasSufficientOverlap || !isComparableSize)
                 {
-                    continue;
+                    transferGeometry = SafeOverlay(
+                        voidPolygon,
+                        targetGeometry,
+                        (a, b) => a.Intersection(b).Buffer(0d),
+                        warnings);
+                    if (transferGeometry.IsEmpty || transferGeometry.Area < MinimumUnitAreaSquareMeters)
+                    {
+                        updatedMask = SafeOverlay(
+                            updatedMask,
+                            voidPolygon,
+                            (a, b) => a.Difference(b).Buffer(0d),
+                            warnings);
+                        maskChanged = true;
+                        warnings.Add(
+                            "A stair/escalator void did not overlap visible vertical geometry; surrounding unit area was retained.");
+                        continue;
+                    }
+
+                    warnings.Add(
+                        "A stair/escalator void only partially overlapped visible vertical geometry; only the overlapping portion was carved from surrounding units.");
                 }
 
                 UnitGeometryRecord target = records[bestVerticalIndex];
                 Geometry expandedTarget = SafeOverlay(
                     target.Geometry,
-                    voidPolygon,
+                    transferGeometry,
                     (a, b) => a.Union(b).Buffer(0d),
                     warnings);
 
                 // If the vertical unit cannot reliably cover this void after merge,
                 // keep the surrounding unit area instead of creating an empty gap.
-                double filledAreaAfterMerge = ComputeIntersectionArea(expandedTarget, voidPolygon);
-                if (filledAreaAfterMerge < (voidArea * MinVoidCoverageForVerticalFill))
+                double transferArea = transferGeometry.Area;
+                double filledAreaAfterMerge = ComputeIntersectionArea(expandedTarget, transferGeometry);
+                if (filledAreaAfterMerge < (transferArea * MinVoidCoverageForVerticalFill))
                 {
                     updatedMask = SafeOverlay(
                         updatedMask,
@@ -764,7 +801,7 @@ public sealed class FloorGeoPackageExporter
 
                 updatedMask = SafeOverlay(
                     updatedMask,
-                    voidPolygon,
+                    transferGeometry,
                     (a, b) => a.Difference(b).Buffer(0d),
                     warnings);
                 maskChanged = true;
