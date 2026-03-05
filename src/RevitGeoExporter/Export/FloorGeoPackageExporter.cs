@@ -738,6 +738,23 @@ public sealed class FloorGeoPackageExporter
                     voidPolygon,
                     (a, b) => a.Union(b).Buffer(0d),
                     warnings);
+
+                // If the vertical unit cannot reliably cover this void after merge,
+                // keep the surrounding unit area instead of creating an empty gap.
+                double filledAreaAfterMerge = ComputeIntersectionArea(expandedTarget, voidPolygon);
+                if (filledAreaAfterMerge < (voidArea * MinVoidCoverageForVerticalFill))
+                {
+                    updatedMask = SafeOverlay(
+                        updatedMask,
+                        voidPolygon,
+                        (a, b) => a.Difference(b).Buffer(0d),
+                        warnings);
+                    maskChanged = true;
+                    warnings.Add(
+                        "A void near stairs/escalator could not be merged into vertical-unit geometry; surrounding unit area was retained.");
+                    continue;
+                }
+
                 records[bestVerticalIndex] = new UnitGeometryRecord(
                     target.Attributes,
                     target.Category,
