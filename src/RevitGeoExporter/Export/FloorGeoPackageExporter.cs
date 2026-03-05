@@ -685,6 +685,8 @@ public sealed class FloorGeoPackageExporter
 
             Geometry updatedMask = owner.PreservedVoids;
             bool maskChanged = false;
+            Geometry ownerGeometry = owner.Geometry;
+            bool geometryChanged = false;
 
             for (int voidIndex = 0; voidIndex < ownerVoids.Count; voidIndex++)
             {
@@ -730,90 +732,51 @@ public sealed class FloorGeoPackageExporter
                 double targetArea = targetGeometry.Area;
                 if (targetArea <= 0d)
                 {
-                    updatedMask = SafeOverlay(
-                        updatedMask,
-                        voidPolygon,
-                        (a, b) => a.Difference(b).Buffer(0d),
-                        warnings);
+                    // Invalid stair geometry — fill entire void back into floor.
+                    ownerGeometry = SafeOverlay(ownerGeometry, voidPolygon, (a, b) => a.Union(b).Buffer(0d), warnings);
+                    geometryChanged = true;
+                    updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
                     maskChanged = true;
                     warnings.Add(
-                        "A stair/escalator void target had invalid geometry; surrounding unit area was retained.");
+                        "A stair/escalator void target had invalid geometry; void was filled into surrounding unit.");
                     continue;
                 }
 
                 bool hasSufficientOverlap = bestOverlapArea >= (voidArea * MinVoidCoverageForVerticalFill);
                 bool isComparableSize = voidArea <= (targetArea * MaxVoidToVerticalAreaRatio);
-                Geometry transferGeometry = voidPolygon;
-                if (!hasSufficientOverlap || !isComparableSize)
+
+                if (!hasSufficientOverlap && !isComparableSize)
                 {
-                    transferGeometry = SafeOverlay(
-                        voidPolygon,
-                        targetGeometry,
-                        (a, b) => a.Intersection(b).Buffer(0d),
-                        warnings);
-                    if (transferGeometry.IsEmpty || transferGeometry.Area < MinimumUnitAreaSquareMeters)
-                    {
-                        updatedMask = SafeOverlay(
-                            updatedMask,
-                            voidPolygon,
-                            (a, b) => a.Difference(b).Buffer(0d),
-                            warnings);
-                        maskChanged = true;
-                        warnings.Add(
-                            "A stair/escalator void did not overlap visible vertical geometry; surrounding unit area was retained.");
-                        continue;
-                    }
-
-                    warnings.Add(
-                        "A stair/escalator void only partially overlapped visible vertical geometry; only the overlapping portion was carved from surrounding units.");
-                }
-
-                UnitGeometryRecord target = records[bestVerticalIndex];
-                Geometry expandedTarget = SafeOverlay(
-                    target.Geometry,
-                    transferGeometry,
-                    (a, b) => a.Union(b).Buffer(0d),
-                    warnings);
-
-                // If the vertical unit cannot reliably cover this void after merge,
-                // keep the surrounding unit area instead of creating an empty gap.
-                double transferArea = transferGeometry.Area;
-                double filledAreaAfterMerge = ComputeIntersectionArea(expandedTarget, transferGeometry);
-                if (filledAreaAfterMerge < (transferArea * MinVoidCoverageForVerticalFill))
-                {
-                    updatedMask = SafeOverlay(
-                        updatedMask,
-                        voidPolygon,
-                        (a, b) => a.Difference(b).Buffer(0d),
-                        warnings);
+                    // Very poor match — fill entire void (don't trust as a real stair opening).
+                    ownerGeometry = SafeOverlay(ownerGeometry, voidPolygon, (a, b) => a.Union(b).Buffer(0d), warnings);
+                    geometryChanged = true;
+                    updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
                     maskChanged = true;
                     warnings.Add(
-                        "A void near stairs/escalator could not be merged into vertical-unit geometry; surrounding unit area was retained.");
+                        "A stair/escalator void had very poor overlap with visible geometry; void was filled into surrounding unit.");
                     continue;
                 }
 
-                records[bestVerticalIndex] = new UnitGeometryRecord(
-                    target.Attributes,
-                    target.Category,
-                    target.IsElevator,
-                    expandedTarget,
-                    target.PreservedVoids);
+                // Fill the excess void (void minus visible stair) back into the floor.
+                Geometry excessVoid = SafeOverlay(voidPolygon, targetGeometry, (a, b) => a.Difference(b).Buffer(0d), warnings);
+                if (!excessVoid.IsEmpty && excessVoid.Area >= MinimumUnitAreaSquareMeters)
+                {
+                    ownerGeometry = SafeOverlay(ownerGeometry, excessVoid, (a, b) => a.Union(b).Buffer(0d), warnings);
+                    geometryChanged = true;
+                }
 
-                updatedMask = SafeOverlay(
-                    updatedMask,
-                    transferGeometry,
-                    (a, b) => a.Difference(b).Buffer(0d),
-                    warnings);
+                // Remove entire void from mask.
+                updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
                 maskChanged = true;
             }
 
-            if (maskChanged)
+            if (maskChanged || geometryChanged)
             {
                 records[i] = new UnitGeometryRecord(
                     owner.Attributes,
                     owner.Category,
                     owner.IsElevator,
-                    owner.Geometry,
+                    geometryChanged ? ownerGeometry : owner.Geometry,
                     updatedMask);
             }
         }
