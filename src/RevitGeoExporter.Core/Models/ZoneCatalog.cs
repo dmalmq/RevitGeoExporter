@@ -13,6 +13,7 @@ public sealed class ZoneCatalog
 
     private readonly Dictionary<string, ZoneInfo> _zoneLookup;
     private readonly Dictionary<string, ZoneInfo> _familyLookup;
+    private readonly Dictionary<string, ZoneInfo> _categoryLookup;
 
     public ZoneCatalog(
         IReadOnlyDictionary<string, ZoneInfo> zoneLookup,
@@ -26,6 +27,7 @@ public sealed class ZoneCatalog
         }
 
         _zoneLookup = new Dictionary<string, ZoneInfo>(StringComparer.Ordinal);
+        _categoryLookup = new Dictionary<string, ZoneInfo>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, ZoneInfo> entry in zoneLookup)
         {
             string zoneName = NormalizeKey(entry.Key);
@@ -34,7 +36,9 @@ public sealed class ZoneCatalog
                 continue;
             }
 
-            _zoneLookup[zoneName] = entry.Value.Normalized();
+            ZoneInfo normalized = entry.Value.Normalized();
+            _zoneLookup[zoneName] = normalized;
+            RegisterCategoryInfo(normalized);
         }
 
         _familyLookup = new Dictionary<string, ZoneInfo>(StringComparer.Ordinal);
@@ -269,6 +273,19 @@ public sealed class ZoneCatalog
         return false;
     }
 
+    public bool TryGetCategoryInfo(string category, out ZoneInfo info)
+    {
+        if (!string.IsNullOrWhiteSpace(category) &&
+            _categoryLookup.TryGetValue(NormalizeKey(category), out ZoneInfo? known))
+        {
+            info = known;
+            return true;
+        }
+
+        info = DefaultZoneInfo;
+        return false;
+    }
+
     public bool TryGetColor(string zoneName, out string color)
     {
         if (TryGetZoneInfo(zoneName, out ZoneInfo info))
@@ -337,6 +354,26 @@ public sealed class ZoneCatalog
         }
 
         return builder.ToString();
+    }
+
+    private void RegisterCategoryInfo(ZoneInfo info)
+    {
+        string category = NormalizeKey(info.Category);
+        if (category.Length == 0)
+        {
+            return;
+        }
+
+        if (!_categoryLookup.TryGetValue(category, out ZoneInfo? existing))
+        {
+            _categoryLookup[category] = info;
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(existing.Restriction) && string.IsNullOrWhiteSpace(info.Restriction))
+        {
+            _categoryLookup[category] = info;
+        }
     }
 
     private static IReadOnlyDictionary<string, ZoneInfo> EmptyFamilyLookup =>

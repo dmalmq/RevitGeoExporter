@@ -39,9 +39,17 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
 
         ExportDialogSettingsStore settingsStore = new();
         ExportDialogSettings settings = settingsStore.Load();
+        ExportPreviewService previewService = new(document);
 
         ExportDialogResult? request = null;
-        using (ExportDialog dialog = new(views, settings))
+        using (ExportDialog dialog = new(
+                   views,
+                   settings,
+                   previewRequest =>
+                   {
+                       using ExportPreviewForm previewForm = new(previewRequest, previewService);
+                       previewForm.ShowDialog();
+                   }))
         {
             if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK || dialog.Result == null)
             {
@@ -71,7 +79,6 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     targetEpsg: request.TargetEpsg,
                     selectedViews: request.SelectedViews,
                     featureTypes: request.FeatureTypes,
-                    splitUnitsByWalls: request.SplitUnitsByWalls,
                     progressCallback: update =>
                     {
                         progressForm.UpdateProgress(update);

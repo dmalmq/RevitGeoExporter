@@ -20,7 +20,7 @@ pwsh ./install/build-installer.ps1
 Optional parameters:
 
 ```powershell
-pwsh ./install/build-installer.ps1 -Configuration Release -Version 1.2.0 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+pwsh ./install/build-installer.ps1 -Configuration Release -Version <version> -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
 Output:

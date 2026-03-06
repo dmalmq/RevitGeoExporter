@@ -1,35 +1,25 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
-using RevitGeoExporter.Export;
+using RevitGeoExporter.UI;
 
-namespace RevitGeoExporter.UI;
+namespace RevitGeoExporter.Export;
 
-public sealed class ExportDialogResult
+public sealed class ExportPreviewRequest
 {
-    public ExportDialogResult(
+    public ExportPreviewRequest(
         IReadOnlyList<ViewPlan> selectedViews,
-        string outputDirectory,
-        int targetEpsg,
         ExportFeatureType featureTypes,
         UiLanguage uiLanguage)
     {
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
-        OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
-        TargetEpsg = targetEpsg;
         FeatureTypes = featureTypes;
         UiLanguage = uiLanguage;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
 
-    public string OutputDirectory { get; }
-
-    public int TargetEpsg { get; }
-
     public ExportFeatureType FeatureTypes { get; }
-
-
 
     public UiLanguage UiLanguage { get; }
 }
