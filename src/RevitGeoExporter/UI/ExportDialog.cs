@@ -122,7 +122,7 @@ public sealed class ExportDialog : WinFormsForm
         _viewList.CheckOnClick = true;
         _viewList.HorizontalScrollbar = true;
         _viewList.IntegralHeight = false;
-        _viewList.ItemCheck += (_, _) => BeginInvoke(new Action(UpdatePreviewButtonEnabled));
+        _viewList.ItemCheck += OnViewListItemCheck;
         panel.Controls.Add(_viewList, 0, 0);
 
         FlowLayoutPanel viewActions = new()
@@ -575,6 +575,25 @@ public sealed class ExportDialog : WinFormsForm
         _previewButton.Enabled = _previewRequested != null &&
                                  previewTypes != ExportFeatureType.None &&
                                  GetSelectedViews().Count > 0;
+    }
+
+    private void OnViewListItemCheck(object? sender, ItemCheckEventArgs e)
+    {
+        if (_viewList.IsHandleCreated)
+        {
+            _viewList.BeginInvoke(new Action(UpdatePreviewButtonEnabled));
+            return;
+        }
+
+        if (IsHandleCreated)
+        {
+            BeginInvoke(new Action(UpdatePreviewButtonEnabled));
+            return;
+        }
+
+        // During initial dialog population the checked state changes before any handle exists.
+        // In that phase a direct refresh is safe, and OnShown performs a final sync once the form is visible.
+        UpdatePreviewButtonEnabled();
     }
 
     private void SelectPresetIfAvailable(int targetEpsg)
