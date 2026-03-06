@@ -45,7 +45,6 @@ public sealed class OpeningExtractor
         IReadOnlyList<Stairs> stairs,
         IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<ExportPolygon> unitFeatures,
-        IReadOnlyList<LineString2D> elevatorOpeningLines,
         ICollection<string> warnings)
     {
         if (level is null)
@@ -76,11 +75,6 @@ public sealed class OpeningExtractor
         if (unitFeatures is null)
         {
             throw new ArgumentNullException(nameof(unitFeatures));
-        }
-
-        if (elevatorOpeningLines is null)
-        {
-            throw new ArgumentNullException(nameof(elevatorOpeningLines));
         }
 
         if (warnings is null)
@@ -118,218 +112,12 @@ public sealed class OpeningExtractor
                 opening.Id.Value);
         }
 
-        AddStairEntrances(features, seenGeometryKeys, stairs, level.Elevation, levelId, warnings);
-        AddEscalatorEntrances(features, seenGeometryKeys, familyUnits, snapSegments, levelId);
-        AddElevatorEntrances(features, seenGeometryKeys, elevatorOpeningLines, levelId);
         return features;
     }
 
-    private void AddStairEntrances(
-        ICollection<ExportLineString> target,
-        ISet<string> seenGeometryKeys,
-        IReadOnlyList<Stairs> stairs,
-        double levelElevationFeet,
-        string levelId,
-        ICollection<string> warnings)
-    {
-        foreach (Stairs stair in stairs)
-        {
-            LineString2D? preferredLine = null;
-            double preferredScore = double.MaxValue;
-            LineString2D? fallbackLine = null;
-            double fallbackScore = double.MaxValue;
 
-            foreach (ElementId runId in stair.GetStairsRuns())
-            {
-                if (_document.GetElement(runId) is not StairsRun run)
-                {
-                    continue;
-                }
 
-                if (!TryGetRunEndpoints(run, out Point2D start, out Point2D end, out Point2D direction, warnings))
-                {
-                    continue;
-                }
 
-                double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
-                double halfWidthMeters = runWidthMeters * 0.5d;
-
-                double baseDelta = Math.Abs(run.BaseElevation - levelElevationFeet);
-                bool baseMatchesLevel = baseDelta <= StairLevelElevationToleranceFeet;
-                if (TryCreateEntranceLine(start, direction, EndpointInsetMeters, halfWidthMeters, out LineString2D startLine))
-                {
-                    if (baseMatchesLevel)
-                    {
-                        TryPromoteCandidate(startLine, baseDelta, ref preferredLine, ref preferredScore);
-                    }
-                    else
-                    {
-                        TryPromoteCandidate(startLine, baseDelta, ref fallbackLine, ref fallbackScore);
-                    }
-                }
-
-                double topDelta = Math.Abs(run.TopElevation - levelElevationFeet);
-                bool topMatchesLevel = topDelta <= StairLevelElevationToleranceFeet;
-                if (TryCreateEntranceLine(end, direction, -EndpointInsetMeters, halfWidthMeters, out LineString2D endLine))
-                {
-                    if (topMatchesLevel)
-                    {
-                        TryPromoteCandidate(endLine, topDelta, ref preferredLine, ref preferredScore);
-                    }
-                    else
-                    {
-                        TryPromoteCandidate(endLine, topDelta, ref fallbackLine, ref fallbackScore);
-                    }
-                }
-            }
-
-            LineString2D? chosen = preferredLine ?? fallbackLine;
-            if (chosen != null)
-            {
-                string id = StableIdGenerator.Create("opening.stair", stair.Id.Value, levelId);
-                AddFeature(target, seenGeometryKeys, chosen, id, "pedestrian", levelId, stair.Id.Value);
-            }
-        }
-    }
-
-    private static void TryPromoteCandidate(
-        LineString2D candidate,
-        double score,
-        ref LineString2D? currentBest,
-        ref double currentBestScore)
-    {
-        if (candidate == null)
-        {
-            return;
-        }
-
-        if (currentBest == null || score < currentBestScore)
-        {
-            currentBest = candidate;
-            currentBestScore = score;
-        }
-    }
-
-    private void AddEscalatorEntrances(
-        ICollection<ExportLineString> target,
-        ISet<string> seenGeometryKeys,
-        IReadOnlyList<FamilyInstance> familyUnits,
-        IReadOnlyList<BoundarySegment> snapSegments,
-        string levelId)
-    {
-        foreach (FamilyInstance escalator in familyUnits)
-        {
-            if (!IsEscalatorFamily(escalator))
-            {
-                continue;
-            }
-
-            if (!TryGetEscalatorEndpoints(
-                    escalator,
-                    out Point2D start,
-                    out Point2D end,
-                    out Point2D direction,
-                    out double halfWidthMeters))
-            {
-                continue;
-            }
-
-            if (TryCreateEntranceLine(start, direction, EndpointInsetMeters, halfWidthMeters, out LineString2D startLine))
-            {
-                LineString2D snapped = SnapToClosestOutline(startLine, snapSegments);
-                string id = StableIdGenerator.Create("opening.escalator", (escalator.Id.Value * 10L) + 1, levelId);
-                AddFeature(target, seenGeometryKeys, snapped, id, "pedestrian", levelId, escalator.Id.Value);
-            }
-
-            if (TryCreateEntranceLine(end, direction, -EndpointInsetMeters, halfWidthMeters, out LineString2D endLine))
-            {
-                LineString2D snapped = SnapToClosestOutline(endLine, snapSegments);
-                string id = StableIdGenerator.Create("opening.escalator", (escalator.Id.Value * 10L) + 2, levelId);
-                AddFeature(target, seenGeometryKeys, snapped, id, "pedestrian", levelId, escalator.Id.Value);
-            }
-        }
-    }
-
-    private void AddElevatorEntrances(
-        List<ExportLineString> target,
-        ISet<string> seenGeometryKeys,
-        IReadOnlyList<LineString2D> elevatorOpeningLines,
-        string levelId)
-    {
-        for (int i = 0; i < elevatorOpeningLines.Count; i++)
-        {
-            LineString2D line = elevatorOpeningLines[i];
-            if (line.Points.Count < 2)
-            {
-                continue;
-            }
-
-            double dx = line.Points[1].X - line.Points[0].X;
-            double dy = line.Points[1].Y - line.Points[0].Y;
-            if (Math.Sqrt((dx * dx) + (dy * dy)) < MinOpeningLengthMeters)
-            {
-                continue;
-            }
-
-            Point2D elevatorMidpoint = Midpoint(line);
-            int existingIndex = FindNearestExistingOpening(
-                target, elevatorMidpoint, MaxElevatorOpeningSnapDistanceMeters);
-
-            if (existingIndex >= 0)
-            {
-                ExportLineString existing = target[existingIndex];
-                string oldGeometryKey = BuildGeometryKey(existing.LineString);
-                seenGeometryKeys.Remove(oldGeometryKey);
-                target.RemoveAt(existingIndex);
-
-                string newGeometryKey = BuildGeometryKey(line);
-                if (seenGeometryKeys.Add(newGeometryKey))
-                {
-                    Dictionary<string, object?> snappedAttributes = new();
-                    foreach (KeyValuePair<string, object?> kvp in existing.Attributes)
-                    {
-                        snappedAttributes[kvp.Key] = kvp.Value;
-                    }
-
-                    target.Add(new ExportLineString(line, snappedAttributes));
-                }
-            }
-            else
-            {
-                string id = StableIdGenerator.Create("opening.elevator", i + 1, levelId);
-                AddFeature(target, seenGeometryKeys, line, id, "pedestrian", levelId, elementId: 0L);
-            }
-        }
-    }
-
-    private static int FindNearestExistingOpening(
-        List<ExportLineString> features,
-        Point2D elevatorOpeningMidpoint,
-        double maxDistance)
-    {
-        int bestIndex = -1;
-        double bestDistance = double.MaxValue;
-
-        for (int i = 0; i < features.Count; i++)
-        {
-            Point2D mid = Midpoint(features[i].LineString);
-            double dist = Distance(mid, elevatorOpeningMidpoint);
-            if (dist < bestDistance && dist <= maxDistance)
-            {
-                bestDistance = dist;
-                bestIndex = i;
-            }
-        }
-
-        return bestIndex;
-    }
-
-    private static Point2D Midpoint(LineString2D line)
-    {
-        Point2D start = line.Points[0];
-        Point2D end = line.Points[line.Points.Count - 1];
-        return new Point2D((start.X + end.X) * 0.5d, (start.Y + end.Y) * 0.5d);
-    }
 
     private static List<BoundarySegment> BuildSnapSegments(IReadOnlyList<ExportPolygon> unitFeatures)
     {
