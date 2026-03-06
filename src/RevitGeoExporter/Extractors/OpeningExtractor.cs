@@ -6,6 +6,7 @@ using Autodesk.Revit.DB.Architecture;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
 
@@ -22,16 +23,16 @@ public sealed class OpeningExtractor
     private readonly Document _document;
     private readonly Transform _internalToSharedTransform;
     private readonly CrsTransformer _transformer;
-    private readonly SharedParameterManager _parameterManager;
+    private readonly IExportMetadataProvider _metadataProvider;
     private readonly ZoneCatalog _zoneCatalog;
 
     public OpeningExtractor(
         Document document,
-        SharedParameterManager parameterManager,
+        IExportMetadataProvider metadataProvider,
         ZoneCatalog zoneCatalog)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _parameterManager = parameterManager ?? throw new ArgumentNullException(nameof(parameterManager));
+        _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _internalToSharedTransform =
             _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
@@ -101,7 +102,7 @@ public sealed class OpeningExtractor
 
             lineString = SnapToClosestOutline(lineString, snapSegments, MaxOpeningSnapDistanceMeters);
 
-            string id = _parameterManager.GetOrCreateElementId(opening, warnings);
+            string id = _metadataProvider.GetElementId(opening, warnings);
             AddFeature(
                 features,
                 seenGeometryKeys,

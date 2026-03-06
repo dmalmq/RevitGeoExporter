@@ -28,17 +28,22 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _clearAllButton = new();
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
+    private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
     private readonly Label _versionLabel = new();
     private readonly Label _languageLabel = new();
     private readonly Label _featureTypesLabel = new();
     private readonly Label _outputDirectoryLabel = new();
     private readonly Label _crsLabel = new();
-    private UiLanguage _language = UiLanguage.English;
 
     private readonly IReadOnlyList<ViewSelectionItem> _viewItems;
+    private readonly Action<ExportPreviewRequest>? _previewRequested;
+    private UiLanguage _language = UiLanguage.English;
 
-    public ExportDialog(IReadOnlyList<ViewPlan> views, ExportDialogSettings settings)
+    public ExportDialog(
+        IReadOnlyList<ViewPlan> views,
+        ExportDialogSettings settings,
+        Action<ExportPreviewRequest>? previewRequested = null)
     {
         if (views is null)
         {
@@ -53,6 +58,7 @@ public sealed class ExportDialog : WinFormsForm
         _viewItems = views
             .Select(view => new ViewSelectionItem(view))
             .ToList();
+        _previewRequested = previewRequested;
 
         InitializeComponents();
         LoadValues(settings);
@@ -116,6 +122,7 @@ public sealed class ExportDialog : WinFormsForm
         _viewList.CheckOnClick = true;
         _viewList.HorizontalScrollbar = true;
         _viewList.IntegralHeight = false;
+        _viewList.ItemCheck += (_, _) => BeginInvoke(new Action(UpdatePreviewButtonEnabled));
         panel.Controls.Add(_viewList, 0, 0);
 
         FlowLayoutPanel viewActions = new()
@@ -126,13 +133,7 @@ public sealed class ExportDialog : WinFormsForm
 
         _selectAllButton.Width = 100;
         _selectAllButton.Height = 28;
-        _selectAllButton.Click += (_, _) =>
-        {
-            for (int i = 0; i < _viewList.Items.Count; i++)
-            {
-                _viewList.SetItemChecked(i, true);
-            }
-        };
+        _selectAllButton.Click += (_, _) => CheckAllViews();
 
         _clearAllButton.Width = 100;
         _clearAllButton.Height = 28;
@@ -210,12 +211,15 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Text = "detail";
         _openingCheckBox.Text = "opening";
         _levelCheckBox.Text = "level";
+        _unitCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
         panel.Controls.Add(featuresPanel, 0, 3);
-
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
         _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
@@ -239,10 +243,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             using FolderBrowserDialog folderDialog = new()
             {
-                Description = UiLanguageText.Select(
-                    _language,
-                    "Select output folder for GeoPackage files",
-                    "GeoPackage出力先フォルダを選択してください"),
+                Description = "Select output folder for GeoPackage files",
                 ShowNewFolderButton = true,
                 SelectedPath = _outputDirectoryTextBox.Text,
             };
@@ -286,8 +287,8 @@ public sealed class ExportDialog : WinFormsForm
 
         _targetEpsgTextBox.Dock = DockStyle.Fill;
         crsPanel.Controls.Add(_targetEpsgTextBox, 0, 1);
-
         panel.Controls.Add(crsPanel, 0, 8);
+
         return _optionsGroup;
     }
 
@@ -322,8 +323,13 @@ public sealed class ExportDialog : WinFormsForm
         _exportButton.Height = 30;
         _exportButton.Click += (_, _) => ConfirmExport();
 
+        _previewButton.Width = 90;
+        _previewButton.Height = 30;
+        _previewButton.Click += (_, _) => ShowPreview();
+
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_exportButton);
+        actions.Controls.Add(_previewButton);
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
 
@@ -381,6 +387,7 @@ public sealed class ExportDialog : WinFormsForm
         SelectLanguage(_language);
         ApplyLanguage();
         UpdateVersionLabel();
+        UpdatePreviewButtonEnabled();
     }
 
     private void ApplyLanguage()
@@ -391,11 +398,12 @@ public sealed class ExportDialog : WinFormsForm
         _languageLabel.Text = UiLanguageText.Select(_language, "Language", "言語");
         _featureTypesLabel.Text = UiLanguageText.Select(_language, "Feature Types", "フィーチャ種別");
         _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
-        _crsLabel.Text = UiLanguageText.Select(_language, "CRS (EPSG)", "座標系 (EPSG)");
-        _selectAllButton.Text = UiLanguageText.Select(_language, "Select All", "すべて選択");
-        _clearAllButton.Text = UiLanguageText.Select(_language, "Clear All", "選択解除");
+        _crsLabel.Text = UiLanguageText.Select(_language, "CRS (EPSG)", "CRS (EPSG)");
+        _selectAllButton.Text = UiLanguageText.Select(_language, "Select All", "全て選択");
+        _clearAllButton.Text = UiLanguageText.Select(_language, "Clear All", "全て解除");
         _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "参照...");
         _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
+        _previewButton.Text = UiLanguageText.Select(_language, "Preview...", "プレビュー...");
         _exportButton.Text = UiLanguageText.Select(_language, "Export", "エクスポート");
     }
 
@@ -416,7 +424,7 @@ public sealed class ExportDialog : WinFormsForm
     private void UpdateVersionLabel()
     {
         _versionLabel.Text = _language == UiLanguage.Japanese
-            ? $"繝舌・繧ｸ繝ｧ繝ｳ {ProjectInfo.VersionTag}"
+            ? $"Version {ProjectInfo.VersionTag}"
             : $"Version {ProjectInfo.VersionTag}";
     }
 
@@ -427,10 +435,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(
-                    _language,
-                    "Select at least one plan view to export.",
-                    "少なくとも1つの平面図ビューを選択してください。"),
+                UiLanguageText.Select(_language, "Select at least one plan view to export.", "エクスポートする平面図ビューを1つ以上選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -442,10 +447,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(
-                    _language,
-                    "Select at least one feature type.",
-                    "少なくとも1つのフィーチャ種別を選択してください。"),
+                UiLanguageText.Select(_language, "Select at least one feature type.", "フィーチャ種別を1つ以上選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -457,10 +459,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(
-                    _language,
-                    "Choose an output directory.",
-                    "出力フォルダを選択してください。"),
+                UiLanguageText.Select(_language, "Choose an output directory.", "出力フォルダを選択してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -471,10 +470,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(
-                    _language,
-                    "Enter a valid EPSG code.",
-                    "有効なEPSGコードを入力してください。"),
+                UiLanguageText.Select(_language, "Enter a valid EPSG code.", "有効なEPSGコードを入力してください。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -489,6 +485,40 @@ public sealed class ExportDialog : WinFormsForm
             _language);
         DialogResult = DialogResult.OK;
         Close();
+    }
+
+    private void ShowPreview()
+    {
+        if (_previewRequested == null)
+        {
+            return;
+        }
+
+        List<ViewPlan> selectedViews = GetSelectedViews();
+        if (selectedViews.Count == 0)
+        {
+            MessageBox.Show(
+                this,
+                UiLanguageText.Select(_language, "Select at least one plan view to preview.", "プレビューする平面図ビューを1つ以上選択してください。"),
+                ProjectInfo.Name,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        ExportFeatureType previewTypes = GetSelectedFeatureTypes() & (ExportFeatureType.Unit | ExportFeatureType.Opening);
+        if (previewTypes == ExportFeatureType.None)
+        {
+            MessageBox.Show(
+                this,
+                UiLanguageText.Select(_language, "Preview requires unit and/or opening to be selected.", "プレビューには unit または opening の選択が必要です。"),
+                ProjectInfo.Name,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, _language));
     }
 
     private void CheckAllViews()
@@ -539,6 +569,14 @@ public sealed class ExportDialog : WinFormsForm
         return types;
     }
 
+    private void UpdatePreviewButtonEnabled()
+    {
+        ExportFeatureType previewTypes = GetSelectedFeatureTypes() & (ExportFeatureType.Unit | ExportFeatureType.Opening);
+        _previewButton.Enabled = _previewRequested != null &&
+                                 previewTypes != ExportFeatureType.None &&
+                                 GetSelectedViews().Count > 0;
+    }
+
     private void SelectPresetIfAvailable(int targetEpsg)
     {
         for (int i = 0; i < _crsPresetComboBox.Items.Count; i++)
@@ -555,7 +593,10 @@ public sealed class ExportDialog : WinFormsForm
 
     public ExportDialogSettings BuildSettings()
     {
-        int targetEpsg = int.TryParse(_targetEpsgTextBox.Text, out int epsg) ? epsg : ProjectInfo.DefaultTargetEpsg;
+        int targetEpsg = int.TryParse(_targetEpsgTextBox.Text, out int epsg)
+            ? epsg
+            : ProjectInfo.DefaultTargetEpsg;
+
         return new ExportDialogSettings
         {
             OutputDirectory = (_outputDirectoryTextBox.Text ?? string.Empty).Trim(),
@@ -573,6 +614,8 @@ public sealed class ExportDialog : WinFormsForm
         {
             _outputDirectoryTextBox.Text = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         }
+
+        UpdatePreviewButtonEnabled();
     }
 
     private sealed class ViewSelectionItem
@@ -588,8 +631,7 @@ public sealed class ExportDialog : WinFormsForm
 
         public override string ToString()
         {
-            string levelName = View.GenLevel?.Name ??
-                UiLanguageText.Select(DisplayLanguage, "<no level>", "<レベルなし>");
+            string levelName = View.GenLevel?.Name ?? UiLanguageText.Select(DisplayLanguage, "<no level>", "<レベルなし>");
             string levelLabel = UiLanguageText.Select(DisplayLanguage, "Level", "レベル");
             return $"{View.Name}  [{levelLabel}: {levelName}]";
         }

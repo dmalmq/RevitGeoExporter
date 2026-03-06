@@ -12,8 +12,10 @@ using NetTopologySuite.Operation.Polygonize;
 using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
 
@@ -43,23 +45,28 @@ public sealed class UnitExtractor
     private readonly Transform _internalToSharedTransform;
     private readonly CrsTransformer _transformer;
     private readonly ZoneCatalog _zoneCatalog;
-    private readonly SharedParameterManager _parameterManager;
+    private readonly IExportMetadataProvider _metadataProvider;
+    private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly string _source;
 
     public UnitExtractor(
         Document document,
         ZoneCatalog zoneCatalog,
-        SharedParameterManager parameterManager,
-        string source)
+        IExportMetadataProvider metadataProvider,
+        string source,
+        FloorCategoryResolver floorCategoryResolver)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _internalToSharedTransform =
             _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
         _transformer = new CrsTransformer();
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
-        _parameterManager = parameterManager ?? throw new ArgumentNullException(nameof(parameterManager));
+        _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
+        _floorCategoryResolver =
+            floorCategoryResolver ?? throw new ArgumentNullException(nameof(floorCategoryResolver));
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
     }
+
     public bool TryCreateFloorUnits(
         Floor floor,
         string levelId,
@@ -74,6 +81,7 @@ public sealed class UnitExtractor
 
         long elementId = floor.Id.Value;
         string typeName = GetElementTypeName(floor);
+        string rawFloorTypeName = string.IsNullOrWhiteSpace(typeName) ? $"<floor-{elementId}>" : typeName.Trim();
         string zoneName;
         if (TryResolveFloorZoneName(typeName, out string parsedZoneName, out bool prefixMatched))
         {
@@ -86,7 +94,7 @@ public sealed class UnitExtractor
         }
         else
         {
-            zoneName = string.IsNullOrWhiteSpace(typeName) ? $"<floor-{elementId}>" : typeName.Trim();
+            zoneName = rawFloorTypeName;
             warnings.Add(
                 $"Floor {elementId} type '{typeName}' does not match the expected floor naming convention. Using full type name '{zoneName}' for zone lookup.");
         }
@@ -114,16 +122,17 @@ public sealed class UnitExtractor
             }
         }
 
-        bool foundZone = _zoneCatalog.TryGetZoneInfo(zoneName, out ZoneInfo zoneInfo);
-        if (!foundZone)
+        ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(rawFloorTypeName, zoneName);
+        ZoneInfo zoneInfo = resolvedFloorCategory.ZoneInfo;
+        if (resolvedFloorCategory.IsUnassigned)
         {
             warnings.Add(
                 $"Floor {elementId} zone '{zoneName}' was not found in catalog. Default category/restriction applied.");
         }
 
-        string baseId = _parameterManager.GetOrCreateElementId(floor, warnings);
-        string? name = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfNameParameterName);
-        string? altName = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfAltNameParameterName);
+        string baseId = _metadataProvider.GetElementId(floor, warnings);
+        string? name = _metadataProvider.GetOptionalStringParameter(floor, SharedParameterManager.ImdfNameParameterName);
+        string? altName = _metadataProvider.GetOptionalStringParameter(floor, SharedParameterManager.ImdfAltNameParameterName);
 
         // Create features for each base polygon extracted from the floor.
         List<Polygon2D> allPolygons = basePolygons;
@@ -138,7 +147,9 @@ public sealed class UnitExtractor
                     levelId,
                     zoneInfo,
                     name,
-                    altName),
+                    altName,
+                    floor.Id.Value,
+                    resolvedFloorCategory),
             };
             return true;
         }
@@ -160,7 +171,9 @@ public sealed class UnitExtractor
                     levelId,
                     zoneInfo,
                     name,
-                    altName));
+                    altName,
+                    floor.Id.Value,
+                    resolvedFloorCategory));
         }
 
         features = created;
@@ -272,10 +285,10 @@ public sealed class UnitExtractor
         ZoneInfo zoneInfo,
         ICollection<string> warnings)
     {
-        string id = _parameterManager.GetOrCreateElementId(sourceElement, warnings);
-        string? name = _parameterManager.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
-        string? altName = _parameterManager.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygon, levelId, zoneInfo, name, altName);
+        string id = _metadataProvider.GetElementId(sourceElement, warnings);
+        string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
+        string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
+        return CreateFeature(id, polygon, levelId, zoneInfo, name, altName, sourceElement.Id.Value);
     }
 
     private ExportPolygon CreateFeature(
@@ -285,10 +298,10 @@ public sealed class UnitExtractor
         ZoneInfo zoneInfo,
         ICollection<string> warnings)
     {
-        string id = _parameterManager.GetOrCreateElementId(sourceElement, warnings);
-        string? name = _parameterManager.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
-        string? altName = _parameterManager.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygons, levelId, zoneInfo, name, altName);
+        string id = _metadataProvider.GetElementId(sourceElement, warnings);
+        string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
+        string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
+        return CreateFeature(id, polygons, levelId, zoneInfo, name, altName, sourceElement.Id.Value);
     }
 
     private ExportPolygon CreateFeature(
@@ -297,24 +310,29 @@ public sealed class UnitExtractor
         string levelId,
         ZoneInfo zoneInfo,
         string? name,
-        string? altName)
+        string? altName,
+        long? sourceElementId,
+        ResolvedFloorCategory? resolvedFloorCategory = null)
     {
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(polygon);
         string displayPoint = DisplayPointCalculator.ToWktPoint(centroid);
 
-        return new ExportPolygon(
-            polygon,
-            new Dictionary<string, object?>
-            {
-                ["id"] = id,
-                ["category"] = zoneInfo.Category,
-                ["restrict"] = zoneInfo.Restriction,
-                ["name"] = name,
-                ["alt_name"] = altName,
-                ["level_id"] = levelId,
-                ["source"] = _source,
-                ["display_point"] = displayPoint,
-            });
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = id,
+            ["category"] = zoneInfo.Category,
+            ["restrict"] = zoneInfo.Restriction,
+            ["name"] = name,
+            ["alt_name"] = altName,
+            ["level_id"] = levelId,
+            ["source"] = _source,
+            ["display_point"] = displayPoint,
+            ["source_element_id"] = sourceElementId,
+            ["preview_fill_color"] = zoneInfo.FillColor,
+        };
+        AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
+
+        return new ExportPolygon(polygon, attributes);
     }
 
     private ExportPolygon CreateFeature(
@@ -323,7 +341,9 @@ public sealed class UnitExtractor
         string levelId,
         ZoneInfo zoneInfo,
         string? name,
-        string? altName)
+        string? altName,
+        long? sourceElementId,
+        ResolvedFloorCategory? resolvedFloorCategory = null)
     {
         if (polygons == null || polygons.Count == 0)
         {
@@ -336,19 +356,43 @@ public sealed class UnitExtractor
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(displayPolygon);
         string displayPoint = DisplayPointCalculator.ToWktPoint(centroid);
 
-        return new ExportPolygon(
-            polygons,
-            new Dictionary<string, object?>
-            {
-                ["id"] = id,
-                ["category"] = zoneInfo.Category,
-                ["restrict"] = zoneInfo.Restriction,
-                ["name"] = name,
-                ["alt_name"] = altName,
-                ["level_id"] = levelId,
-                ["source"] = _source,
-                ["display_point"] = displayPoint,
-            });
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = id,
+            ["category"] = zoneInfo.Category,
+            ["restrict"] = zoneInfo.Restriction,
+            ["name"] = name,
+            ["alt_name"] = altName,
+            ["level_id"] = levelId,
+            ["source"] = _source,
+            ["display_point"] = displayPoint,
+            ["source_element_id"] = sourceElementId,
+            ["preview_fill_color"] = zoneInfo.FillColor,
+        };
+        AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
+
+        return new ExportPolygon(polygons, attributes);
+    }
+
+    private static void AddResolvedFloorCategoryAttributes(
+        IDictionary<string, object?> attributes,
+        ResolvedFloorCategory? resolvedFloorCategory)
+    {
+        if (attributes is null)
+        {
+            throw new ArgumentNullException(nameof(attributes));
+        }
+
+        if (resolvedFloorCategory == null)
+        {
+            return;
+        }
+
+        attributes["is_floor_derived"] = true;
+        attributes["source_floor_type_name"] = resolvedFloorCategory.FloorTypeName;
+        attributes["parsed_zone_candidate"] = resolvedFloorCategory.ParsedZoneCandidate;
+        attributes["is_unassigned"] = resolvedFloorCategory.IsUnassigned;
+        attributes["category_resolution_source"] = resolvedFloorCategory.ResolutionSource.ToString();
     }
 
 
