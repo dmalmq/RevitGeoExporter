@@ -1,8 +1,15 @@
 # RevitGeoExporter
 
-RevitGeoExporter is a Revit 2024 add-in for exporting plan-view geometry from a building model into IMDF-style GeoPackage files.
+RevitGeoExporter is a Revit 2024 add-in that turns selected floor and ceiling plan views into IMDF-style GeoPackage files for indoor mapping workflows.
 
-It is built for workflows where a team models floors, circulation, stairs, openings, and other indoor map geometry in Revit, then needs a repeatable way to turn selected views into GIS-friendly output.
+It is intended for teams that already model indoor spaces in Revit and need a repeatable way to extract units, circulation, openings, and level geometry into GIS-friendly deliverables.
+
+At a glance, the add-in:
+
+- Exports selected Revit plan views into `_unit`, `_detail`, `_opening`, and `_level` GeoPackages.
+- Includes a preview step so the user can inspect export geometry before writing files.
+- Helps recover from inconsistent floor naming by letting the user assign categories to unclassified floor-derived units.
+- Keeps export IDs stable and supports configurable output CRS / EPSG settings.
 
 ## What the add-in does
 

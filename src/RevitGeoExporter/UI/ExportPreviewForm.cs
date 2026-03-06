@@ -101,7 +101,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
         Label viewLabel = new()
@@ -150,6 +150,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
+            AutoSize = true,
         };
 
         _fitButton.Text = T("Fit", "Fit");

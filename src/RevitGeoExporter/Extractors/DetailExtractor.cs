@@ -14,6 +14,7 @@ public sealed class DetailExtractor
 {
     private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
     private const double MinimumDetailLineLengthMeters = 0.05d;
+    private const double StairDetailSpacingMeters = 0.60d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
@@ -207,12 +208,6 @@ public sealed class DetailExtractor
     private bool TryBuildRunStepLines(StairsRun run, out List<LineString2D> lines, ICollection<string> warnings)
     {
         lines = new List<LineString2D>();
-        int treadCount = run.ActualTreadsNumber;
-        if (treadCount <= 1)
-        {
-            return false;
-        }
-
         CurveLoop footprintBoundary;
         CurveLoop stairsPath;
         try
@@ -237,13 +232,23 @@ public sealed class DetailExtractor
             return false;
         }
 
+        double pathLengthMeters = GetLength(pathPoints);
+        if (pathLengthMeters < MinimumDetailLineLengthMeters)
+        {
+            return false;
+        }
+
+        int lineCount = Math.Max(1, (int)Math.Floor(pathLengthMeters / StairDetailSpacingMeters));
+        double occupiedLengthMeters = (lineCount - 1) * StairDetailSpacingMeters;
+        double startDistanceMeters = Math.Max(0d, (pathLengthMeters - occupiedLengthMeters) * 0.5d);
         double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
         double halfCutLengthMeters = runWidthMeters * 1.5d;
         HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
 
-        for (int i = 1; i <= treadCount; i++)
+        for (int i = 0; i < lineCount; i++)
         {
-            double fraction = i / (double)(treadCount + 1);
+            double distanceMeters = startDistanceMeters + (i * StairDetailSpacingMeters);
+            double fraction = pathLengthMeters <= 1e-9d ? 0d : distanceMeters / pathLengthMeters;
             if (!TryInterpolateOnPolyline(pathPoints, fraction, out Point2D point, out Point2D tangent))
             {
                 continue;

@@ -100,7 +100,8 @@ public sealed class OpeningExtractor
                 continue;
             }
 
-            lineString = SnapToClosestOutline(lineString, snapSegments, MaxOpeningSnapDistanceMeters);
+            double maxSnapDistance = GetSnapDistance(lineString, snapSegments);
+            lineString = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
 
             string id = _metadataProvider.GetElementId(opening, warnings);
             AddFeature(
@@ -125,12 +126,15 @@ public sealed class OpeningExtractor
         List<BoundarySegment> segments = new();
         foreach (ExportPolygon feature in unitFeatures)
         {
+            string category = TryGetCategory(feature, out string resolvedCategory)
+                ? resolvedCategory
+                : string.Empty;
             foreach (Polygon2D polygon in feature.Polygons)
             {
-                AddRingSegments(segments, polygon.ExteriorRing);
+                AddRingSegments(segments, polygon.ExteriorRing, category);
                 for (int i = 0; i < polygon.InteriorRings.Count; i++)
                 {
-                    AddRingSegments(segments, polygon.InteriorRings[i]);
+                    AddRingSegments(segments, polygon.InteriorRings[i], category);
                 }
             }
         }
@@ -138,7 +142,10 @@ public sealed class OpeningExtractor
         return segments;
     }
 
-    private static void AddRingSegments(ICollection<BoundarySegment> segments, IReadOnlyList<Point2D> ring)
+    private static void AddRingSegments(
+        ICollection<BoundarySegment> segments,
+        IReadOnlyList<Point2D> ring,
+        string category)
     {
         if (ring == null || ring.Count < 2)
         {
@@ -154,8 +161,48 @@ public sealed class OpeningExtractor
                 continue;
             }
 
-            segments.Add(new BoundarySegment(a, b));
+            segments.Add(new BoundarySegment(a, b, category));
         }
+    }
+
+    private static double GetSnapDistance(LineString2D line, IReadOnlyList<BoundarySegment> segments)
+    {
+        return HasNearbyCategory(line, segments, "elevator", MaxElevatorOpeningSnapDistanceMeters)
+            ? MaxElevatorOpeningSnapDistanceMeters
+            : MaxOpeningSnapDistanceMeters;
+    }
+
+    private static bool HasNearbyCategory(
+        LineString2D line,
+        IReadOnlyList<BoundarySegment> segments,
+        string category,
+        double maxDistance)
+    {
+        if (segments == null || segments.Count == 0 || line.Points.Count < 2)
+        {
+            return false;
+        }
+
+        Point2D start = line.Points[0];
+        Point2D end = line.Points[line.Points.Count - 1];
+        Point2D center = new((start.X + end.X) * 0.5d, (start.Y + end.Y) * 0.5d);
+
+        for (int i = 0; i < segments.Count; i++)
+        {
+            BoundarySegment segment = segments[i];
+            if (!string.Equals(segment.Category, category, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            Point2D projected = ProjectPointOntoSegment(center, segment.Start, segment.End, out _);
+            if (Distance(center, projected) <= maxDistance)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static LineString2D SnapToClosestOutline(LineString2D line, IReadOnlyList<BoundarySegment> segments)
@@ -759,14 +806,17 @@ public sealed class OpeningExtractor
 
     private readonly struct BoundarySegment
     {
-        public BoundarySegment(Point2D start, Point2D end)
+        public BoundarySegment(Point2D start, Point2D end, string category)
         {
             Start = start;
             End = end;
+            Category = category ?? string.Empty;
         }
 
         public Point2D Start { get; }
 
         public Point2D End { get; }
+
+        public string Category { get; }
     }
 }

@@ -329,7 +329,7 @@ public sealed class FloorExportDataPreparer
         }
 
         List<UnitGeometryRecord> converted = new(unitFeatures.Count);
-        List<Geometry> horizontalGeometries = new();
+        List<Geometry> verticalGeometries = new();
 
         for (int i = 0; i < unitFeatures.Count; i++)
         {
@@ -341,12 +341,11 @@ public sealed class FloorExportDataPreparer
             }
 
             string category = GetCategory(feature);
-            bool isElevator = string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
-            UnitGeometryRecord record = new(feature.Attributes, category, isElevator, geometry);
+            UnitGeometryRecord record = new(feature.Attributes, category, geometry);
             converted.Add(record);
-            if (!IsVerticalFillCategory(category))
+            if (IsVerticalFillCategory(category))
             {
-                horizontalGeometries.Add(geometry);
+                verticalGeometries.Add(geometry);
             }
         }
 
@@ -355,25 +354,25 @@ public sealed class FloorExportDataPreparer
             return new List<ExportPolygon>();
         }
 
-        Geometry globalHorizontal = Geometry.DefaultFactory.CreateGeometryCollection(Array.Empty<Geometry>());
-        if (horizontalGeometries.Count > 0)
+        Geometry globalVertical = Geometry.DefaultFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        if (verticalGeometries.Count > 0)
         {
             try
             {
-                globalHorizontal = UnaryUnionOp.Union(horizontalGeometries).Buffer(0d);
+                globalVertical = UnaryUnionOp.Union(verticalGeometries).Buffer(0d);
             }
             catch (TopologyException)
             {
                 try
                 {
                     GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                    List<Geometry> reduced = horizontalGeometries.Select(g => reducer.Reduce(g)).ToList();
-                    globalHorizontal = UnaryUnionOp.Union(reduced).Buffer(0d);
-                    warnings.Add("Global horizontal union required reduced precision.");
+                    List<Geometry> reduced = verticalGeometries.Select(g => reducer.Reduce(g)).ToList();
+                    globalVertical = UnaryUnionOp.Union(reduced).Buffer(0d);
+                    warnings.Add("Global vertical unit union required reduced precision.");
                 }
                 catch (TopologyException)
                 {
-                    warnings.Add("Global horizontal union failed.");
+                    warnings.Add("Global vertical unit union failed.");
                 }
             }
         }
@@ -381,14 +380,14 @@ public sealed class FloorExportDataPreparer
         for (int i = 0; i < converted.Count; i++)
         {
             UnitGeometryRecord record = converted[i];
-            if (IsVerticalFillCategory(record.Category) && !globalHorizontal.IsEmpty)
+            if (!IsVerticalFillCategory(record.Category) && !globalVertical.IsEmpty)
             {
                 Geometry trimmed = SafeOverlay(
                     record.Geometry,
-                    globalHorizontal,
+                    globalVertical,
                     (a, b) => a.Difference(b).Buffer(0d),
                     warnings);
-                converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, record.IsElevator, trimmed);
+                converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, trimmed);
             }
         }
 
@@ -433,7 +432,7 @@ public sealed class FloorExportDataPreparer
             if (!buffered.IsEmpty)
             {
                 UnitGeometryRecord current = records[i];
-                records[i] = new UnitGeometryRecord(current.Attributes, current.Category, current.IsElevator, buffered);
+                records[i] = new UnitGeometryRecord(current.Attributes, current.Category, buffered);
             }
         }
     }
@@ -889,20 +888,16 @@ public sealed class FloorExportDataPreparer
         public UnitGeometryRecord(
             IReadOnlyDictionary<string, object?> attributes,
             string category,
-            bool isElevator,
             Geometry geometry)
         {
             Attributes = attributes;
             Category = category;
-            IsElevator = isElevator;
             Geometry = geometry;
         }
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
 
         public string Category { get; }
-
-        public bool IsElevator { get; }
 
         public Geometry Geometry { get; }
     }
