@@ -71,7 +71,6 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     targetEpsg: request.TargetEpsg,
                     selectedViews: request.SelectedViews,
                     featureTypes: request.FeatureTypes,
-                    splitUnitsByWalls: request.SplitUnitsByWalls,
                     progressCallback: update =>
                     {
                         progressForm.UpdateProgress(update);

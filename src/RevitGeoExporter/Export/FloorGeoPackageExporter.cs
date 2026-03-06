@@ -49,7 +49,6 @@ public sealed class FloorGeoPackageExporter
         int targetEpsg,
         IReadOnlyList<ViewPlan> selectedViews,
         ExportFeatureType featureTypes = ExportFeatureType.All,
-        bool splitUnitsByWalls = false,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
@@ -145,7 +144,6 @@ public sealed class FloorGeoPackageExporter
                     levelId,
                     context.Floors,
                     context.Walls,
-                    splitUnitsByWalls && !RawFloorOnlyDebugMode,
                     unitExtractor,
                     unitLayer,
                     warnings);
@@ -373,21 +371,15 @@ public sealed class FloorGeoPackageExporter
         string levelId,
         IReadOnlyList<Floor> floors,
         IReadOnlyList<Wall> walls,
-        bool splitUnitsByWalls,
         UnitExtractor extractor,
         ExportLayer unitLayer,
         ICollection<string> warnings)
     {
-        UnitExtractor.FloorSplitMask? splitMask = splitUnitsByWalls
-            ? extractor.CreateFloorSplitMask(walls, warnings)
-            : null;
-
         foreach (Floor floor in floors)
         {
             if (!extractor.TryCreateFloorUnits(
                     floor,
                     levelId,
-                    splitMask,
                     warnings,
                     out IReadOnlyList<ExportPolygon> features))
             {

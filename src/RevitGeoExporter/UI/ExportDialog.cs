@@ -22,7 +22,6 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
-    private readonly CheckBox _splitByWallsCheckBox = new();
     private readonly GroupBox _viewsGroup = new();
     private readonly GroupBox _optionsGroup = new();
     private readonly Button _selectAllButton = new();
@@ -217,8 +216,6 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_levelCheckBox);
         panel.Controls.Add(featuresPanel, 0, 3);
 
-        _splitByWallsCheckBox.Dock = DockStyle.Fill;
-        panel.Controls.Add(_splitByWallsCheckBox, 0, 4);
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
         _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
@@ -375,7 +372,6 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
-        _splitByWallsCheckBox.Checked = settings.SplitUnitsByWalls;
 
         _targetEpsgTextBox.Text = settings.TargetEpsg > 0
             ? settings.TargetEpsg.ToString()
@@ -394,10 +390,6 @@ public sealed class ExportDialog : WinFormsForm
         _optionsGroup.Text = UiLanguageText.Select(_language, "Export Options", "エクスポート設定");
         _languageLabel.Text = UiLanguageText.Select(_language, "Language", "言語");
         _featureTypesLabel.Text = UiLanguageText.Select(_language, "Feature Types", "フィーチャ種別");
-        _splitByWallsCheckBox.Text = UiLanguageText.Select(
-            _language,
-            "Split floor units by walls",
-            "壁でフロアユニットを分割する");
         _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
         _crsLabel.Text = UiLanguageText.Select(_language, "CRS (EPSG)", "座標系 (EPSG)");
         _selectAllButton.Text = UiLanguageText.Select(_language, "Select All", "すべて選択");
@@ -494,7 +486,6 @@ public sealed class ExportDialog : WinFormsForm
             outputDirectory,
             epsg,
             featureTypes,
-            _splitByWallsCheckBox.Checked,
             _language);
         DialogResult = DialogResult.OK;
         Close();
@@ -570,7 +561,6 @@ public sealed class ExportDialog : WinFormsForm
             OutputDirectory = (_outputDirectoryTextBox.Text ?? string.Empty).Trim(),
             TargetEpsg = targetEpsg,
             FeatureTypes = GetSelectedFeatureTypes(),
-            SplitUnitsByWalls = _splitByWallsCheckBox.Checked,
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
             UiLanguage = _language,
         };

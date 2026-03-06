@@ -12,7 +12,6 @@ public sealed class SettingsDialog : Form
     private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
     private readonly TextBox _epsgTextBox = new();
-    private readonly CheckBox _splitByWallsCheckBox = new();
     private readonly Label _languageLabel = new();
     private readonly Label _outputDirectoryLabel = new();
     private readonly Label _presetLabel = new();
@@ -50,7 +49,6 @@ public sealed class SettingsDialog : Form
             OutputDirectory = (_outputDirectoryTextBox.Text ?? string.Empty).Trim(),
             TargetEpsg = epsg,
             FeatureTypes = _original.FeatureTypes,
-            SplitUnitsByWalls = _splitByWallsCheckBox.Checked,
             SelectedViewIds = _original.SelectedViewIds ?? new System.Collections.Generic.List<long>(),
             UiLanguage = _language,
         };
@@ -175,9 +173,6 @@ public sealed class SettingsDialog : Form
         _epsgTextBox.Dock = DockStyle.Fill;
         form.Controls.Add(_epsgTextBox, 1, 3);
 
-        _splitByWallsCheckBox.Dock = DockStyle.Fill;
-        form.Controls.Add(_splitByWallsCheckBox, 0, 4);
-        form.SetColumnSpan(_splitByWallsCheckBox, 2);
 
         TableLayoutPanel actionsContainer = new()
         {
@@ -241,7 +236,6 @@ public sealed class SettingsDialog : Form
         _outputDirectoryTextBox.Text = settings.OutputDirectory ?? string.Empty;
         int epsg = settings.TargetEpsg > 0 ? settings.TargetEpsg : ProjectInfo.DefaultTargetEpsg;
         _epsgTextBox.Text = epsg.ToString();
-        _splitByWallsCheckBox.Checked = settings.SplitUnitsByWalls;
 
         for (int i = 0; i < _presetComboBox.Items.Count; i++)
         {
@@ -263,10 +257,6 @@ public sealed class SettingsDialog : Form
         _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
         _presetLabel.Text = UiLanguageText.Select(_language, "CRS Preset", "CRSプリセット");
         _epsgLabel.Text = UiLanguageText.Select(_language, "Target EPSG", "対象EPSG");
-        _splitByWallsCheckBox.Text = UiLanguageText.Select(
-            _language,
-            "Split floor units by walls by default",
-            "既定で壁によるフロアユニット分割を有効にする");
         _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "参照...");
         _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
         _saveButton.Text = UiLanguageText.Select(_language, "Save", "保存");

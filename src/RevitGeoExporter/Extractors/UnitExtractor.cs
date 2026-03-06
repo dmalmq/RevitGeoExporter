@@ -60,62 +60,9 @@ public sealed class UnitExtractor
         _parameterManager = parameterManager ?? throw new ArgumentNullException(nameof(parameterManager));
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
     }
-
-    public sealed class FloorSplitMask
-    {
-        internal FloorSplitMask(Geometry geometry)
-        {
-            Geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
-        }
-
-        internal Geometry Geometry { get; }
-    }
-
-    public FloorSplitMask? CreateFloorSplitMask(IReadOnlyList<Wall> walls, ICollection<string> warnings)
-    {
-        if (walls is null)
-        {
-            throw new ArgumentNullException(nameof(walls));
-        }
-
-        if (warnings is null)
-        {
-            throw new ArgumentNullException(nameof(warnings));
-        }
-
-        if (walls.Count == 0)
-        {
-            return null;
-        }
-
-        List<Geometry> wallGeometries = new();
-        foreach (Wall wall in walls)
-        {
-            Geometry? wallGeometry = TryProjectWallCenterline(wall, warnings);
-            if (wallGeometry != null && !wallGeometry.IsEmpty)
-            {
-                wallGeometries.Add(wallGeometry);
-            }
-        }
-
-        if (wallGeometries.Count == 0)
-        {
-            return null;
-        }
-
-        Geometry unioned = UnaryUnionOp.Union(wallGeometries);
-        if (unioned.IsEmpty)
-        {
-            return null;
-        }
-
-        return new FloorSplitMask(unioned);
-    }
-
     public bool TryCreateFloorUnits(
         Floor floor,
         string levelId,
-        FloorSplitMask? splitMask,
         ICollection<string> warnings,
         out IReadOnlyList<ExportPolygon> features)
     {
@@ -178,27 +125,8 @@ public sealed class UnitExtractor
         string? name = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfNameParameterName);
         string? altName = _parameterManager.GetOptionalStringParameter(floor, SharedParameterManager.ImdfAltNameParameterName);
 
-        // Split each base polygon independently by walls and collect all results.
-        List<Polygon2D> allPolygons = new();
-        foreach (Polygon2D basePoly in basePolygons)
-        {
-            if (splitMask != null)
-            {
-                List<Polygon2D> splitResult = SplitPolygonByWalls(basePoly, splitMask.Geometry);
-                if (splitResult.Count > 0)
-                {
-                    allPolygons.AddRange(splitResult);
-                }
-                else
-                {
-                    allPolygons.Add(basePoly);
-                }
-            }
-            else
-            {
-                allPolygons.Add(basePoly);
-            }
-        }
+        // Create features for each base polygon extracted from the floor.
+        List<Polygon2D> allPolygons = basePolygons;
 
         if (allPolygons.Count == 1)
         {
@@ -246,7 +174,7 @@ public sealed class UnitExtractor
         out ExportPolygon? feature)
     {
         feature = null;
-        if (!TryCreateFloorUnits(floor, levelId, splitMask: null, warnings, out IReadOnlyList<ExportPolygon> features) ||
+        if (!TryCreateFloorUnits(floor, levelId, warnings, out IReadOnlyList<ExportPolygon> features) ||
             features.Count == 0)
         {
             return false;
@@ -423,62 +351,6 @@ public sealed class UnitExtractor
             });
     }
 
-    private List<Polygon2D> SplitPolygonByWalls(Polygon2D polygon, Geometry wallLines)
-    {
-        Geometry? sourceGeometry = ToNtsGeometry(polygon);
-        if (sourceGeometry == null || sourceGeometry.IsEmpty)
-        {
-            return new List<Polygon2D>();
-        }
-
-        // Extend wall lines well beyond the polygon bounds so they fully cross it.
-        double extendDist = sourceGeometry.EnvelopeInternal.Diameter * 2.0;
-        Geometry extendedLines = ExtendLineStrings(wallLines, extendDist);
-
-        Geometry nodedLines;
-        try
-        {
-            // Node the boundary and wall lines together so intersections become shared vertices.
-            nodedLines = sourceGeometry.Boundary.Union(extendedLines);
-        }
-        catch (TopologyException)
-        {
-            // Fall back to reduced precision when near-coincident coordinates
-            // cause a non-noded intersection in the overlay engine.
-            var reducer = new GeometryPrecisionReducer(new PrecisionModel(100_000d));
-            Geometry reducedBoundary = reducer.Reduce(sourceGeometry.Boundary);
-            Geometry reducedLines = reducer.Reduce(extendedLines);
-            try
-            {
-                nodedLines = reducedBoundary.Union(reducedLines);
-            }
-            catch (TopologyException)
-            {
-                return new List<Polygon2D> { polygon };
-            }
-        }
-
-        var polygonizer = new Polygonizer();
-        polygonizer.Add(nodedLines);
-
-        var results = new List<Polygon2D>();
-        foreach (Geometry geom in polygonizer.GetPolygons())
-        {
-            if (geom is not Polygon resultPoly || resultPoly.IsEmpty)
-            {
-                continue;
-            }
-
-            // Keep only faces whose interior lies inside the original polygon.
-            if (sourceGeometry.Contains(resultPoly.InteriorPoint))
-            {
-                AddPolygonIfValid(results, resultPoly);
-            }
-        }
-
-        // If the wall didn't cross the polygon, return the original unsplit.
-        return results.Count > 0 ? results : new List<Polygon2D> { polygon };
-    }
 
     private Geometry? TryProjectWallCenterline(Wall wall, ICollection<string> warnings)
     {
@@ -1015,78 +887,6 @@ public sealed class UnitExtractor
         return new Guid(guidBytes).ToString();
     }
 
-    private static Geometry ExtendLineStrings(Geometry geometry, double distance)
-    {
-        List<LineString> extended = new();
-        CollectAndExtendLineStrings(geometry, distance, extended);
-        if (extended.Count == 0)
-        {
-            return geometry;
-        }
-
-        return GeometryFactory.CreateMultiLineString(extended.ToArray());
-    }
-
-    private static void CollectAndExtendLineStrings(Geometry geometry, double distance, List<LineString> result)
-    {
-        if (geometry is LineString ls)
-        {
-            result.Add(ExtendLineString(ls, distance));
-        }
-        else
-        {
-            for (int i = 0; i < geometry.NumGeometries; i++)
-            {
-                CollectAndExtendLineStrings(geometry.GetGeometryN(i), distance, result);
-            }
-        }
-    }
-
-    private static LineString ExtendLineString(LineString line, double distance)
-    {
-        if (line.NumPoints < 2)
-        {
-            return line;
-        }
-
-        Coordinate[] coords = line.Coordinates;
-
-        // Extend start point backwards along the first segment.
-        Coordinate start = coords[0];
-        Coordinate afterStart = coords[1];
-        double startDx = start.X - afterStart.X;
-        double startDy = start.Y - afterStart.Y;
-        double startLen = Math.Sqrt(startDx * startDx + startDy * startDy);
-        if (startLen > 0)
-        {
-            start = new Coordinate(
-                start.X + (startDx / startLen) * distance,
-                start.Y + (startDy / startLen) * distance);
-        }
-
-        // Extend end point forwards along the last segment.
-        Coordinate end = coords[coords.Length - 1];
-        Coordinate beforeEnd = coords[coords.Length - 2];
-        double endDx = end.X - beforeEnd.X;
-        double endDy = end.Y - beforeEnd.Y;
-        double endLen = Math.Sqrt(endDx * endDx + endDy * endDy);
-        if (endLen > 0)
-        {
-            end = new Coordinate(
-                end.X + (endDx / endLen) * distance,
-                end.Y + (endDy / endLen) * distance);
-        }
-
-        Coordinate[] newCoords = new Coordinate[coords.Length];
-        newCoords[0] = start;
-        for (int i = 1; i < coords.Length - 1; i++)
-        {
-            newCoords[i] = coords[i];
-        }
-
-        newCoords[coords.Length - 1] = end;
-        return GeometryFactory.CreateLineString(newCoords);
-    }
 
     private static Geometry? ToNtsGeometry(Polygon2D polygon)
     {
