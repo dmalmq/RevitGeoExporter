@@ -138,7 +138,6 @@ public sealed class FloorGeoPackageExporter
 
             ExportLayer? unitLayer = null;
             List<ExportPolygon> unitFeatures = new();
-            List<LineString2D> elevatorOpeningLines = new();
             if (featureTypes.HasFlag(ExportFeatureType.Unit) || featureTypes.HasFlag(ExportFeatureType.Level))
             {
                 unitLayer = LayerDefinition.CreateUnitLayer();
@@ -160,7 +159,7 @@ public sealed class FloorGeoPackageExporter
                 List<ExportPolygon> rawUnitFeatures = unitLayer.Features.OfType<ExportPolygon>().ToList();
                 unitFeatures = RawFloorOnlyDebugMode
                     ? rawUnitFeatures
-                    : NormalizeUnitFeatures(rawUnitFeatures, warnings, out elevatorOpeningLines);
+                    : NormalizeUnitFeatures(rawUnitFeatures, warnings);
                 unitLayer = LayerDefinition.CreateUnitLayer();
                 foreach (ExportPolygon feature in unitFeatures)
                 {
@@ -217,7 +216,6 @@ public sealed class FloorGeoPackageExporter
                              context.Stairs,
                              context.FamilyUnits,
                              unitFeatures,
-                             elevatorOpeningLines,
                              warnings))
                 {
                     openingLayer.AddFeature(openingFeature);
@@ -441,17 +439,16 @@ public sealed class FloorGeoPackageExporter
 
     private static List<ExportPolygon> NormalizeUnitFeatures(
         IReadOnlyList<ExportPolygon> unitFeatures,
-        ICollection<string> warnings,
-        out List<LineString2D> elevatorOpenings)
+        ICollection<string> warnings)
     {
-        elevatorOpenings = new List<LineString2D>();
         if (unitFeatures.Count == 0)
         {
             return new List<ExportPolygon>();
         }
 
         List<UnitGeometryRecord> converted = new(unitFeatures.Count);
-        List<UnitGeometryRecord> walkwayRecords = new();
+        List<Geometry> horizontalGeometries = new();
+        
         for (int i = 0; i < unitFeatures.Count; i++)
         {
             ExportPolygon feature = unitFeatures[i];
@@ -463,12 +460,11 @@ public sealed class FloorGeoPackageExporter
 
             string category = GetCategory(feature);
             bool isElevator = string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
-            bool isWalkway = string.Equals(category, "walkway", StringComparison.OrdinalIgnoreCase);
             UnitGeometryRecord record = new(feature.Attributes, category, isElevator, geometry);
             converted.Add(record);
-            if (isWalkway)
+            if (!IsVerticalFillCategory(category))
             {
-                walkwayRecords.Add(record);
+                horizontalGeometries.Add(geometry);
             }
         }
 
@@ -477,107 +473,45 @@ public sealed class FloorGeoPackageExporter
             return new List<ExportPolygon>();
         }
 
-        for (int i = 0; i < converted.Count; i++)
-        {
-            UnitGeometryRecord record = converted[i];
-            Geometry preservedVoids = BuildInteriorVoidMask(record.Geometry, warnings);
-            converted[i] = new UnitGeometryRecord(
-                record.Attributes,
-                record.Category,
-                record.IsElevator,
-                record.Geometry,
-                preservedVoids);
-        }
-
-        ReassignInteriorVoidsToVerticalUnits(converted, warnings);
-        CloseSmallGaps(converted);
-
-        List<Geometry> expandedElevators = new();
-        for (int i = 0; i < converted.Count; i++)
-        {
-            if (!converted[i].IsElevator)
-            {
-                continue;
-            }
-
-            UnitGeometryRecord record = converted[i];
-            Geometry expanded = ExpandElevatorTowardWalkway(
-                record.Geometry,
-                walkwayRecords,
-                ElevatorExpansionMeters,
-                out LineString2D? opening);
-            converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, true, expanded);
-            if (!expanded.IsEmpty)
-            {
-                expandedElevators.Add(expanded);
-            }
-
-            if (opening != null)
-            {
-                elevatorOpenings.Add(opening);
-            }
-        }
-
-        if (expandedElevators.Count == 0)
-        {
-            return BuildExportPolygons(converted, warnings);
-        }
-
-        Geometry expandedElevatorUnion;
-        try
-        {
-            expandedElevatorUnion = UnaryUnionOp.Union(expandedElevators).Buffer(0d);
-        }
-        catch (TopologyException)
+        Geometry globalHorizontal = Geometry.DefaultFactory.CreateGeometryCollection(Array.Empty<Geometry>());
+        if (horizontalGeometries.Count > 0)
         {
             try
             {
-                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                List<Geometry> reduced = expandedElevators.Select(g => reducer.Reduce(g)).ToList();
-                expandedElevatorUnion = UnaryUnionOp.Union(reduced).Buffer(0d);
-                warnings.Add("Elevator union required reduced precision and may be slightly approximated.");
+                globalHorizontal = UnaryUnionOp.Union(horizontalGeometries).Buffer(0d);
             }
             catch (TopologyException)
             {
-                warnings.Add("Elevator union failed even with reduced precision; elevator expansion cleanup was skipped.");
-                return BuildExportPolygons(converted, warnings);
+                try
+                {
+                    GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                    List<Geometry> reduced = horizontalGeometries.Select(g => reducer.Reduce(g)).ToList();
+                    globalHorizontal = UnaryUnionOp.Union(reduced).Buffer(0d);
+                    warnings.Add("Global horizontal union required reduced precision.");
+                }
+                catch (TopologyException)
+                {
+                    warnings.Add("Global horizontal union failed.");
+                }
             }
         }
 
-        List<ExportPolygon> normalized = new();
         for (int i = 0; i < converted.Count; i++)
         {
             UnitGeometryRecord record = converted[i];
-            Geometry geometry = record.IsElevator
-                ? record.Geometry
-                : SafeOverlay(record.Geometry, expandedElevatorUnion, (a, b) => a.Difference(b).Buffer(0d), warnings);
-            geometry = CarvePreservedVoids(geometry, record.PreservedVoids, warnings);
-            ExportPolygon? feature = ToExportPolygon(geometry, record.Attributes);
-            if (feature == null)
+            
+            // Trim vertical units (stairs, elevators, escalators) against global horizontal geometries
+            // This perfectly snaps them into the floor holes mathematically!
+            if (IsVerticalFillCategory(record.Category) && !globalHorizontal.IsEmpty)
             {
-                if (!record.IsElevator)
-                {
-                    // Safer fallback: keep the original unit if cleanup erased it entirely.
-                    Geometry fallbackGeometry = CarvePreservedVoids(record.Geometry, record.PreservedVoids, warnings);
-                    ExportPolygon? fallbackFeature = ToExportPolygon(fallbackGeometry, record.Attributes);
-                    if (fallbackFeature != null)
-                    {
-                        warnings.Add(
-                            "A unit feature became empty after elevator expansion cleanup; original unit geometry was retained.");
-                        normalized.Add(fallbackFeature);
-                        continue;
-                    }
-
-                    warnings.Add("A unit feature became empty after elevator expansion cleanup and was skipped.");
-                }
-
-                continue;
+                Geometry trimmed = SafeOverlay(record.Geometry, globalHorizontal, (a, b) => a.Difference(b).Buffer(0d), warnings);
+                converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, record.IsElevator, trimmed);
             }
-
-            normalized.Add(feature);
         }
 
-        return normalized;
+        CloseSmallGaps(converted);
+
+        return BuildExportPolygons(converted, warnings);
     }
 
     private static List<ExportPolygon> BuildExportPolygons(
@@ -587,8 +521,7 @@ public sealed class FloorGeoPackageExporter
         List<ExportPolygon> exported = new(records.Count);
         for (int i = 0; i < records.Count; i++)
         {
-            Geometry geometry = CarvePreservedVoids(records[i].Geometry, records[i].PreservedVoids, warnings);
-            ExportPolygon? feature = ToExportPolygon(geometry, records[i].Attributes);
+            ExportPolygon? feature = ToExportPolygon(records[i].Geometry, records[i].Attributes);
             if (feature != null)
             {
                 exported.Add(feature);
@@ -598,265 +531,7 @@ public sealed class FloorGeoPackageExporter
         return exported;
     }
 
-    private static Geometry CarvePreservedVoids(
-        Geometry geometry,
-        Geometry preservedVoidMask,
-        ICollection<string> warnings)
-    {
-        if (geometry.IsEmpty || preservedVoidMask.IsEmpty)
-        {
-            return geometry;
-        }
 
-        return SafeOverlay(geometry, preservedVoidMask, (a, b) => a.Difference(b).Buffer(0d), warnings);
-    }
-
-    private static Geometry BuildInteriorVoidMask(
-        Geometry geometry,
-        ICollection<string> warnings)
-    {
-        List<Geometry> voidPolygons = new();
-        CollectInteriorVoids(geometry, voidPolygons);
-
-        if (voidPolygons.Count == 0)
-        {
-            return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
-        }
-
-        try
-        {
-            Geometry unioned = UnaryUnionOp.Union(voidPolygons).Buffer(0d);
-            return unioned.IsEmpty
-                ? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>())
-                : unioned;
-        }
-        catch (TopologyException)
-        {
-            try
-            {
-                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                List<Geometry> reduced = voidPolygons.Select(g => reducer.Reduce(g)).ToList();
-                Geometry unioned = UnaryUnionOp.Union(reduced).Buffer(0d);
-                warnings.Add("Interior void preservation required reduced precision and may be slightly approximated.");
-                return unioned.IsEmpty
-                    ? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>())
-                    : unioned;
-            }
-            catch (TopologyException)
-            {
-                warnings.Add("Interior void preservation failed; shaft/no-floor holes may be less accurate.");
-                return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
-            }
-        }
-    }
-
-    private static void ReassignInteriorVoidsToVerticalUnits(
-        List<UnitGeometryRecord> records,
-        ICollection<string> warnings)
-    {
-        List<int> verticalIndices = new();
-        for (int i = 0; i < records.Count; i++)
-        {
-            if (IsVerticalFillCategory(records[i].Category))
-            {
-                verticalIndices.Add(i);
-            }
-        }
-
-        if (verticalIndices.Count == 0)
-        {
-            return;
-        }
-
-        for (int i = 0; i < records.Count; i++)
-        {
-            UnitGeometryRecord owner = records[i];
-            if (owner.PreservedVoids.IsEmpty || IsVerticalFillCategory(owner.Category))
-            {
-                continue;
-            }
-
-            List<Geometry> ownerVoids = new();
-            AddPolygonGeometryParts(ownerVoids, owner.PreservedVoids);
-            if (ownerVoids.Count == 0)
-            {
-                continue;
-            }
-
-            Geometry updatedMask = owner.PreservedVoids;
-            bool maskChanged = false;
-            Geometry ownerGeometry = owner.Geometry;
-            bool geometryChanged = false;
-
-            for (int voidIndex = 0; voidIndex < ownerVoids.Count; voidIndex++)
-            {
-                Geometry voidPolygon = ownerVoids[voidIndex];
-                if (voidPolygon.IsEmpty || voidPolygon.Area < MinimumUnitAreaSquareMeters)
-                {
-                    continue;
-                }
-
-                int bestVerticalIndex = -1;
-                double bestOverlapArea = 0d;
-                for (int verticalListIndex = 0; verticalListIndex < verticalIndices.Count; verticalListIndex++)
-                {
-                    int verticalIndex = verticalIndices[verticalListIndex];
-                    if (verticalIndex == i)
-                    {
-                        continue;
-                    }
-
-                    double overlapArea = ComputeIntersectionArea(records[verticalIndex].Geometry, voidPolygon);
-                    if (overlapArea > bestOverlapArea)
-                    {
-                        bestOverlapArea = overlapArea;
-                        bestVerticalIndex = verticalIndex;
-                    }
-                }
-
-                double voidArea = voidPolygon.Area;
-                if (bestVerticalIndex < 0 || bestOverlapArea <= 0d)
-                {
-                    updatedMask = SafeOverlay(
-                        updatedMask,
-                        voidPolygon,
-                        (a, b) => a.Difference(b).Buffer(0d),
-                        warnings);
-                    maskChanged = true;
-                    warnings.Add(
-                        "A stair/escalator void had no visible vertical-unit overlap; surrounding unit area was retained.");
-                    continue;
-                }
-
-                Geometry targetGeometry = records[bestVerticalIndex].Geometry;
-                double targetArea = targetGeometry.Area;
-                if (targetArea <= 0d)
-                {
-                    // Invalid stair geometry — fill entire void back into floor.
-                    ownerGeometry = SafeOverlay(ownerGeometry, voidPolygon, (a, b) => a.Union(b).Buffer(0d), warnings);
-                    geometryChanged = true;
-                    updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
-                    maskChanged = true;
-                    warnings.Add(
-                        "A stair/escalator void target had invalid geometry; void was filled into surrounding unit.");
-                    continue;
-                }
-
-                bool hasSufficientOverlap = bestOverlapArea >= (voidArea * MinVoidCoverageForVerticalFill);
-                bool isComparableSize = voidArea <= (targetArea * MaxVoidToVerticalAreaRatio);
-
-                if (!hasSufficientOverlap && !isComparableSize)
-                {
-                    // Very poor match — fill entire void (don't trust as a real stair opening).
-                    ownerGeometry = SafeOverlay(ownerGeometry, voidPolygon, (a, b) => a.Union(b).Buffer(0d), warnings);
-                    geometryChanged = true;
-                    updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
-                    maskChanged = true;
-                    warnings.Add(
-                        "A stair/escalator void had very poor overlap with visible geometry; void was filled into surrounding unit.");
-                    continue;
-                }
-
-                // Fill the excess void (void minus visible stair) back into the floor.
-                Geometry excessVoid = SafeOverlay(voidPolygon, targetGeometry, (a, b) => a.Difference(b).Buffer(0d), warnings);
-                if (!excessVoid.IsEmpty && excessVoid.Area >= MinimumUnitAreaSquareMeters)
-                {
-                    ownerGeometry = SafeOverlay(ownerGeometry, excessVoid, (a, b) => a.Union(b).Buffer(0d), warnings);
-                    geometryChanged = true;
-                }
-
-                // Remove entire void from mask.
-                updatedMask = SafeOverlay(updatedMask, voidPolygon, (a, b) => a.Difference(b).Buffer(0d), warnings);
-                maskChanged = true;
-            }
-
-            if (maskChanged || geometryChanged)
-            {
-                records[i] = new UnitGeometryRecord(
-                    owner.Attributes,
-                    owner.Category,
-                    owner.IsElevator,
-                    geometryChanged ? ownerGeometry : owner.Geometry,
-                    updatedMask);
-            }
-        }
-    }
-
-    private static void CollectInteriorVoids(Geometry geometry, ICollection<Geometry> voidPolygons)
-    {
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return;
-        }
-
-        if (geometry is Polygon polygon)
-        {
-            for (int i = 0; i < polygon.NumInteriorRings; i++)
-            {
-                Coordinate[] ringCoords = polygon.GetInteriorRingN(i).Coordinates;
-                if (ringCoords.Length < 4)
-                {
-                    continue;
-                }
-
-                LinearRing ring = GeometryFactory.CreateLinearRing(ringCoords);
-                if (ring.IsEmpty)
-                {
-                    continue;
-                }
-
-                Polygon voidPolygon = GeometryFactory.CreatePolygon(ring);
-                if (!voidPolygon.IsEmpty && voidPolygon.Area >= MinimumUnitAreaSquareMeters)
-                {
-                    voidPolygons.Add(voidPolygon);
-                }
-            }
-
-            return;
-        }
-
-        if (geometry is GeometryCollection collection)
-        {
-            for (int i = 0; i < collection.NumGeometries; i++)
-            {
-                CollectInteriorVoids(collection.GetGeometryN(i), voidPolygons);
-            }
-        }
-    }
-
-    private static double ComputeIntersectionArea(Geometry a, Geometry b)
-    {
-        if (a == null || b == null || a.IsEmpty || b.IsEmpty)
-        {
-            return 0d;
-        }
-
-        Geometry normalizedA = ToOverlayPolygonalGeometry(a);
-        Geometry normalizedB = ToOverlayPolygonalGeometry(b);
-        if (normalizedA.IsEmpty || normalizedB.IsEmpty)
-        {
-            return 0d;
-        }
-
-        try
-        {
-            return normalizedA.Intersection(normalizedB).Area;
-        }
-        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
-        {
-            try
-            {
-                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedA = reducer.Reduce(normalizedA);
-                Geometry reducedB = reducer.Reduce(normalizedB);
-                return reducedA.Intersection(reducedB).Area;
-            }
-            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
-            {
-                return 0d;
-            }
-        }
-    }
 
     private static void CloseSmallGaps(List<UnitGeometryRecord> records)
     {
@@ -885,123 +560,6 @@ public sealed class FloorGeoPackageExporter
         }
     }
 
-    private static Geometry ExpandElevatorTowardWalkway(
-        Geometry elevator,
-        List<UnitGeometryRecord> walkways,
-        double expansionMeters,
-        out LineString2D? opening)
-    {
-        opening = null;
-        if (walkways.Count == 0)
-        {
-            return elevator;
-        }
-
-        Geometry elevatorPolygon = GetLargestPolygon(elevator);
-        if (elevatorPolygon.IsEmpty)
-        {
-            return elevator;
-        }
-
-        Geometry? closestWalkway = null;
-        double closestDistance = double.MaxValue;
-        for (int i = 0; i < walkways.Count; i++)
-        {
-            double distance = elevatorPolygon.Distance(walkways[i].Geometry);
-            if (distance < closestDistance)
-            {
-                closestDistance = distance;
-                closestWalkway = walkways[i].Geometry;
-            }
-        }
-
-        if (closestWalkway == null || closestDistance > MaxElevatorWalkwayProximityMeters)
-        {
-            return elevator;
-        }
-
-        Coordinate[] ring = ((Polygon)elevatorPolygon).ExteriorRing.Coordinates;
-        int bestEdge = -1;
-        double bestEdgeDistance = double.MaxValue;
-        for (int i = 0; i < ring.Length - 1; i++)
-        {
-            Coordinate a = ring[i];
-            Coordinate b = ring[i + 1];
-            double edgeLength = Math.Sqrt(
-                ((b.X - a.X) * (b.X - a.X)) + ((b.Y - a.Y) * (b.Y - a.Y)));
-            if (edgeLength < MinEdgeLengthMeters)
-            {
-                continue;
-            }
-
-            double midX = (a.X + b.X) * 0.5d;
-            double midY = (a.Y + b.Y) * 0.5d;
-            Geometry midPoint = GeometryFactory.CreatePoint(new Coordinate(midX, midY));
-            double distance = midPoint.Distance(closestWalkway);
-            if (distance < bestEdgeDistance)
-            {
-                bestEdgeDistance = distance;
-                bestEdge = i;
-            }
-        }
-
-        if (bestEdge < 0)
-        {
-            return elevator;
-        }
-
-        Coordinate edgeA = ring[bestEdge];
-        Coordinate edgeB = ring[bestEdge + 1];
-        double edgeDx = edgeB.X - edgeA.X;
-        double edgeDy = edgeB.Y - edgeA.Y;
-        double edgeLen = Math.Sqrt((edgeDx * edgeDx) + (edgeDy * edgeDy));
-        if (edgeLen < 1e-9d)
-        {
-            return elevator;
-        }
-
-        double normalX = -edgeDy / edgeLen;
-        double normalY = edgeDx / edgeLen;
-
-        Coordinate centroid = elevatorPolygon.Centroid.Coordinate;
-        double edgeMidX = (edgeA.X + edgeB.X) * 0.5d;
-        double edgeMidY = (edgeA.Y + edgeB.Y) * 0.5d;
-        double toCentroidX = centroid.X - edgeMidX;
-        double toCentroidY = centroid.Y - edgeMidY;
-        double dot = (toCentroidX * normalX) + (toCentroidY * normalY);
-        if (dot > 0d)
-        {
-            normalX = -normalX;
-            normalY = -normalY;
-        }
-
-        Coordinate slabC = new(edgeA.X + (normalX * expansionMeters), edgeA.Y + (normalY * expansionMeters));
-        Coordinate slabD = new(edgeB.X + (normalX * expansionMeters), edgeB.Y + (normalY * expansionMeters));
-
-        Polygon slab = GeometryFactory.CreatePolygon(new[]
-        {
-            edgeA,
-            edgeB,
-            slabD,
-            slabC,
-            new Coordinate(edgeA.X, edgeA.Y),
-        });
-
-        Geometry expanded = SafeOverlay(elevator, slab, (a, b) => a.Union(b).Buffer(0d));
-        if (ReferenceEquals(expanded, elevator))
-        {
-            // SafeOverlay fell back to the original — skip expansion for this elevator.
-            return elevator;
-        }
-
-        opening = new LineString2D(new[]
-        {
-            new Point2D(slabC.X, slabC.Y),
-            new Point2D(slabD.X, slabD.Y),
-        });
-
-        return expanded;
-    }
 
     private static Geometry GetLargestPolygon(Geometry geometry)
     {
@@ -1296,7 +854,8 @@ public sealed class FloorGeoPackageExporter
     private static bool IsVerticalFillCategory(string category)
     {
         return string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase);
+               string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
     }
 
     private static Dictionary<long, string> BuildLevelIdMap(
@@ -1539,14 +1098,12 @@ public sealed class FloorGeoPackageExporter
             IReadOnlyDictionary<string, object?> attributes,
             string category,
             bool isElevator,
-            Geometry geometry,
-            Geometry? preservedVoids = null)
+            Geometry geometry)
         {
             Attributes = attributes;
             Category = category;
             IsElevator = isElevator;
             Geometry = geometry;
-            PreservedVoids = preservedVoids ?? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
         }
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
@@ -1556,8 +1113,6 @@ public sealed class FloorGeoPackageExporter
         public bool IsElevator { get; }
 
         public Geometry Geometry { get; }
-
-        public Geometry PreservedVoids { get; }
     }
 
     private sealed class LevelIdComparer : IEqualityComparer<Level>

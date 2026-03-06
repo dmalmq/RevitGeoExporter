@@ -306,7 +306,7 @@ public sealed class UnitExtractor
 
         if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
         {
-            if (TryCreateEscalatorRectangle(familyInstance, view, warnings, out Polygon2D escalatorPolygon))
+            if (TryCreateEscalatorRectangle(familyInstance, warnings, out Polygon2D escalatorPolygon))
             {
                 feature = CreateFeature(
                     sourceElement: familyInstance,
@@ -513,8 +513,6 @@ public sealed class UnitExtractor
         polygons = Array.Empty<Polygon2D>();
 
         List<Polygon2D> footprintPolygons = new();
-        double cutElevationFeet = 0d;
-        bool hasCutElevation = view != null && TryGetViewCutElevationFeet(view, out cutElevationFeet);
 
         foreach (ElementId runId in stairs.GetStairsRuns())
         {
@@ -528,28 +526,7 @@ public sealed class UnitExtractor
                 CurveLoop runBoundary = run.GetFootprintBoundary();
                 if (TryCreatePolygonFromCurveLoop(runBoundary, out Polygon2D runPolygon))
                 {
-                    if (!hasCutElevation)
-                    {
-                        footprintPolygons.Add(runPolygon);
-                        continue;
-                    }
-
-                    if (!TryGetVisibleRunPolygons(
-                            run,
-                            runPolygon,
-                            cutElevationFeet,
-                            warnings,
-                            out IReadOnlyList<Polygon2D> visibleRunPolygons))
-                    {
-                        // Fallback for problematic geometry: keep full run footprint.
-                        footprintPolygons.Add(runPolygon);
-                        continue;
-                    }
-
-                    for (int i = 0; i < visibleRunPolygons.Count; i++)
-                    {
-                        footprintPolygons.Add(visibleRunPolygons[i]);
-                    }
+                    footprintPolygons.Add(runPolygon);
                 }
             }
             catch (Exception)
@@ -570,11 +547,6 @@ public sealed class UnitExtractor
                 CurveLoop landingBoundary = landing.GetFootprintBoundary();
                 if (TryCreatePolygonFromCurveLoop(landingBoundary, out Polygon2D landingPolygon))
                 {
-                    if (hasCutElevation && view != null && !IsElementVisibleAtOrBelowCutPlane(landing, view, cutElevationFeet))
-                    {
-                        continue;
-                    }
-
                     footprintPolygons.Add(landingPolygon);
                 }
             }
@@ -635,159 +607,6 @@ public sealed class UnitExtractor
         return true;
     }
 
-    private bool TryGetVisibleRunPolygons(
-        StairsRun run,
-        Polygon2D runPolygon,
-        double cutElevationFeet,
-        ICollection<string> warnings,
-        out IReadOnlyList<Polygon2D> polygons)
-    {
-        polygons = Array.Empty<Polygon2D>();
-
-        double runRiseFeet = run.TopElevation - run.BaseElevation;
-        if (runRiseFeet <= 1e-6d)
-        {
-            polygons = new[] { runPolygon };
-            return true;
-        }
-
-        if (cutElevationFeet <= run.BaseElevation + StairCutPlaneToleranceFeet)
-        {
-            // Entire run is above cut plane in this view.
-            return true;
-        }
-
-        if (cutElevationFeet >= run.TopElevation - StairCutPlaneToleranceFeet)
-        {
-            polygons = new[] { runPolygon };
-            return true;
-        }
-
-        double visibleFraction = (cutElevationFeet - run.BaseElevation) / runRiseFeet;
-        visibleFraction = Math.Max(0d, Math.Min(1d, visibleFraction));
-
-        if (TryClipRunPolygonByVisibleFraction(run, runPolygon, visibleFraction, out List<Polygon2D> clippedPolygons) &&
-            clippedPolygons.Count > 0)
-        {
-            polygons = clippedPolygons;
-            return true;
-        }
-
-        warnings.Add($"Stairs run {run.Id.Value} visible clipping failed; full run footprint was used.");
-        return false;
-    }
-
-    private bool TryClipRunPolygonByVisibleFraction(
-        StairsRun run,
-        Polygon2D runPolygon,
-        double visibleFraction,
-        out List<Polygon2D> clippedPolygons)
-    {
-        clippedPolygons = new List<Polygon2D>();
-
-        CurveLoop pathLoop;
-        try
-        {
-            pathLoop = run.GetStairsPath();
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-
-        List<Point2D> pathPoints = ProjectCurveLoop(pathLoop, closeLoop: false);
-        if (pathPoints.Count < 2)
-        {
-            return false;
-        }
-
-        if (!TryInterpolateOnPolyline(pathPoints, visibleFraction, out Point2D cutPoint, out Point2D tangent))
-        {
-            return false;
-        }
-
-        Geometry? runGeometry = ToNtsGeometry(runPolygon);
-        if (runGeometry == null || runGeometry.IsEmpty)
-        {
-            return false;
-        }
-
-        double span = Math.Max(10d, GetPolylineLength(pathPoints) * 4d);
-        Point2D normal = new(-tangent.Y, tangent.X);
-        Point2D p1 = new(cutPoint.X + (normal.X * span), cutPoint.Y + (normal.Y * span));
-        Point2D p2 = new(cutPoint.X - (normal.X * span), cutPoint.Y - (normal.Y * span));
-        Point2D p3 = new(p2.X - (tangent.X * span), p2.Y - (tangent.Y * span));
-        Point2D p4 = new(p1.X - (tangent.X * span), p1.Y - (tangent.Y * span));
-
-        Polygon2D clipPolygon = new(new[] { p1, p2, p3, p4, p1 });
-        Geometry? clipGeometry = ToNtsGeometry(clipPolygon);
-        if (clipGeometry == null || clipGeometry.IsEmpty)
-        {
-            return false;
-        }
-
-        Geometry clipped;
-        try
-        {
-            clipped = runGeometry.Intersection(clipGeometry).Buffer(0d);
-        }
-        catch (TopologyException)
-        {
-            try
-            {
-                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedRun = reducer.Reduce(runGeometry);
-                Geometry reducedClip = reducer.Reduce(clipGeometry);
-                clipped = reducedRun.Intersection(reducedClip).Buffer(0d);
-            }
-            catch (TopologyException)
-            {
-                return false;
-            }
-        }
-
-        if (clipped.IsEmpty)
-        {
-            return true;
-        }
-
-        clippedPolygons = ExtractPolygons(clipped);
-        return clippedPolygons.Count > 0;
-    }
-
-    private bool TryGetViewCutElevationFeet(ViewPlan view, out double cutElevationFeet)
-    {
-        cutElevationFeet = view.GenLevel?.Elevation ?? 0d;
-        try
-        {
-            PlanViewRange viewRange = view.GetViewRange();
-            ElementId levelId = viewRange.GetLevelId(PlanViewPlane.CutPlane);
-            double offset = viewRange.GetOffset(PlanViewPlane.CutPlane);
-            Level? cutLevel = _document.GetElement(levelId) as Level ?? view.GenLevel;
-            if (cutLevel == null)
-            {
-                return false;
-            }
-
-            cutElevationFeet = cutLevel.Elevation + offset;
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private static bool IsElementVisibleAtOrBelowCutPlane(Element element, View view, double cutElevationFeet)
-    {
-        BoundingBoxXYZ? box = element.get_BoundingBox(view) ?? element.get_BoundingBox(null);
-        if (box == null)
-        {
-            return true;
-        }
-
-        return box.Min.Z <= cutElevationFeet + StairCutPlaneToleranceFeet;
-    }
 
     private bool TryCreatePolygonFromCurveLoop(CurveLoop loop, out Polygon2D polygon)
     {
@@ -1677,12 +1496,11 @@ public sealed class UnitExtractor
 
     private bool TryCreateEscalatorRectangle(
         FamilyInstance escalator,
-        ViewPlan? view,
         ICollection<string> warnings,
         out Polygon2D polygon)
     {
         polygon = null!;
-        BoundingBoxXYZ? box = escalator.get_BoundingBox(view) ?? escalator.get_BoundingBox(null);
+        BoundingBoxXYZ? box = escalator.get_BoundingBox(null);
         if (box == null)
         {
             return false;

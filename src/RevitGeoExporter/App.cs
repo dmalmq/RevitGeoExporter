@@ -30,7 +30,7 @@ public sealed class App : IExternalApplication
         PushButton? button = panel.AddItem(exportButton) as PushButton;
         if (button != null)
         {
-            button.ToolTip = "Export IMDF GeoPackages from selected plan views.";
+            button.ToolTip = $"Export IMDF GeoPackages from selected plan views. ({ProjectInfo.VersionTag})";
             button.LongDescription =
                 "Select floor/ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.";
             button.LargeImage = RibbonIcons.CreateExportIcon(32);
@@ -46,7 +46,7 @@ public sealed class App : IExternalApplication
         PushButton? settings = panel.AddItem(settingsButton) as PushButton;
         if (settings != null)
         {
-            settings.ToolTip = "Edit default export output directory and CRS.";
+            settings.ToolTip = $"Edit default export output directory and CRS. ({ProjectInfo.VersionTag})";
             settings.LongDescription = "Saves defaults used by the export dialog.";
             settings.LargeImage = RibbonIcons.CreateSettingsIcon(32);
             settings.Image = RibbonIcons.CreateSettingsIcon(16);

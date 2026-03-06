@@ -30,6 +30,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _exportButton = new();
+    private readonly Label _versionLabel = new();
     private readonly Label _languageLabel = new();
     private readonly Label _featureTypesLabel = new();
     private readonly Label _outputDirectoryLabel = new();
@@ -190,6 +191,7 @@ public sealed class ExportDialog : WinFormsForm
                 ViewSelectionItem.DisplayLanguage = _language;
                 _viewList.Refresh();
                 ApplyLanguage();
+                UpdateVersionLabel();
             }
         };
         panel.Controls.Add(_languageComboBox, 0, 1);
@@ -294,11 +296,25 @@ public sealed class ExportDialog : WinFormsForm
 
     private WinFormsControl BuildActionsPanel()
     {
+        TableLayoutPanel container = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            Padding = new Padding(10, 8, 10, 8),
+        };
+        container.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        container.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        _versionLabel.Dock = DockStyle.Fill;
+        _versionLabel.TextAlign = ContentAlignment.MiddleLeft;
+        container.Controls.Add(_versionLabel, 0, 0);
+
         FlowLayoutPanel actions = new()
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(10, 8, 10, 8),
+            WrapContents = false,
+            AutoSize = true,
         };
 
         _cancelButton.Width = 90;
@@ -314,7 +330,8 @@ public sealed class ExportDialog : WinFormsForm
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
 
-        return actions;
+        container.Controls.Add(actions, 1, 0);
+        return container;
     }
 
     private void LoadValues(ExportDialogSettings settings)
@@ -367,6 +384,7 @@ public sealed class ExportDialog : WinFormsForm
         SelectPresetIfAvailable(settings.TargetEpsg);
         SelectLanguage(_language);
         ApplyLanguage();
+        UpdateVersionLabel();
     }
 
     private void ApplyLanguage()
@@ -401,6 +419,13 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         _languageComboBox.SelectedIndex = 0;
+    }
+
+    private void UpdateVersionLabel()
+    {
+        _versionLabel.Text = _language == UiLanguage.Japanese
+            ? $"繝舌・繧ｸ繝ｧ繝ｳ {ProjectInfo.VersionTag}"
+            : $"Version {ProjectInfo.VersionTag}";
     }
 
     private void ConfirmExport()

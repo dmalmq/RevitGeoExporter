@@ -20,6 +20,7 @@ public sealed class SettingsDialog : Form
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _saveButton = new();
+    private readonly Label _versionLabel = new();
     private UiLanguage _language;
 
     public SettingsDialog(ExportDialogSettings settings)
@@ -104,6 +105,7 @@ public sealed class SettingsDialog : Form
             {
                 _language = selected.Language;
                 ApplyLanguage();
+                UpdateVersionLabel();
             }
         };
         form.Controls.Add(_languageComboBox, 1, 0);
@@ -177,11 +179,25 @@ public sealed class SettingsDialog : Form
         form.Controls.Add(_splitByWallsCheckBox, 0, 4);
         form.SetColumnSpan(_splitByWallsCheckBox, 2);
 
+        TableLayoutPanel actionsContainer = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            Padding = new Padding(0, 6, 0, 0),
+        };
+        actionsContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        actionsContainer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+        _versionLabel.Dock = DockStyle.Fill;
+        _versionLabel.TextAlign = ContentAlignment.MiddleLeft;
+        actionsContainer.Controls.Add(_versionLabel, 0, 0);
+
         FlowLayoutPanel actions = new()
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(0, 6, 0, 0),
+            WrapContents = false,
+            AutoSize = true,
         };
 
         _cancelButton.Width = 90;
@@ -212,7 +228,8 @@ public sealed class SettingsDialog : Form
 
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_saveButton);
-        root.Controls.Add(actions, 0, 1);
+        actionsContainer.Controls.Add(actions, 1, 0);
+        root.Controls.Add(actionsContainer, 0, 1);
 
         AcceptButton = _saveButton;
         CancelButton = _cancelButton;
@@ -236,6 +253,7 @@ public sealed class SettingsDialog : Form
         }
 
         ApplyLanguage();
+        UpdateVersionLabel();
     }
 
     private void ApplyLanguage()
@@ -266,6 +284,13 @@ public sealed class SettingsDialog : Form
         }
 
         _languageComboBox.SelectedIndex = 0;
+    }
+
+    private void UpdateVersionLabel()
+    {
+        _versionLabel.Text = _language == UiLanguage.Japanese
+            ? $"繝舌・繧ｸ繝ｧ繝ｳ {ProjectInfo.VersionTag}"
+            : $"Version {ProjectInfo.VersionTag}";
     }
 
     private sealed class LanguageItem

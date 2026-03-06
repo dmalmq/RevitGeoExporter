@@ -19,6 +19,9 @@ TestResults/
 .DS_Store
 Thumbs.db
 
+# Installer output
+install/output/
+
 # NuGet
 packages/
 *.nupkg
@@ -30,3 +33,12 @@ _ReSharper*/
 
 # JetBrains
 .idea/
+
+# Custom Ignore Rules
+.claude/
+node_modules/
+package.json
+package-lock.json
+install/dist/
+install/output*/
+install/*.zip
