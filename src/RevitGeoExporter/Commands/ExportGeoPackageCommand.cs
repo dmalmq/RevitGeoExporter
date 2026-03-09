@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Diagnostics;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.UI;
 
@@ -41,11 +44,34 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         var settingsLoad = settingsStore.LoadWithDiagnostics();
         ExportDialogSettings settings = settingsLoad.Value;
         ShowWarningsIfNeeded(settingsLoad.Warnings, settings.UiLanguage);
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        ExportProfileStore profileStore = new();
+        var profileLoad = profileStore.LoadWithDiagnostics(projectKey);
+        ShowWarningsIfNeeded(profileLoad.Warnings, settings.UiLanguage);
 
         ExportDialogResult? request = null;
         using (ExportDialog dialog = new(
                    views,
                    settings,
+                   profileLoad.Value,
+                   saveProfileRequested: (scope, name, profileSettings) =>
+                   {
+                       profileStore.SaveProfile(projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
+                   },
+                   deleteProfileRequested: profile =>
+                   {
+                       profileStore.DeleteProfile(projectKey, profile);
+                   },
+                   openMappingsRequested: () =>
+                   {
+                       using ProjectMappingsForm mappingsForm = new(
+                           projectKey,
+                           RevitGeoExporter.Core.Models.ZoneCatalog.CreateDefault(),
+                           new RevitGeoExporter.Core.Assignments.FloorCategoryOverrideStore(),
+                           new RevitGeoExporter.Core.Assignments.FamilyCategoryOverrideStore(),
+                           new RevitGeoExporter.Core.Assignments.AcceptedOpeningFamilyStore());
+                       mappingsForm.ShowDialog();
+                   },
                    previewRequest =>
                    {
                        ExportPreviewService previewService = new(document);
@@ -70,23 +96,64 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         try
         {
             FloorGeoPackageExporter exporter = new(document);
+            PreparedExportSession session = exporter.PrepareExport(
+                request.OutputDirectory,
+                request.TargetEpsg,
+                request.SelectedViews,
+                request.FeatureTypes);
+
+            ExportValidationSnapshotBuilder snapshotBuilder = new();
+            ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
+            ExportValidationService validationService = new();
+            ExportValidationResult validationResult = validationService.Validate(validationRequest);
+
+            using (ExportValidationForm validationForm = new(validationResult, request.UiLanguage))
+            {
+                if (validationForm.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                {
+                    return Result.Cancelled;
+                }
+            }
+
             FloorGeoPackageExportResult result;
+            Stopwatch stopwatch = Stopwatch.StartNew();
             using (ExportProgressForm progressForm = new())
             {
                 progressForm.Show();
                 progressForm.Refresh();
 
-                result = exporter.ExportSelectedViews(
-                    request.OutputDirectory,
-                    targetEpsg: request.TargetEpsg,
-                    selectedViews: request.SelectedViews,
-                    featureTypes: request.FeatureTypes,
-                    progressCallback: update =>
-                    {
-                        progressForm.UpdateProgress(update);
-                    });
+                result = exporter.WritePreparedExport(
+                    session,
+                    progressCallback: update => { progressForm.UpdateProgress(update); });
 
                 progressForm.Close();
+            }
+
+            stopwatch.Stop();
+
+            if (request.GenerateDiagnosticsReport)
+            {
+                try
+                {
+                    ExportDiagnosticsReportBuilder diagnosticsBuilder = new();
+                    ExportDiagnosticsReport report = diagnosticsBuilder.Build(
+                        session,
+                        validationResult,
+                        result,
+                        DateTimeOffset.UtcNow,
+                        stopwatch.Elapsed);
+                    ExportDiagnosticsWriter diagnosticsWriter = new();
+                    string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, report);
+                    result.SetDiagnosticsReportPath(diagnosticsPath);
+                }
+                catch (Exception diagnosticsException)
+                {
+                    result.AddWarnings(
+                        new[]
+                        {
+                            $"Diagnostics report could not be written: {diagnosticsException.Message}",
+                        });
+                }
             }
 
             using ExportResultForm resultForm = new(result, request.OutputDirectory, request.UiLanguage);
@@ -111,11 +178,11 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             MainInstruction = T(
                 language,
                 "Export failed.",
-                "\u30a8\u30af\u30b9\u30dd\u30fc\u30c8\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002"),
+                "エクスポートに失敗しました。"),
             MainContent = T(
                 language,
                 "The export could not be completed. You can save an error report as a text file.",
-                "\u30a8\u30af\u30b9\u30dd\u30fc\u30c8\u3092\u5b8c\u4e86\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u30a8\u30e9\u30fc\u5831\u544a\u3092\u30c6\u30ad\u30b9\u30c8\u30d5\u30a1\u30a4\u30eb\u3068\u3057\u3066\u4fdd\u5b58\u3067\u304d\u307e\u3059\u3002"),
+                "エクスポートを完了できませんでした。エラー報告をテキストファイルとして保存できます。"),
             ExpandedContent = reportText,
             AllowCancellation = true,
             CommonButtons = TaskDialogCommonButtons.Close,
@@ -125,7 +192,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             T(
                 language,
                 "Save Error Report",
-                "\u30a8\u30e9\u30fc\u5831\u544a\u3092\u4fdd\u5b58"));
+                "エラー報告を保存"));
 
         TaskDialogResult dialogResult = dialog.Show();
         if (dialogResult != TaskDialogResult.CommandLink1)
@@ -146,7 +213,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             Title = T(
                 language,
                 "Save Export Error Report",
-                "\u30a8\u30af\u30b9\u30dd\u30fc\u30c8\u30a8\u30e9\u30fc\u5831\u544a\u306e\u4fdd\u5b58"),
+                "エクスポートエラー報告の保存"),
             Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
             DefaultExt = "txt",
             AddExtension = true,
@@ -170,7 +237,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             TaskDialog.Show(
                 ProjectInfo.Name,
                 language == UiLanguage.Japanese
-                    ? $"\u30a8\u30e9\u30fc\u5831\u544a\u3092\u4fdd\u5b58\u3057\u307e\u3057\u305f\u3002\n{saveDialog.FileName}"
+                    ? $"エラー報告を保存しました。\n{saveDialog.FileName}"
                     : $"Error report saved.\n{saveDialog.FileName}");
         }
         catch (Exception ex)
@@ -178,7 +245,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             TaskDialog.Show(
                 ProjectInfo.Name,
                 language == UiLanguage.Japanese
-                    ? $"\u30a8\u30e9\u30fc\u5831\u544a\u306e\u4fdd\u5b58\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002\n\n{ex.Message}"
+                    ? $"エラー報告の保存に失敗しました。\n\n{ex.Message}"
                     : $"Failed to save error report.\n\n{ex.Message}");
         }
     }
@@ -220,7 +287,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         string prefix = T(
             language,
             "Some saved application settings could not be loaded. Defaults were used where needed.",
-            "保存済み設定の一部を読み込めなかったため、必要な項目には既定値を使用しました。");
+            "保存済み設定の一部を読み込めませんでした。必要に応じて既定値を使用しました。");
         string message = $"{prefix}{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, warnings)}";
         TaskDialog.Show(ProjectInfo.Name, message);
     }

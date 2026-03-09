@@ -47,6 +47,7 @@ public sealed class UnitExtractor
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly FloorCategoryResolver _floorCategoryResolver;
+    private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
 
     public UnitExtractor(
@@ -54,7 +55,8 @@ public sealed class UnitExtractor
         ZoneCatalog zoneCatalog,
         IExportMetadataProvider metadataProvider,
         string source,
-        FloorCategoryResolver floorCategoryResolver)
+        FloorCategoryResolver floorCategoryResolver,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _internalToSharedTransform =
@@ -64,6 +66,8 @@ public sealed class UnitExtractor
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _floorCategoryResolver =
             floorCategoryResolver ?? throw new ArgumentNullException(nameof(floorCategoryResolver));
+        _familyCategoryOverrides = familyCategoryOverrides ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
     }
 
@@ -240,7 +244,7 @@ public sealed class UnitExtractor
         }
 
         string familyName = GetFamilyName(familyInstance);
-        if (!_zoneCatalog.TryGetFamilyInfo(familyName, out ZoneInfo zoneInfo))
+        if (!TryResolveFamilyZoneInfo(familyName, out ZoneInfo zoneInfo))
         {
             return false;
         }
@@ -1336,6 +1340,17 @@ public sealed class UnitExtractor
         }
 
         return string.IsNullOrWhiteSpace(familyName) ? "<unknown-family>" : familyName!.Trim();
+    }
+
+    private bool TryResolveFamilyZoneInfo(string familyName, out ZoneInfo zoneInfo)
+    {
+        if (_familyCategoryOverrides.TryGetValue(familyName, out string overrideCategory) &&
+            _zoneCatalog.TryGetCategoryInfo(overrideCategory, out zoneInfo))
+        {
+            return true;
+        }
+
+        return _zoneCatalog.TryGetFamilyInfo(familyName, out zoneInfo);
     }
 
     private bool TryCreateEscalatorRectangle(

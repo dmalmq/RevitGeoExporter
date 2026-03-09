@@ -19,10 +19,14 @@ public sealed class ExportPreviewService
     private readonly PreviewExportMetadataProvider _metadataProvider;
     private readonly PreviewPaletteResolver _paletteResolver;
     private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
+    private readonly FamilyCategoryOverrideStore _familyCategoryOverrideStore;
+    private readonly AcceptedOpeningFamilyStore _acceptedOpeningFamilyStore;
     private readonly PreviewFloorAssignmentSession _assignmentSession;
     private readonly IReadOnlyList<string> _loadWarnings;
     private readonly string _projectKey;
     private readonly IReadOnlyList<string> _supportedFloorCategories;
+    private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
+    private readonly IReadOnlyList<string> _acceptedOpeningFamilies;
 
     public ExportPreviewService(Document document)
     {
@@ -33,11 +37,22 @@ public sealed class ExportPreviewService
 
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
+        _familyCategoryOverrideStore = new FamilyCategoryOverrideStore();
+        _acceptedOpeningFamilyStore = new AcceptedOpeningFamilyStore();
         _projectKey = DocumentProjectKeyBuilder.Create(document);
         LoadResult<IReadOnlyDictionary<string, string>> overrideLoad =
             _floorCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyDictionary<string, string>> familyOverrideLoad =
+            _familyCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyList<string>> acceptedOpeningLoad =
+            _acceptedOpeningFamilyStore.LoadWithDiagnostics(_projectKey);
         _assignmentSession = new PreviewFloorAssignmentSession(overrideLoad.Value);
-        _loadWarnings = overrideLoad.Warnings.ToList();
+        _familyCategoryOverrides = familyOverrideLoad.Value;
+        _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
+        _loadWarnings = overrideLoad.Warnings
+            .Concat(familyOverrideLoad.Warnings)
+            .Concat(acceptedOpeningLoad.Warnings)
+            .ToList();
         _preparer = new FloorExportDataPreparer(document, zoneCatalog);
         _metadataProvider = new PreviewExportMetadataProvider();
         _paletteResolver = new PreviewPaletteResolver();
@@ -97,6 +112,8 @@ public sealed class ExportPreviewService
             new FloorExportPreparationOptions
             {
                 FloorCategoryOverrides = _assignmentSession.GetEffectiveOverrides(),
+                FamilyCategoryOverrides = _familyCategoryOverrides,
+                AcceptedOpeningFamilies = _acceptedOpeningFamilies,
                 InitialWarnings = _loadWarnings,
             });
         List<PreviewFeatureData> features = new();

@@ -81,9 +81,17 @@ public sealed class FloorExportDataPreparer
 
         IReadOnlyDictionary<string, string> floorCategoryOverrides =
             options?.FloorCategoryOverrides ?? EmptyOverrides();
+        IReadOnlyDictionary<string, string> familyCategoryOverrides =
+            options?.FamilyCategoryOverrides ?? EmptyOverrides();
+        IReadOnlyList<string> acceptedOpeningFamilies =
+            options?.AcceptedOpeningFamilies ?? Array.Empty<string>();
         FloorCategoryResolver floorCategoryResolver = new(_zoneCatalog, floorCategoryOverrides);
         IReadOnlyList<ViewExportContext> contexts =
-            options?.ViewContexts ?? _contextProvider.BuildContexts(exportViews, _zoneCatalog);
+            options?.ViewContexts ?? _contextProvider.BuildContexts(
+                exportViews,
+                _zoneCatalog,
+                familyCategoryOverrides,
+                acceptedOpeningFamilies);
         if (contexts.Count == 0)
         {
             throw new InvalidOperationException("Selected views did not contain any exportable level context.");
@@ -99,7 +107,8 @@ public sealed class FloorExportDataPreparer
             _zoneCatalog,
             metadataProvider,
             sourceModelName,
-            floorCategoryResolver);
+            floorCategoryResolver,
+            familyCategoryOverrides);
         DetailExtractor detailExtractor = new(_document);
         OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
