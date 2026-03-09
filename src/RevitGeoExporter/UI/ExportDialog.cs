@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
@@ -42,6 +43,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
+    private readonly Button _helpButton = new();
     private readonly Label _versionLabel = new();
     private readonly Label _profilesLabel = new();
     private readonly Label _languageLabel = new();
@@ -490,9 +492,15 @@ public sealed class ExportDialog : WinFormsForm
         _previewButton.Height = 30;
         _previewButton.Click += (_, _) => ShowPreview();
 
+        _helpButton.Width = 90;
+        _helpButton.Height = 30;
+        _helpButton.Text = UiLanguageText.Select(_language, "Help", "ヘルプ");
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.ExportWorkflow, _language, Text);
+
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_exportButton);
         actions.Controls.Add(_previewButton);
+        actions.Controls.Add(_helpButton);
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
 

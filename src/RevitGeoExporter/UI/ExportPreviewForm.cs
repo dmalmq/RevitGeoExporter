@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Export;
 using DrawingColor = System.Drawing.Color;
 using WinFormsControl = System.Windows.Forms.Control;
@@ -35,6 +36,7 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly Button _fitButton = new();
     private readonly Button _resetButton = new();
     private readonly Button _closeButton = new();
+    private readonly Button _helpButton = new();
     private readonly Label _statusLabel = new();
     private readonly PreviewCanvasControl _canvas = new();
     private readonly DataGridView _legendGrid = new();
@@ -416,6 +418,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         _closeButton.Width = 88;
         _closeButton.DialogResult = DialogResult.OK;
         actions.Controls.Add(_closeButton);
+
+        _helpButton.Text = T("Help", "ヘルプ");
+        _helpButton.Width = 88;
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.PreviewAndAssignments, _language, Text);
+        actions.Controls.Add(_helpButton);
 
         footer.Controls.Add(actions, 1, 0);
         AcceptButton = _closeButton;

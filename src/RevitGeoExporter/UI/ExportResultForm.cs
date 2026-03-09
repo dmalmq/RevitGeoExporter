@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Export;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -21,6 +22,7 @@ public sealed class ExportResultForm : WinFormsForm
     private readonly Label _outputDirectoryLabel = new();
     private readonly Button _openFolderButton = new();
     private readonly Button _closeButton = new();
+    private readonly Button _helpButton = new();
     private readonly TabPage _filesTab = new();
     private readonly TabPage _warningsTab = new();
     private readonly TabPage _changesTab = new();
@@ -159,6 +161,12 @@ public sealed class ExportResultForm : WinFormsForm
         _closeButton.Text = T("Close", "閉じる");
         _closeButton.DialogResult = DialogResult.OK;
         actions.Controls.Add(_closeButton);
+
+        _helpButton.Width = 96;
+        _helpButton.Height = 30;
+        _helpButton.Text = T("Help", "ヘルプ");
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.TroubleshootingFaq, _language, Text);
+        actions.Controls.Add(_helpButton);
 
         AcceptButton = _closeButton;
         CancelButton = _closeButton;

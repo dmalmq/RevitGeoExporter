@@ -111,6 +111,30 @@ public sealed class ExportProfileStore
         SaveDocument(document);
     }
 
+    public void ReplaceProfiles(string projectKey, ExportProfileScope scope, IEnumerable<ExportProfile> profiles)
+    {
+        ExportProfileDocument document = LoadDocument();
+        List<ExportProfile> normalizedProfiles = (profiles ?? Array.Empty<ExportProfile>())
+            .Where(profile => profile != null)
+            .Select(NormalizeProfile)
+            .Where(profile => profile.Name.Length > 0 && profile.Scope == scope)
+            .ToList();
+
+        if (scope == ExportProfileScope.Project)
+        {
+            List<ExportProfile> projectProfiles = GetProjectProfiles(document, projectKey);
+            projectProfiles.Clear();
+            projectProfiles.AddRange(normalizedProfiles);
+        }
+        else
+        {
+            document.GlobalProfiles.Clear();
+            document.GlobalProfiles.AddRange(normalizedProfiles);
+        }
+
+        SaveDocument(document);
+    }
+
     private ExportProfileDocument LoadDocument()
     {
         return JsonFileLoadHelper.Load(

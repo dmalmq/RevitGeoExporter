@@ -88,6 +88,39 @@ internal static class RibbonIcons
         return ConvertToBitmapSource(bmp);
     }
 
+    public static BitmapSource CreateHelpIcon(int size)
+    {
+        using Bitmap bmp = new(size, size);
+        using Graphics g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        float stroke = Math.Max(size / 16f, 1.5f);
+        float cx = size / 2f;
+        float cy = size / 2f;
+        float radius = size * 0.34f;
+
+        using Pen pen = new(Color.FromArgb(60, 60, 60), stroke)
+        {
+            LineJoin = LineJoin.Round,
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+
+        g.DrawEllipse(pen, cx - radius, cy - radius, radius * 2f, radius * 2f);
+
+        using Font font = new("Segoe UI", size * 0.45f, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
+        using Brush brush = new SolidBrush(Color.FromArgb(60, 60, 60));
+        StringFormat format = new()
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+        };
+        g.DrawString("?", font, brush, new RectangleF(0, 0, size, size * 0.9f), format);
+
+        return ConvertToBitmapSource(bmp);
+    }
+
     private static BitmapSource ConvertToBitmapSource(Bitmap bitmap)
     {
         IntPtr hBitmap = bitmap.GetHbitmap();

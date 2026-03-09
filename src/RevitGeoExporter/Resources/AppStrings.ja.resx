@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, ...</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, ...</value></resheader>
+  <data name="Language.English" xml:space="preserve"><value>英語</value></data>
+  <data name="Language.Japanese" xml:space="preserve"><value>日本語</value></data>
+  <data name="Ribbon.Panel.Export" xml:space="preserve"><value>出力</value></data>
+  <data name="Ribbon.Export.Text" xml:space="preserve"><value>GeoPackageを書き出し</value></data>
+  <data name="Ribbon.Export.ToolTip" xml:space="preserve"><value>選択した平面ビューから IMDF GeoPackage を書き出します。</value></data>
+  <data name="Ribbon.Export.Description" xml:space="preserve"><value>平面図または天井伏図を選択し、ビューごとに _unit、_detail、_opening、_level GeoPackage を出力します。</value></data>
+  <data name="Ribbon.Settings.Text" xml:space="preserve"><value>設定</value></data>
+  <data name="Ribbon.Settings.ToolTip" xml:space="preserve"><value>グローバル設定とプロジェクト設定を管理します。</value></data>
+  <data name="Ribbon.Settings.Description" xml:space="preserve"><value>既定値、プロファイル、マッピング、設定診断を管理する設定ハブを開きます。</value></data>
+  <data name="Ribbon.Help.Text" xml:space="preserve"><value>ヘルプ</value></data>
+  <data name="Ribbon.Help.ToolTip" xml:space="preserve"><value>オフラインのヘルプビューアーを開きます。</value></data>
+  <data name="Ribbon.Help.Description" xml:space="preserve"><value>エクスポート、プレビュー、設定、トラブルシューティングを説明する内蔵のバイリンガルヘルプビューアーを開きます。</value></data>
+  <data name="Common.Close" xml:space="preserve"><value>閉じる</value></data>
+  <data name="Common.Cancel" xml:space="preserve"><value>キャンセル</value></data>
+  <data name="Common.Save" xml:space="preserve"><value>保存</value></data>
+  <data name="Common.Help" xml:space="preserve"><value>ヘルプ</value></data>
+  <data name="Common.Browse" xml:space="preserve"><value>参照...</value></data>
+  <data name="Common.Language" xml:space="preserve"><value>言語</value></data>
+  <data name="Common.Level" xml:space="preserve"><value>レベル</value></data>
+  <data name="Common.View" xml:space="preserve"><value>ビュー</value></data>
+  <data name="Common.OutputDirectory" xml:space="preserve"><value>出力フォルダー</value></data>
+  <data name="Common.TargetEpsg" xml:space="preserve"><value>出力 EPSG</value></data>
+  <data name="Common.CrsPreset" xml:space="preserve"><value>CRS プリセット</value></data>
+  <data name="Common.Version" xml:space="preserve"><value>バージョン {0}</value></data>
+  <data name="Common.Import" xml:space="preserve"><value>読み込み...</value></data>
+  <data name="Common.Export" xml:space="preserve"><value>書き出し...</value></data>
+  <data name="Common.ResetDefaults" xml:space="preserve"><value>既定値に戻す</value></data>
+  <data name="Common.ClearProjectData" xml:space="preserve"><value>プロジェクト設定を削除</value></data>
+  <data name="Common.ProjectProfiles" xml:space="preserve"><value>プロジェクトプロファイル</value></data>
+  <data name="Common.GlobalProfiles" xml:space="preserve"><value>グローバルプロファイル</value></data>
+  <data name="Common.ProjectMappings" xml:space="preserve"><value>プロジェクトマッピング</value></data>
+  <data name="Common.Status" xml:space="preserve"><value>状態</value></data>
+  <data name="SettingsHub.Title" xml:space="preserve"><value>GeoExporter 設定</value></data>
+  <data name="SettingsHub.GlobalTab" xml:space="preserve"><value>グローバル</value></data>
+  <data name="SettingsHub.ProjectTab" xml:space="preserve"><value>プロジェクト</value></data>
+  <data name="SettingsHub.DefaultsGroup" xml:space="preserve"><value>既定のエクスポート設定</value></data>
+  <data name="SettingsHub.ScopeActionsGroup" xml:space="preserve"><value>スコープ操作</value></data>
+  <data name="SettingsHub.ScopeStatusGroup" xml:space="preserve"><value>設定状態</value></data>
+  <data name="SettingsHub.ProjectMappingsIntro" xml:space="preserve"><value>現在のプロジェクトに対する床、ファミリ、開口ファミリの書き出し側マッピングを管理します。</value></data>
+  <data name="SettingsHub.ProfileSummary" xml:space="preserve"><value>グローバルプロファイル: {0}    プロジェクトプロファイル: {1}</value></data>
+  <data name="SettingsHub.ImportTitle.Global" xml:space="preserve"><value>グローバル設定バンドルを読み込み</value></data>
+  <data name="SettingsHub.ImportTitle.Project" xml:space="preserve"><value>プロジェクト設定バンドルを読み込み</value></data>
+  <data name="SettingsHub.ExportTitle.Global" xml:space="preserve"><value>グローバル設定バンドルを書き出し</value></data>
+  <data name="SettingsHub.ExportTitle.Project" xml:space="preserve"><value>プロジェクト設定バンドルを書き出し</value></data>
+  <data name="SettingsHub.ScopeSaved.Global" xml:space="preserve"><value>グローバル設定を保存しました。</value></data>
+  <data name="SettingsHub.ScopeSaved.Project" xml:space="preserve"><value>プロジェクト設定を保存しました。</value></data>
+  <data name="SettingsHub.ImportSucceeded.Global" xml:space="preserve"><value>グローバル設定バンドルを読み込みました。</value></data>
+  <data name="SettingsHub.ImportSucceeded.Project" xml:space="preserve"><value>プロジェクト設定バンドルを読み込みました。</value></data>
+  <data name="SettingsHub.ResetConfirm.Global" xml:space="preserve"><value>グローバル既定値をリセットし、すべてのグローバルプロファイルを削除しますか。</value></data>
+  <data name="SettingsHub.ResetConfirm.Project" xml:space="preserve"><value>プロジェクトマッピングとすべてのプロジェクトプロファイルを削除しますか。</value></data>
+  <data name="SettingsHub.FloorOverridesTab" xml:space="preserve"><value>床の上書き</value></data>
+  <data name="SettingsHub.FamilyCategoriesTab" xml:space="preserve"><value>ファミリカテゴリ</value></data>
+  <data name="SettingsHub.AcceptedOpeningsTab" xml:space="preserve"><value>許可された開口</value></data>
+  <data name="SettingsHub.FloorTypeName" xml:space="preserve"><value>床タイプ名</value></data>
+  <data name="SettingsHub.FamilyName" xml:space="preserve"><value>ファミリ名</value></data>
+  <data name="SettingsHub.AcceptedOpeningFamilyName" xml:space="preserve"><value>許可された開口ファミリ名</value></data>
+  <data name="SettingsHub.Category" xml:space="preserve"><value>カテゴリ</value></data>
+  <data name="ExportDialog.Title" xml:space="preserve"><value>GeoPackage 書き出し</value></data>
+  <data name="ExportDialog.PlanViews" xml:space="preserve"><value>平面ビュー</value></data>
+  <data name="ExportDialog.Options" xml:space="preserve"><value>書き出し設定</value></data>
+  <data name="ExportDialog.FeatureTypes" xml:space="preserve"><value>フィーチャタイプ</value></data>
+  <data name="ExportDialog.SelectAll" xml:space="preserve"><value>すべて選択</value></data>
+  <data name="ExportDialog.ClearAll" xml:space="preserve"><value>すべて解除</value></data>
+  <data name="ExportDialog.Preview" xml:space="preserve"><value>プレビュー...</value></data>
+  <data name="ExportDialog.ExportButton" xml:space="preserve"><value>書き出し</value></data>
+  <data name="ExportDialog.ExportProfiles" xml:space="preserve"><value>エクスポートプロファイル</value></data>
+  <data name="ExportDialog.WriteDiagnostics" xml:space="preserve"><value>診断レポートを書き出す</value></data>
+  <data name="ExportDialog.WritePackage" xml:space="preserve"><value>GIS パッケージを作成</value></data>
+  <data name="ExportDialog.IncludeLegend" xml:space="preserve"><value>凡例ファイルを含める</value></data>
+  <data name="ExportDialog.GeometryRepair" xml:space="preserve"><value>ジオメトリ補正</value></data>
+  <data name="ExportDialog.Packaging" xml:space="preserve"><value>パッケージング</value></data>
+  <data name="ExportDialog.SettingsButton" xml:space="preserve"><value>設定...</value></data>
+  <data name="ExportDialog.Message.SelectPlanViewToExport" xml:space="preserve"><value>書き出す平面ビューを1つ以上選択してください。</value></data>
+  <data name="ExportDialog.Message.SelectFeatureType" xml:space="preserve"><value>フィーチャタイプを1つ以上選択してください。</value></data>
+  <data name="ExportDialog.Message.ChooseOutputDirectory" xml:space="preserve"><value>出力フォルダーを選択してください。</value></data>
+  <data name="ExportDialog.Message.EnterValidEpsg" xml:space="preserve"><value>有効な EPSG コードを入力してください。</value></data>
+  <data name="ExportDialog.Message.SelectPlanViewToPreview" xml:space="preserve"><value>プレビューする平面ビューを1つ以上選択してください。</value></data>
+  <data name="ExportDialog.Message.PreviewRequiresFeatureType" xml:space="preserve"><value>プレビューには少なくとも1つのフィーチャタイプの選択が必要です。</value></data>
+  <data name="Common.NoLevel" xml:space="preserve"><value>&lt;レベルなし&gt;</value></data>
+  <data name="Validation.Title" xml:space="preserve"><value>検証結果</value></data>
+  <data name="Validation.NoIssues" xml:space="preserve"><value>検証で問題は見つかりませんでした。</value></data>
+  <data name="Validation.Continue" xml:space="preserve"><value>書き出しを続行</value></data>
+  <data name="Validation.ResolveErrors" xml:space="preserve"><value>エラーを解消</value></data>
+  <data name="Result.Title" xml:space="preserve"><value>書き出し結果</value></data>
+  <data name="Preview.Title" xml:space="preserve"><value>書き出しプレビュー</value></data>
+  <data name="Preview.Units" xml:space="preserve"><value>Units</value></data>
+  <data name="Preview.Openings" xml:space="preserve"><value>Openings</value></data>
+  <data name="Preview.Details" xml:space="preserve"><value>Details</value></data>
+  <data name="Preview.Levels" xml:space="preserve"><value>Levels</value></data>
+  <data name="Preview.Stairs" xml:space="preserve"><value>Stairs</value></data>
+  <data name="Preview.Escalators" xml:space="preserve"><value>Escalators</value></data>
+  <data name="Preview.Elevators" xml:space="preserve"><value>Elevators</value></data>
+  <data name="Preview.Warnings" xml:space="preserve"><value>Warnings</value></data>
+  <data name="Preview.Overrides" xml:space="preserve"><value>Overrides</value></data>
+  <data name="Preview.Unassigned" xml:space="preserve"><value>Unassigned</value></data>
+  <data name="Preview.Fit" xml:space="preserve"><value>Fit</value></data>
+  <data name="Preview.Reset" xml:space="preserve"><value>Reset</value></data>
+  <data name="Command.ActiveDocumentRequired" xml:space="preserve"><value>アクティブなドキュメントが必要です。</value></data>
+  <data name="Command.NoExportableViews" xml:space="preserve"><value>書き出し可能な平面ビューが見つかりませんでした。</value></data>
+  <data name="Command.SettingsSaved" xml:space="preserve"><value>設定を保存しました。</value></data>
+  <data name="Command.OpenSettingsFailed" xml:space="preserve"><value>設定を開けませんでした。</value></data>
+  <data name="Command.ExportFailed" xml:space="preserve"><value>書き出しに失敗しました。</value></data>
+  <data name="Help.Command.OpenFailed" xml:space="preserve"><value>ヘルプを開けませんでした。</value></data>
+  <data name="Help.Viewer.Title" xml:space="preserve"><value>ヘルプ - {0}</value></data>
+  <data name="Help.Viewer.LanguageLabel" xml:space="preserve"><value>言語</value></data>
+  <data name="Help.Viewer.TopicUnavailableTitle" xml:space="preserve"><value>ヘルプトピックを表示できません</value></data>
+  <data name="Help.Viewer.TopicUnavailableBody" xml:space="preserve"><value>要求されたヘルプトピックは、このアドインのビルドに含まれていません。</value></data>
+  <data name="Help.Topic.GettingStarted" xml:space="preserve"><value>はじめに</value></data>
+  <data name="Help.Topic.ExportWorkflow" xml:space="preserve"><value>エクスポートの流れ</value></data>
+  <data name="Help.Topic.PreviewAndAssignments" xml:space="preserve"><value>プレビューと割り当て</value></data>
+  <data name="Help.Topic.SettingsAndProfiles" xml:space="preserve"><value>設定とプロファイル</value></data>
+  <data name="Help.Topic.ValidationAndDiagnostics" xml:space="preserve"><value>検証と診断</value></data>
+  <data name="Help.Topic.TroubleshootingFaq" xml:space="preserve"><value>トラブルシューティング / FAQ</value></data>
+</root>

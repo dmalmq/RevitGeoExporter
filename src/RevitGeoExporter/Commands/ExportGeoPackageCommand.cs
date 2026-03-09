@@ -7,10 +7,12 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Diagnostics;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.Resources;
 using RevitGeoExporter.UI;
 
 namespace RevitGeoExporter.Commands;
@@ -29,7 +31,9 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         Document? document = uiDocument?.Document;
         if (document is null)
         {
-            TaskDialog.Show(ProjectInfo.Name, "An active document is required.");
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                LocalizedTextProvider.Get(UiLanguage.English, "Command.ActiveDocumentRequired", "An active document is required."));
             return Result.Failed;
         }
 
@@ -37,24 +41,23 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         IReadOnlyList<ViewPlan> views = collector.GetExportablePlanViews(document);
         if (views.Count == 0)
         {
-            TaskDialog.Show(ProjectInfo.Name, "No exportable plan views were found.");
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                LocalizedTextProvider.Get(UiLanguage.English, "Command.NoExportableViews", "No exportable plan views were found."));
             return Result.Failed;
         }
 
-        ExportDialogSettingsStore settingsStore = new();
-        var settingsLoad = settingsStore.LoadWithDiagnostics();
-        ExportDialogSettings settings = settingsLoad.Value;
-        ShowWarningsIfNeeded(settingsLoad.Warnings, settings.UiLanguage);
         string projectKey = DocumentProjectKeyBuilder.Create(document);
+        SettingsBundle bundle = new(projectKey);
+        SettingsBundleSnapshot bundleSnapshot = bundle.Load();
+        ExportDialogSettings settings = bundleSnapshot.GlobalSettings;
         ExportProfileStore profileStore = new();
-        var profileLoad = profileStore.LoadWithDiagnostics(projectKey);
-        ShowWarningsIfNeeded(profileLoad.Warnings, settings.UiLanguage);
 
         ExportDialogResult? request = null;
         using (ExportDialog dialog = new(
                    views,
                    settings,
-                   profileLoad.Value,
+                   bundleSnapshot.Profiles,
                    saveProfileRequested: (scope, name, profileSettings) =>
                    {
                        profileStore.SaveProfile(projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
@@ -69,11 +72,12 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                    },
                    openMappingsRequested: () =>
                    {
-                       using ProjectMappingsForm mappingsForm = new(
+                       using SettingsHubForm settingsHub = new(
                            projectKey,
-                           RevitGeoExporter.Core.Models.ZoneCatalog.CreateDefault(),
-                           new RevitGeoExporter.Core.Assignments.MappingRuleStore());
-                       mappingsForm.ShowDialog();
+                           bundle,
+                           bundle.Load(),
+                           ZoneCatalog.CreateDefault());
+                       settingsHub.ShowDialog();
                    },
                        previewRequest =>
                    {
@@ -88,7 +92,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             }
 
             request = dialog.Result;
-            settingsStore.Save(dialog.BuildSettings());
+            bundle.SaveGlobalSettings(dialog.BuildSettings());
         }
 
         if (request == null || request.SelectedViews.Count == 0)
