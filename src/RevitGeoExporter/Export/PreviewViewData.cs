@@ -13,6 +13,7 @@ public sealed class PreviewViewData
         IReadOnlyList<PreviewFeatureData> features,
         IReadOnlyList<PreviewUnassignedFloorGroup> unassignedFloors,
         IReadOnlyList<string> warnings,
+        IReadOnlyList<string> availableSourceLabels,
         Bounds2D bounds)
     {
         ViewId = viewId;
@@ -21,6 +22,7 @@ public sealed class PreviewViewData
         Features = features ?? throw new ArgumentNullException(nameof(features));
         UnassignedFloors = unassignedFloors ?? throw new ArgumentNullException(nameof(unassignedFloors));
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
+        AvailableSourceLabels = availableSourceLabels ?? throw new ArgumentNullException(nameof(availableSourceLabels));
         Bounds = bounds;
     }
 
@@ -35,6 +37,8 @@ public sealed class PreviewViewData
     public IReadOnlyList<PreviewUnassignedFloorGroup> UnassignedFloors { get; }
 
     public IReadOnlyList<string> Warnings { get; }
+
+    public IReadOnlyList<string> AvailableSourceLabels { get; }
 
     public Bounds2D Bounds { get; }
 }

@@ -5,36 +5,33 @@ using System.Linq;
 using System.Windows.Forms;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.UI;
 
 public sealed class ProjectMappingsForm : Form
 {
     private readonly string _projectKey;
-    private readonly FloorCategoryOverrideStore _floorStore;
-    private readonly FamilyCategoryOverrideStore _familyStore;
-    private readonly AcceptedOpeningFamilyStore _openingStore;
+    private readonly MappingRuleStore _mappingRuleStore;
     private readonly IReadOnlyList<string> _categories;
 
     private readonly DataGridView _floorGrid = new();
     private readonly DataGridView _familyGrid = new();
     private readonly DataGridView _openingGrid = new();
+    private readonly Button _importButton = new();
+    private readonly Button _exportButton = new();
     private readonly Button _saveButton = new();
     private readonly Button _cancelButton = new();
 
     public ProjectMappingsForm(
         string projectKey,
         ZoneCatalog zoneCatalog,
-        FloorCategoryOverrideStore floorStore,
-        FamilyCategoryOverrideStore familyStore,
-        AcceptedOpeningFamilyStore openingStore)
+        MappingRuleStore mappingRuleStore)
     {
         _projectKey = string.IsNullOrWhiteSpace(projectKey)
             ? throw new ArgumentException("A project key is required.", nameof(projectKey))
             : projectKey.Trim();
-        _floorStore = floorStore ?? throw new ArgumentNullException(nameof(floorStore));
-        _familyStore = familyStore ?? throw new ArgumentNullException(nameof(familyStore));
-        _openingStore = openingStore ?? throw new ArgumentNullException(nameof(openingStore));
+        _mappingRuleStore = mappingRuleStore ?? throw new ArgumentNullException(nameof(mappingRuleStore));
         _categories = (zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog)))
             .GetKnownCategories()
             .ToList();
@@ -99,6 +96,16 @@ public sealed class ProjectMappingsForm : Form
         _saveButton.Click += (_, _) => SaveMappings();
         actions.Controls.Add(_saveButton);
 
+        _exportButton.Text = "Export...";
+        _exportButton.Width = 96;
+        _exportButton.Click += (_, _) => ExportMappings();
+        actions.Controls.Add(_exportButton);
+
+        _importButton.Text = "Import...";
+        _importButton.Width = 96;
+        _importButton.Click += (_, _) => ImportMappings();
+        actions.Controls.Add(_importButton);
+
         root.Controls.Add(actions, 0, 1);
         AcceptButton = _saveButton;
         CancelButton = _cancelButton;
@@ -153,14 +160,9 @@ public sealed class ProjectMappingsForm : Form
 
     private void LoadMappings()
     {
-        PopulateMappingGrid(_floorGrid, _floorStore.Load(_projectKey));
-        PopulateMappingGrid(_familyGrid, _familyStore.Load(_projectKey));
-
-        _openingGrid.Rows.Clear();
-        foreach (string familyName in _openingStore.Load(_projectKey))
-        {
-            _openingGrid.Rows.Add(familyName);
-        }
+        LoadResult<ProjectMappingRules> result = _mappingRuleStore.LoadWithDiagnostics(_projectKey);
+        PopulateRules(result.Value);
+        ShowWarnings(result.Warnings);
     }
 
     private static void PopulateMappingGrid(DataGridView grid, IReadOnlyDictionary<string, string> mappings)
@@ -174,11 +176,84 @@ public sealed class ProjectMappingsForm : Form
 
     private void SaveMappings()
     {
-        _floorStore.Save(_projectKey, ReadMappings(_floorGrid));
-        _familyStore.Save(_projectKey, ReadMappings(_familyGrid));
-        _openingStore.Save(_projectKey, ReadFamilies(_openingGrid));
+        _mappingRuleStore.Save(_projectKey, BuildRulesFromGrid());
         DialogResult = DialogResult.OK;
         Close();
+    }
+
+    private void ImportMappings()
+    {
+        using OpenFileDialog dialog = new()
+        {
+            Title = "Import Project Mappings",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        LoadResult<ProjectMappingRules> result = _mappingRuleStore.ImportFromFile(dialog.FileName);
+        PopulateRules(result.Value);
+        ShowWarnings(result.Warnings);
+    }
+
+    private void ExportMappings()
+    {
+        using SaveFileDialog dialog = new()
+        {
+            Title = "Export Project Mappings",
+            Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            DefaultExt = "json",
+            AddExtension = true,
+            FileName = "project-mappings.json",
+            OverwritePrompt = true,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.FileName))
+        {
+            return;
+        }
+
+        _mappingRuleStore.ExportToFile(_projectKey, BuildRulesFromGrid(), dialog.FileName);
+    }
+
+    private void PopulateRules(ProjectMappingRules rules)
+    {
+        PopulateMappingGrid(_floorGrid, rules.FloorCategoryOverrides);
+        PopulateMappingGrid(_familyGrid, rules.FamilyCategoryOverrides);
+
+        _openingGrid.Rows.Clear();
+        foreach (string familyName in rules.AcceptedOpeningFamilies)
+        {
+            _openingGrid.Rows.Add(familyName);
+        }
+    }
+
+    private ProjectMappingRules BuildRulesFromGrid()
+    {
+        return ProjectMappingRules.Create(
+            ReadMappings(_floorGrid),
+            ReadMappings(_familyGrid),
+            ReadFamilies(_openingGrid));
+    }
+
+    private void ShowWarnings(IReadOnlyList<string> warnings)
+    {
+        if (warnings == null || warnings.Count == 0)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            string.Join(Environment.NewLine, warnings),
+            Text,
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     private static Dictionary<string, string> ReadMappings(DataGridView grid)

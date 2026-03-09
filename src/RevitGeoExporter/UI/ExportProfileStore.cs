@@ -78,6 +78,63 @@ public sealed class ExportProfileStore
         SaveDocument(document);
     }
 
+    public void RenameProfile(string projectKey, ExportProfile profile, string newName)
+    {
+        if (profile is null)
+        {
+            throw new ArgumentNullException(nameof(profile));
+        }
+
+        string normalizedNewName = NormalizeName(newName);
+        if (normalizedNewName.Length == 0)
+        {
+            throw new ArgumentException("A new profile name is required.", nameof(newName));
+        }
+
+        ExportProfileDocument document = LoadDocument();
+        List<ExportProfile> profiles = profile.Scope == ExportProfileScope.Project
+            ? GetProjectProfiles(document, projectKey)
+            : document.GlobalProfiles;
+
+        int existingIndex = profiles.FindIndex(candidate =>
+            string.Equals(candidate.Name, profile.Name, StringComparison.OrdinalIgnoreCase));
+        if (existingIndex < 0)
+        {
+            throw new InvalidOperationException($"Profile '{profile.Name}' could not be found.");
+        }
+
+        ExportProfile renamed = NormalizeProfile(profiles[existingIndex]);
+        renamed.Name = normalizedNewName;
+
+        profiles.RemoveAt(existingIndex);
+        UpsertProfile(profiles, renamed);
+        SaveDocument(document);
+    }
+
+    public void ReplaceProfiles(string projectKey, ExportProfileScope scope, IEnumerable<ExportProfile> profiles)
+    {
+        ExportProfileDocument document = LoadDocument();
+        List<ExportProfile> normalizedProfiles = (profiles ?? Array.Empty<ExportProfile>())
+            .Where(profile => profile != null)
+            .Select(NormalizeProfile)
+            .Where(profile => profile.Name.Length > 0 && profile.Scope == scope)
+            .ToList();
+
+        if (scope == ExportProfileScope.Project)
+        {
+            List<ExportProfile> projectProfiles = GetProjectProfiles(document, projectKey);
+            projectProfiles.Clear();
+            projectProfiles.AddRange(normalizedProfiles);
+        }
+        else
+        {
+            document.GlobalProfiles.Clear();
+            document.GlobalProfiles.AddRange(normalizedProfiles);
+        }
+
+        SaveDocument(document);
+    }
+
     private ExportProfileDocument LoadDocument()
     {
         return JsonFileLoadHelper.Load(
@@ -132,6 +189,9 @@ public sealed class ExportProfileStore
                 ? RevitGeoExporter.Export.ExportFeatureType.All
                 : profile.FeatureTypes,
             GenerateDiagnosticsReport = profile.GenerateDiagnosticsReport,
+            GeneratePackageOutput = profile.GeneratePackageOutput,
+            IncludePackageLegend = profile.IncludePackageLegend,
+            GeometryRepairOptions = profile.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = profile.UiLanguage,
         };
     }

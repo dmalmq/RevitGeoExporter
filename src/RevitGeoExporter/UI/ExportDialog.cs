@@ -4,7 +4,9 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -24,6 +26,15 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
     private readonly CheckBox _diagnosticsCheckBox = new();
+    private readonly CheckBox _packageCheckBox = new();
+    private readonly CheckBox _packageLegendCheckBox = new();
+    private readonly CheckBox _repairEnabledCheckBox = new();
+    private readonly TextBox _minPolygonAreaTextBox = new();
+    private readonly TextBox _minOpeningLengthTextBox = new();
+    private readonly TextBox _simplifyToleranceTextBox = new();
+    private readonly TextBox _openingSnapDistanceTextBox = new();
+    private readonly TextBox _elevatorSnapDistanceTextBox = new();
+    private readonly TextBox _mergeBoundaryThresholdTextBox = new();
     private readonly GroupBox _viewsGroup = new();
     private readonly GroupBox _optionsGroup = new();
     private readonly Button _selectAllButton = new();
@@ -32,6 +43,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
+    private readonly Button _helpButton = new();
     private readonly Label _versionLabel = new();
     private readonly Label _profilesLabel = new();
     private readonly Label _languageLabel = new();
@@ -42,6 +54,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly IReadOnlyList<ViewSelectionItem> _viewItems;
     private readonly Action<ExportPreviewRequest>? _previewRequested;
     private readonly Action<ExportProfileScope, string, ExportDialogSettings>? _saveProfileRequested;
+    private readonly Action<ExportProfile, string>? _renameProfileRequested;
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action? _openMappingsRequested;
     private readonly List<ExportProfile> _profiles;
@@ -53,6 +66,7 @@ public sealed class ExportDialog : WinFormsForm
         ExportDialogSettings settings,
         IReadOnlyList<ExportProfile>? profiles = null,
         Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
+        Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
         Action<ExportPreviewRequest>? previewRequested = null)
@@ -72,6 +86,7 @@ public sealed class ExportDialog : WinFormsForm
             .ToList();
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _saveProfileRequested = saveProfileRequested;
+        _renameProfileRequested = renameProfileRequested;
         _deleteProfileRequested = deleteProfileRequested;
         _openMappingsRequested = openMappingsRequested;
         _previewRequested = previewRequested;
@@ -176,7 +191,8 @@ public sealed class ExportDialog : WinFormsForm
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 12,
+            RowCount = 15,
+            AutoScroll = true,
             Padding = new Padding(10),
         };
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
@@ -184,12 +200,15 @@ public sealed class ExportDialog : WinFormsForm
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 120f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 70f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 56f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 70f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 178f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         _optionsGroup.Controls.Add(panel);
 
@@ -238,15 +257,20 @@ public sealed class ExportDialog : WinFormsForm
         _openingCheckBox.Text = "opening";
         _levelCheckBox.Text = "level";
         _diagnosticsCheckBox.AutoSize = true;
+        _packageCheckBox.AutoSize = true;
+        _packageLegendCheckBox.AutoSize = true;
         _unitCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _packageCheckBox.CheckedChanged += (_, _) => _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
         featuresPanel.Controls.Add(_diagnosticsCheckBox);
+        featuresPanel.Controls.Add(_packageCheckBox);
+        featuresPanel.Controls.Add(_packageLegendCheckBox);
         panel.Controls.Add(featuresPanel, 0, 5);
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
@@ -326,7 +350,67 @@ public sealed class ExportDialog : WinFormsForm
         mappingsButton.Text = "Mappings...";
         panel.Controls.Add(mappingsButton, 0, 10);
 
+        panel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "Geometry Repair",
+        }, 0, 11);
+        panel.Controls.Add(BuildRepairPanel(), 0, 12);
+
+        panel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "Packaging",
+        }, 0, 13);
+        panel.Controls.Add(BuildPackagingPanel(), 0, 14);
+
         return _optionsGroup;
+    }
+
+    private WinFormsControl BuildPackagingPanel()
+    {
+        Label label = new()
+        {
+            Dock = DockStyle.Fill,
+            Text = "When enabled, export also writes a package folder with preview images, a manifest, and optional legend.",
+            AutoEllipsis = false,
+        };
+        return label;
+    }
+
+    private WinFormsControl BuildRepairPanel()
+    {
+        TableLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        AddRepairRow(panel, 0, "Enable repair", _repairEnabledCheckBox);
+        AddRepairRow(panel, 1, "Min polygon area (m2)", _minPolygonAreaTextBox);
+        AddRepairRow(panel, 2, "Min opening length (m)", _minOpeningLengthTextBox);
+        AddRepairRow(panel, 3, "Simplify tolerance (m)", _simplifyToleranceTextBox);
+        AddRepairRow(panel, 4, "Opening snap distance (m)", _openingSnapDistanceTextBox);
+        AddRepairRow(panel, 5, "Elevator snap distance (m)", _elevatorSnapDistanceTextBox);
+        AddRepairRow(panel, 6, "Merge gap threshold (m)", _mergeBoundaryThresholdTextBox);
+        return panel;
+    }
+
+    private static void AddRepairRow(TableLayoutPanel panel, int rowIndex, string labelText, WinFormsControl control)
+    {
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f));
+        Label label = new()
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = labelText,
+        };
+        control.Dock = DockStyle.Fill;
+        panel.Controls.Add(label, 0, rowIndex);
+        panel.Controls.Add(control, 1, rowIndex);
     }
 
     private WinFormsControl BuildProfilesPanel()
@@ -360,6 +444,10 @@ public sealed class ExportDialog : WinFormsForm
         Button saveGlobalButton = new() { Width = 88, Height = 26, Text = "Save Global" };
         saveGlobalButton.Click += (_, _) => SaveProfile(ExportProfileScope.Global);
         actions.Controls.Add(saveGlobalButton);
+
+        Button renameButton = new() { Width = 72, Height = 26, Text = "Rename" };
+        renameButton.Click += (_, _) => RenameSelectedProfile();
+        actions.Controls.Add(renameButton);
 
         Button deleteButton = new() { Width = 72, Height = 26, Text = "Delete" };
         deleteButton.Click += (_, _) => DeleteSelectedProfile();
@@ -404,9 +492,15 @@ public sealed class ExportDialog : WinFormsForm
         _previewButton.Height = 30;
         _previewButton.Click += (_, _) => ShowPreview();
 
+        _helpButton.Width = 90;
+        _helpButton.Height = 30;
+        _helpButton.Text = UiLanguageText.Select(_language, "Help", "ヘルプ");
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.ExportWorkflow, _language, Text);
+
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_exportButton);
         actions.Controls.Add(_previewButton);
+        actions.Controls.Add(_helpButton);
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
 
@@ -457,6 +551,10 @@ public sealed class ExportDialog : WinFormsForm
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
+        _packageCheckBox.Checked = settings.GeneratePackageOutput;
+        _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
+        _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        LoadGeometryRepairOptions(settings.GeometryRepairOptions);
 
         _targetEpsgTextBox.Text = settings.TargetEpsg > 0
             ? settings.TargetEpsg.ToString()
@@ -486,6 +584,8 @@ public sealed class ExportDialog : WinFormsForm
         _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
         _previewButton.Text = UiLanguageText.Select(_language, "Preview...", "プレビュー...");
         _exportButton.Text = UiLanguageText.Select(_language, "Export", "エクスポート");
+        _packageCheckBox.Text = UiLanguageText.Select(_language, "Write GIS package", "GISパッケージを出力");
+        _packageLegendCheckBox.Text = UiLanguageText.Select(_language, "Include legend file", "凡例ファイルを含める");
     }
 
     private void SelectLanguage(UiLanguage language)
@@ -578,6 +678,10 @@ public sealed class ExportDialog : WinFormsForm
             epsg,
             featureTypes,
             _diagnosticsCheckBox.Checked,
+            _packageCheckBox.Checked,
+            _packageLegendCheckBox.Checked,
+            BuildGeometryRepairOptions(),
+            (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name,
             _language);
         DialogResult = DialogResult.OK;
         Close();
@@ -602,19 +706,19 @@ public sealed class ExportDialog : WinFormsForm
             return;
         }
 
-        ExportFeatureType previewTypes = GetSelectedFeatureTypes() & (ExportFeatureType.Unit | ExportFeatureType.Opening);
+        ExportFeatureType previewTypes = GetSelectedFeatureTypes();
         if (previewTypes == ExportFeatureType.None)
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Preview requires unit and/or opening to be selected.", "プレビューには unit または opening の選択が必要です。"),
+                UiLanguageText.Select(_language, "Preview requires at least one selected feature type.", "プレビューには少なくとも1つの選択済みフィーチャー種別が必要です。"),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
         }
 
-        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, _language));
+        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, BuildGeometryRepairOptions(), _language));
     }
 
     private void CheckAllViews()
@@ -667,7 +771,7 @@ public sealed class ExportDialog : WinFormsForm
 
     private void UpdatePreviewButtonEnabled()
     {
-        ExportFeatureType previewTypes = GetSelectedFeatureTypes() & (ExportFeatureType.Unit | ExportFeatureType.Opening);
+        ExportFeatureType previewTypes = GetSelectedFeatureTypes();
         _previewButton.Enabled = _previewRequested != null &&
                                  previewTypes != ExportFeatureType.None &&
                                  GetSelectedViews().Count > 0;
@@ -719,6 +823,9 @@ public sealed class ExportDialog : WinFormsForm
             FeatureTypes = GetSelectedFeatureTypes(),
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
             GenerateDiagnosticsReport = _diagnosticsCheckBox.Checked,
+            GeneratePackageOutput = _packageCheckBox.Checked,
+            IncludePackageLegend = _packageLegendCheckBox.Checked,
+            GeometryRepairOptions = BuildGeometryRepairOptions(),
             UiLanguage = _language,
         };
     }
@@ -772,6 +879,10 @@ public sealed class ExportDialog : WinFormsForm
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
             _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
+            _packageCheckBox.Checked = settings.GeneratePackageOutput;
+            _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
+            _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+            LoadGeometryRepairOptions(settings.GeometryRepairOptions);
             SelectPresetIfAvailable(settings.TargetEpsg);
             SelectLanguage(settings.UiLanguage);
         }
@@ -841,6 +952,37 @@ public sealed class ExportDialog : WinFormsForm
         PopulateProfiles();
     }
 
+    private void RenameSelectedProfile()
+    {
+        if (_renameProfileRequested == null ||
+            _profileComboBox.SelectedItem is not ProfileItem item ||
+            item.Profile == null)
+        {
+            return;
+        }
+
+        using TextPromptForm prompt = new(
+            "Rename Export Profile",
+            "New profile name",
+            item.Profile.Name);
+        if (prompt.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        string newName = prompt.Value;
+        if (newName.Length == 0 ||
+            string.Equals(newName, item.Profile.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _renameProfileRequested(item.Profile, newName);
+        item.Profile.Name = newName;
+        PopulateProfiles();
+        SelectProfile(item.Profile);
+    }
+
     private void SelectProfile(ExportProfile profile)
     {
         for (int i = 0; i < _profileComboBox.Items.Count; i++)
@@ -856,6 +998,37 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         _profileComboBox.SelectedIndex = 0;
+    }
+
+    private void LoadGeometryRepairOptions(GeometryRepairOptions? options)
+    {
+        GeometryRepairOptions value = (options ?? new GeometryRepairOptions()).Clone();
+        _repairEnabledCheckBox.Checked = value.Enabled;
+        _minPolygonAreaTextBox.Text = value.MinimumPolygonAreaSquareMeters.ToString("0.###");
+        _minOpeningLengthTextBox.Text = value.MinimumOpeningLengthMeters.ToString("0.###");
+        _simplifyToleranceTextBox.Text = value.SimplifyToleranceMeters.ToString("0.###");
+        _openingSnapDistanceTextBox.Text = value.OpeningSnapDistanceMeters.ToString("0.###");
+        _elevatorSnapDistanceTextBox.Text = value.ElevatorOpeningSnapDistanceMeters.ToString("0.###");
+        _mergeBoundaryThresholdTextBox.Text = value.MergeNearbyBoundaryThresholdMeters.ToString("0.###");
+    }
+
+    private GeometryRepairOptions BuildGeometryRepairOptions()
+    {
+        return new GeometryRepairOptions
+        {
+            Enabled = _repairEnabledCheckBox.Checked,
+            MinimumPolygonAreaSquareMeters = ParseDouble(_minPolygonAreaTextBox.Text, 0.01d),
+            MinimumOpeningLengthMeters = ParseDouble(_minOpeningLengthTextBox.Text, 0.10d),
+            SimplifyToleranceMeters = ParseDouble(_simplifyToleranceTextBox.Text, 0d),
+            OpeningSnapDistanceMeters = ParseDouble(_openingSnapDistanceTextBox.Text, 5.0d),
+            ElevatorOpeningSnapDistanceMeters = ParseDouble(_elevatorSnapDistanceTextBox.Text, 5.0d),
+            MergeNearbyBoundaryThresholdMeters = ParseDouble(_mergeBoundaryThresholdTextBox.Text, 0.15d),
+        };
+    }
+
+    private static double ParseDouble(string? value, double fallback)
+    {
+        return double.TryParse(value, out double parsed) ? parsed : fallback;
     }
 
     private sealed class ViewSelectionItem

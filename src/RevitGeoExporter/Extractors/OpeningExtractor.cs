@@ -5,6 +5,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Export;
 
@@ -13,9 +14,7 @@ namespace RevitGeoExporter.Extractors;
 public sealed class OpeningExtractor
 {
     private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
-    private const double MinOpeningLengthMeters = 0.10d;
     private const double EndpointInsetMeters = 0.05d;
-    private const double MaxOutlineSnapDistanceMeters = 5.0d;
     private const double StairLevelElevationToleranceFeet = 0.75d;
 
     private readonly Document _document;
@@ -23,11 +22,13 @@ public sealed class OpeningExtractor
     private readonly CrsTransformer _transformer;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly ZoneCatalog _zoneCatalog;
+    private readonly GeometryRepairOptions _geometryRepairOptions;
 
     public OpeningExtractor(
         Document document,
         IExportMetadataProvider metadataProvider,
-        ZoneCatalog zoneCatalog)
+        ZoneCatalog zoneCatalog,
+        GeometryRepairOptions? geometryRepairOptions = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -35,6 +36,7 @@ public sealed class OpeningExtractor
         _internalToSharedTransform =
             _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
         _transformer = new CrsTransformer();
+        _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -42,6 +44,7 @@ public sealed class OpeningExtractor
         string levelId,
         IReadOnlyList<FamilyInstance> openingInstances,
         IReadOnlyList<ExportPolygon> unitFeatures,
+        GeometryRepairResult geometryRepair,
         ICollection<string> warnings)
     {
         if (level is null)
@@ -69,6 +72,11 @@ public sealed class OpeningExtractor
             throw new ArgumentNullException(nameof(warnings));
         }
 
+        if (geometryRepair is null)
+        {
+            throw new ArgumentNullException(nameof(geometryRepair));
+        }
+
         List<ExportLineString> features = new();
         HashSet<string> seenGeometryKeys = new(StringComparer.Ordinal);
         List<BoundarySegment> snapSegments = BuildSnapSegments(unitFeatures);
@@ -90,6 +98,12 @@ public sealed class OpeningExtractor
             SnapResult snapResult = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
             lineString = snapResult.Line;
             bool isElevatorDoor = OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening);
+            if (GetLineLength(lineString) < _geometryRepairOptions.MinimumOpeningLengthMeters)
+            {
+                geometryRepair.DroppedOpenings++;
+                warnings.Add($"Opening {opening.Id.Value} was dropped because its final length was below the configured minimum.");
+                continue;
+            }
 
             string id = _metadataProvider.GetElementId(opening, warnings);
             AddFeature(
@@ -101,7 +115,8 @@ public sealed class OpeningExtractor
                 id,
                 GetOpeningCategory(opening),
                 levelId,
-                opening.Id.Value);
+                opening.Id.Value,
+                OpeningFamilyClassifier.GetFamilyName(opening));
         }
 
         return features;
@@ -146,7 +161,7 @@ public sealed class OpeningExtractor
         {
             Point2D a = ring[i];
             Point2D b = ring[i + 1];
-            if (Distance(a, b) < MinOpeningLengthMeters)
+            if (Distance(a, b) < 0.01d)
             {
                 continue;
             }
@@ -155,7 +170,7 @@ public sealed class OpeningExtractor
         }
     }
 
-    private static double GetSnapDistance(
+    private double GetSnapDistance(
         FamilyInstance opening,
         LineString2D line,
         IReadOnlyList<BoundarySegment> segments)
@@ -164,10 +179,12 @@ public sealed class OpeningExtractor
             line,
             segments,
             "elevator",
-            OpeningSnapPolicy.ElevatorOpeningSnapDistanceMeters);
+            _geometryRepairOptions.ElevatorOpeningSnapDistanceMeters);
         return OpeningSnapPolicy.ResolveMaxSnapDistance(
             OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening),
-            isNearElevatorBoundary);
+            isNearElevatorBoundary,
+            _geometryRepairOptions.OpeningSnapDistanceMeters,
+            _geometryRepairOptions.ElevatorOpeningSnapDistanceMeters);
     }
 
     private static bool HasNearbyCategory(
@@ -205,7 +222,7 @@ public sealed class OpeningExtractor
 
     private static SnapResult SnapToClosestOutline(LineString2D line, IReadOnlyList<BoundarySegment> segments)
     {
-        return SnapToClosestOutline(line, segments, MaxOutlineSnapDistanceMeters);
+        return SnapToClosestOutline(line, segments, 5.0d);
     }
 
     private static SnapResult SnapToClosestOutline(
@@ -220,7 +237,7 @@ public sealed class OpeningExtractor
         Point2D end = line.Points[line.Points.Count - 1];
         Point2D center = new((start.X + end.X) * 0.5d, (start.Y + end.Y) * 0.5d);
         double length = Distance(start, end);
-        if (length < MinOpeningLengthMeters)
+        if (length < 0.01d)
         {
             return new SnapResult(line, false);
         }
@@ -259,7 +276,7 @@ public sealed class OpeningExtractor
         double distanceToStart = projectedT;
         double distanceToEnd = segmentLength - projectedT;
         halfLength = Math.Min(halfLength, Math.Min(distanceToStart, distanceToEnd));
-        if (halfLength < MinOpeningLengthMeters * 0.5d)
+        if (halfLength < 0.005d)
         {
             return new SnapResult(line, false);
         }
@@ -433,7 +450,7 @@ public sealed class OpeningExtractor
 
         double dx = right.X - left.X;
         double dy = right.Y - left.Y;
-        if (Math.Sqrt((dx * dx) + (dy * dy)) < MinOpeningLengthMeters)
+        if (Math.Sqrt((dx * dx) + (dy * dy)) < _geometryRepairOptions.MinimumOpeningLengthMeters)
         {
             return false;
         }
@@ -451,7 +468,8 @@ public sealed class OpeningExtractor
         string id,
         string category,
         string levelId,
-        long elementId)
+        long elementId,
+        string familyName)
     {
         string geometryKey = BuildGeometryKey(lineString);
         if (!seenGeometryKeys.Add(geometryKey))
@@ -470,6 +488,7 @@ public sealed class OpeningExtractor
                     ["element_id"] = elementId,
                     ["is_snapped_to_outline"] = wasSnappedToOutline,
                     ["is_elevator_door"] = isElevatorDoor,
+                    ["source_label"] = familyName,
                 }));
     }
 
@@ -766,6 +785,17 @@ public sealed class OpeningExtractor
         double dx = b.X - a.X;
         double dy = b.Y - a.Y;
         return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static double GetLineLength(LineString2D line)
+    {
+        double total = 0d;
+        for (int i = 0; i < line.Points.Count - 1; i++)
+        {
+            total += Distance(line.Points[i], line.Points[i + 1]);
+        }
+
+        return total;
     }
 
     private static Point2D ProjectPointOntoSegment(

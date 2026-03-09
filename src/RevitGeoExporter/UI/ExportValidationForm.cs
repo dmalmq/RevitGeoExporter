@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Core.Validation;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -18,6 +19,7 @@ public sealed class ExportValidationForm : WinFormsForm
     private readonly DataGridView _issuesGrid = new();
     private readonly Button _continueButton = new();
     private readonly Button _cancelButton = new();
+    private readonly Button _helpButton = new();
 
     public ExportValidationForm(ExportValidationResult result, UiLanguage language)
     {
@@ -112,7 +114,7 @@ public sealed class ExportValidationForm : WinFormsForm
         _issuesGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             Name = "FeatureType",
-            HeaderText = T("Feature Type", "フィーチャ種別"),
+            HeaderText = T("Feature Type", "フィーチャタイプ"),
             FillWeight = 12f,
         });
         _issuesGrid.Columns.Add(new DataGridViewTextBoxColumn
@@ -140,6 +142,12 @@ public sealed class ExportValidationForm : WinFormsForm
         _cancelButton.DialogResult = DialogResult.Cancel;
         panel.Controls.Add(_cancelButton);
 
+        _helpButton.Width = 110;
+        _helpButton.Height = 30;
+        _helpButton.Text = T("Help", "ヘルプ");
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.ValidationAndDiagnostics, _language, Text);
+        panel.Controls.Add(_helpButton);
+
         _continueButton.Width = 130;
         _continueButton.Height = 30;
         _continueButton.Click += (_, _) =>
@@ -161,8 +169,8 @@ public sealed class ExportValidationForm : WinFormsForm
         int infoCount = _result.Issues.Count(issue => issue.Severity == ValidationSeverity.Info);
 
         _titleLabel.Text = _result.HasErrors
-            ? T("Export is blocked until validation errors are resolved.", "検証エラーがあるためエクスポートできません。")
-            : T("Review validation results before export.", "エクスポート前に検証結果を確認してください。");
+            ? T("Export is blocked until validation errors are resolved.", "検証エラーが解消されるまで書き出しは実行できません。")
+            : T("Review validation results before export.", "書き出し前に検証結果を確認してください。");
         _summaryLabel.Text = _language == UiLanguage.Japanese
             ? $"エラー: {errorCount}    警告: {warningCount}    情報: {infoCount}"
             : $"Errors: {errorCount}    Warnings: {warningCount}    Info: {infoCount}";
@@ -184,7 +192,7 @@ public sealed class ExportValidationForm : WinFormsForm
                 string.Empty,
                 string.Empty,
                 string.Empty,
-                T("No validation issues were found.", "検証時の問題は見つかりませんでした。"));
+                T("No validation issues were found.", "検証で問題は見つかりませんでした。"));
         }
 
         if (_result.HasErrors)
@@ -195,7 +203,7 @@ public sealed class ExportValidationForm : WinFormsForm
         else
         {
             _continueButton.Enabled = true;
-            _continueButton.Text = T("Continue Export", "エクスポートを続行");
+            _continueButton.Text = T("Continue Export", "書き出しを続行");
         }
     }
 

@@ -153,7 +153,8 @@ public sealed class UnitExtractor
                     name,
                     altName,
                     floor.Id.Value,
-                    resolvedFloorCategory),
+                    resolvedFloorCategory,
+                    rawFloorTypeName),
             };
             return true;
         }
@@ -177,7 +178,8 @@ public sealed class UnitExtractor
                     name,
                     altName,
                     floor.Id.Value,
-                    resolvedFloorCategory));
+                    resolvedFloorCategory,
+                    rawFloorTypeName));
         }
 
         features = created;
@@ -226,6 +228,7 @@ public sealed class UnitExtractor
             polygons: polygons,
             levelId: levelId,
             zoneInfo: _zoneCatalog.StairsDefault,
+            sourceLabel: "stairs",
             warnings: warnings);
         return true;
     }
@@ -258,6 +261,7 @@ public sealed class UnitExtractor
                     polygon: escalatorPolygon,
                     levelId: levelId,
                     zoneInfo: zoneInfo,
+                    sourceLabel: familyName,
                     warnings: warnings);
                 return true;
             }
@@ -278,6 +282,7 @@ public sealed class UnitExtractor
             polygons: polygons,
             levelId: levelId,
             zoneInfo: zoneInfo,
+            sourceLabel: familyName,
             warnings: warnings);
         return true;
     }
@@ -287,12 +292,13 @@ public sealed class UnitExtractor
         Polygon2D polygon,
         string levelId,
         ZoneInfo zoneInfo,
+        string? sourceLabel,
         ICollection<string> warnings)
     {
         string id = _metadataProvider.GetElementId(sourceElement, warnings);
         string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
         string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygon, levelId, zoneInfo, name, altName, sourceElement.Id.Value);
+        return CreateFeature(id, polygon, levelId, zoneInfo, name, altName, sourceElement.Id.Value, null, sourceLabel);
     }
 
     private ExportPolygon CreateFeature(
@@ -300,12 +306,13 @@ public sealed class UnitExtractor
         IReadOnlyList<Polygon2D> polygons,
         string levelId,
         ZoneInfo zoneInfo,
+        string? sourceLabel,
         ICollection<string> warnings)
     {
         string id = _metadataProvider.GetElementId(sourceElement, warnings);
         string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
         string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygons, levelId, zoneInfo, name, altName, sourceElement.Id.Value);
+        return CreateFeature(id, polygons, levelId, zoneInfo, name, altName, sourceElement.Id.Value, null, sourceLabel);
     }
 
     private ExportPolygon CreateFeature(
@@ -316,7 +323,8 @@ public sealed class UnitExtractor
         string? name,
         string? altName,
         long? sourceElementId,
-        ResolvedFloorCategory? resolvedFloorCategory = null)
+        ResolvedFloorCategory? resolvedFloorCategory = null,
+        string? sourceLabel = null)
     {
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(polygon);
         string displayPoint = DisplayPointCalculator.ToWktPoint(centroid);
@@ -333,6 +341,7 @@ public sealed class UnitExtractor
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
             ["preview_fill_color"] = zoneInfo.FillColor,
+            ["source_label"] = sourceLabel,
         };
         AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
 
@@ -347,7 +356,8 @@ public sealed class UnitExtractor
         string? name,
         string? altName,
         long? sourceElementId,
-        ResolvedFloorCategory? resolvedFloorCategory = null)
+        ResolvedFloorCategory? resolvedFloorCategory = null,
+        string? sourceLabel = null)
     {
         if (polygons == null || polygons.Count == 0)
         {
@@ -372,6 +382,7 @@ public sealed class UnitExtractor
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
             ["preview_fill_color"] = zoneInfo.FillColor,
+            ["source_label"] = sourceLabel,
         };
         AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
 

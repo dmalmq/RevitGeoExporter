@@ -1,5 +1,7 @@
 using System;
 
+using RevitGeoExporter.Core.Geometry;
+
 namespace RevitGeoExporter.UI;
 
 public sealed class ExportProfile
@@ -17,6 +19,12 @@ public sealed class ExportProfile
 
     public bool GenerateDiagnosticsReport { get; set; } = true;
 
+    public bool GeneratePackageOutput { get; set; }
+
+    public bool IncludePackageLegend { get; set; } = true;
+
+    public GeometryRepairOptions GeometryRepairOptions { get; set; } = new();
+
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
 
     public ExportDialogSettings ToSettings()
@@ -27,6 +35,9 @@ public sealed class ExportProfile
             TargetEpsg = TargetEpsg,
             FeatureTypes = FeatureTypes,
             GenerateDiagnosticsReport = GenerateDiagnosticsReport,
+            GeneratePackageOutput = GeneratePackageOutput,
+            IncludePackageLegend = IncludePackageLegend,
+            GeometryRepairOptions = GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = UiLanguage,
         };
     }
@@ -46,6 +57,9 @@ public sealed class ExportProfile
             TargetEpsg = settings.TargetEpsg,
             FeatureTypes = settings.FeatureTypes,
             GenerateDiagnosticsReport = settings.GenerateDiagnosticsReport,
+            GeneratePackageOutput = settings.GeneratePackageOutput,
+            IncludePackageLegend = settings.IncludePackageLegend,
+            GeometryRepairOptions = settings.GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = settings.UiLanguage,
         };
     }

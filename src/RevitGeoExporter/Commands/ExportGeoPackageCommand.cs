@@ -7,9 +7,12 @@ using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Diagnostics;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.Resources;
 using RevitGeoExporter.UI;
 
 namespace RevitGeoExporter.Commands;
@@ -28,7 +31,9 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         Document? document = uiDocument?.Document;
         if (document is null)
         {
-            TaskDialog.Show(ProjectInfo.Name, "An active document is required.");
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                LocalizedTextProvider.Get(UiLanguage.English, "Command.ActiveDocumentRequired", "An active document is required."));
             return Result.Failed;
         }
 
@@ -36,27 +41,30 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         IReadOnlyList<ViewPlan> views = collector.GetExportablePlanViews(document);
         if (views.Count == 0)
         {
-            TaskDialog.Show(ProjectInfo.Name, "No exportable plan views were found.");
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                LocalizedTextProvider.Get(UiLanguage.English, "Command.NoExportableViews", "No exportable plan views were found."));
             return Result.Failed;
         }
 
-        ExportDialogSettingsStore settingsStore = new();
-        var settingsLoad = settingsStore.LoadWithDiagnostics();
-        ExportDialogSettings settings = settingsLoad.Value;
-        ShowWarningsIfNeeded(settingsLoad.Warnings, settings.UiLanguage);
         string projectKey = DocumentProjectKeyBuilder.Create(document);
+        SettingsBundle bundle = new(projectKey);
+        SettingsBundleSnapshot bundleSnapshot = bundle.Load();
+        ExportDialogSettings settings = bundleSnapshot.GlobalSettings;
         ExportProfileStore profileStore = new();
-        var profileLoad = profileStore.LoadWithDiagnostics(projectKey);
-        ShowWarningsIfNeeded(profileLoad.Warnings, settings.UiLanguage);
 
         ExportDialogResult? request = null;
         using (ExportDialog dialog = new(
                    views,
                    settings,
-                   profileLoad.Value,
+                   bundleSnapshot.Profiles,
                    saveProfileRequested: (scope, name, profileSettings) =>
                    {
                        profileStore.SaveProfile(projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
+                   },
+                   renameProfileRequested: (profile, newName) =>
+                   {
+                       profileStore.RenameProfile(projectKey, profile, newName);
                    },
                    deleteProfileRequested: profile =>
                    {
@@ -64,17 +72,16 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                    },
                    openMappingsRequested: () =>
                    {
-                       using ProjectMappingsForm mappingsForm = new(
+                       using SettingsHubForm settingsHub = new(
                            projectKey,
-                           RevitGeoExporter.Core.Models.ZoneCatalog.CreateDefault(),
-                           new RevitGeoExporter.Core.Assignments.FloorCategoryOverrideStore(),
-                           new RevitGeoExporter.Core.Assignments.FamilyCategoryOverrideStore(),
-                           new RevitGeoExporter.Core.Assignments.AcceptedOpeningFamilyStore());
-                       mappingsForm.ShowDialog();
+                           bundle,
+                           bundle.Load(),
+                           ZoneCatalog.CreateDefault());
+                       settingsHub.ShowDialog();
                    },
-                   previewRequest =>
+                       previewRequest =>
                    {
-                       ExportPreviewService previewService = new(document);
+                       ExportPreviewService previewService = new(document, previewRequest.GeometryRepairOptions);
                        using ExportPreviewForm previewForm = new(previewRequest, previewService);
                        previewForm.ShowDialog();
                    }))
@@ -85,7 +92,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             }
 
             request = dialog.Result;
-            settingsStore.Save(dialog.BuildSettings());
+            bundle.SaveGlobalSettings(dialog.BuildSettings());
         }
 
         if (request == null || request.SelectedViews.Count == 0)
@@ -100,7 +107,15 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                 request.OutputDirectory,
                 request.TargetEpsg,
                 request.SelectedViews,
-                request.FeatureTypes);
+                request.FeatureTypes,
+                request.GeometryRepairOptions,
+                new ExportPackageOptions
+                {
+                    Enabled = request.GeneratePackageOutput,
+                    IncludeLegendFile = request.IncludePackageLegend,
+                },
+                request.SelectedProfileName,
+                BuildBaselineKey(projectKey, request.SelectedProfileName));
 
             ExportValidationSnapshotBuilder snapshotBuilder = new();
             ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
@@ -131,19 +146,20 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
 
             stopwatch.Stop();
 
+            ExportDiagnosticsReportBuilder diagnosticsBuilder = new();
+            ExportDiagnosticsReport diagnosticsReport = diagnosticsBuilder.Build(
+                session,
+                validationResult,
+                result,
+                DateTimeOffset.UtcNow,
+                stopwatch.Elapsed);
+
             if (request.GenerateDiagnosticsReport)
             {
                 try
                 {
-                    ExportDiagnosticsReportBuilder diagnosticsBuilder = new();
-                    ExportDiagnosticsReport report = diagnosticsBuilder.Build(
-                        session,
-                        validationResult,
-                        result,
-                        DateTimeOffset.UtcNow,
-                        stopwatch.Elapsed);
                     ExportDiagnosticsWriter diagnosticsWriter = new();
-                    string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, report);
+                    string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, diagnosticsReport);
                     result.SetDiagnosticsReportPath(diagnosticsPath);
                 }
                 catch (Exception diagnosticsException)
@@ -155,6 +171,21 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                         });
                 }
             }
+
+            ExportPackageService packageService = new();
+            ExportPackageResult packageResult = packageService.BuildPackage(session, diagnosticsReport, result);
+            result.SetPackagePaths(packageResult.PackageDirectory, packageResult.ManifestPath);
+
+            ExportBaselineStore baselineStore = new();
+            var baseline = baselineStore.Load(session.BaselineKey);
+            result.AddWarnings(baseline.Warnings);
+            ChangeSummaryService changeSummaryService = new();
+            result.SetChangeSummary(changeSummaryService.Compare(
+                baseline.Report,
+                diagnosticsReport,
+                baseline.Manifest,
+                packageResult.Manifest));
+            baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest);
 
             using ExportResultForm resultForm = new(result, request.OutputDirectory, request.UiLanguage);
             resultForm.ShowDialog();
@@ -275,6 +306,13 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
     private static string T(UiLanguage language, string english, string japanese)
     {
         return UiLanguageText.Select(language, english, japanese);
+    }
+
+    private static string BuildBaselineKey(string projectKey, string? profileName)
+    {
+        return string.IsNullOrWhiteSpace(profileName)
+            ? projectKey
+            : $"{projectKey}__{profileName!.Trim()}";
     }
 
     private static void ShowWarningsIfNeeded(IReadOnlyList<string> warnings, UiLanguage language)

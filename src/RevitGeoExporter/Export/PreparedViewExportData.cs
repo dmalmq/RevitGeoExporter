@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Export;
@@ -15,6 +16,7 @@ public sealed class PreparedViewExportData
         ExportLayer? detailLayer,
         ExportLayer? openingLayer,
         ExportLayer? levelLayer,
+        GeometryRepairResult geometryRepair,
         IReadOnlyList<string> warnings)
     {
         View = view ?? throw new ArgumentNullException(nameof(view));
@@ -24,6 +26,7 @@ public sealed class PreparedViewExportData
         DetailLayer = detailLayer;
         OpeningLayer = openingLayer;
         LevelLayer = levelLayer;
+        GeometryRepair = geometryRepair ?? throw new ArgumentNullException(nameof(geometryRepair));
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
     }
 
@@ -40,6 +43,8 @@ public sealed class PreparedViewExportData
     public ExportLayer? OpeningLayer { get; }
 
     public ExportLayer? LevelLayer { get; }
+
+    public GeometryRepairResult GeometryRepair { get; }
 
     public IReadOnlyList<string> Warnings { get; }
 }

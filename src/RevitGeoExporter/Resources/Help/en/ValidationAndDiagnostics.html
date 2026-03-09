@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><title>Validation and Diagnostics</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}a{color:#145da0}</style></head><body>
+<h1>Validation and Diagnostics</h1>
+<p>The exporter validates prepared data before writing files and can emit a diagnostics report beside the GeoPackage output.</p>
+<h2>Validation checks include</h2>
+<ul>
+<li>Unassigned floor-derived units</li>
+<li>Duplicate or missing export IDs where required</li>
+<li>Empty or invalid geometry</li>
+<li>Unsupported opening families and unsnapped openings</li>
+<li>Views with no exportable output</li>
+<li>Missing vertical circulation output</li>
+</ul>
+<h2>Diagnostics output</h2>
+<p>The diagnostics JSON captures view counts, warnings, skipped or unsupported content, overrides, timestamps, and export timing. Package output can include the diagnostics report in the handoff folder.</p>
+</body></html>

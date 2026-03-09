@@ -51,6 +51,9 @@ public sealed class SettingsDialog : Form
             FeatureTypes = _original.FeatureTypes,
             SelectedViewIds = _original.SelectedViewIds ?? new System.Collections.Generic.List<long>(),
             GenerateDiagnosticsReport = _original.GenerateDiagnosticsReport,
+            GeneratePackageOutput = _original.GeneratePackageOutput,
+            IncludePackageLegend = _original.IncludePackageLegend,
+            GeometryRepairOptions = _original.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = _language,
         };
     }

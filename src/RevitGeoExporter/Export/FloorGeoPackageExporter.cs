@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.GeoPackage;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Export;
@@ -24,13 +25,21 @@ public sealed class FloorGeoPackageExporter
         int targetEpsg,
         IReadOnlyList<ViewPlan> selectedViews,
         ExportFeatureType featureTypes = ExportFeatureType.All,
+        GeometryRepairOptions? geometryRepairOptions = null,
+        ExportPackageOptions? packageOptions = null,
+        string? profileName = null,
+        string? baselineKey = null,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
             outputDirectory,
             targetEpsg,
             selectedViews,
-            featureTypes);
+            featureTypes,
+            geometryRepairOptions,
+            packageOptions,
+            profileName,
+            baselineKey);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -38,7 +47,11 @@ public sealed class FloorGeoPackageExporter
         string outputDirectory,
         int targetEpsg,
         IReadOnlyList<ViewPlan> selectedViews,
-        ExportFeatureType featureTypes = ExportFeatureType.All)
+        ExportFeatureType featureTypes = ExportFeatureType.All,
+        GeometryRepairOptions? geometryRepairOptions = null,
+        ExportPackageOptions? packageOptions = null,
+        string? profileName = null,
+        string? baselineKey = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -83,6 +96,9 @@ public sealed class FloorGeoPackageExporter
         AcceptedOpeningFamilyStore acceptedOpeningFamilyStore = new();
         var acceptedOpeningLoad = acceptedOpeningFamilyStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(acceptedOpeningLoad.Warnings);
+        GeometryRepairOptions effectiveGeometryRepairOptions =
+            (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
 
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
@@ -103,6 +119,7 @@ public sealed class FloorGeoPackageExporter
                 FloorCategoryOverrides = overrideLoad.Value,
                 FamilyCategoryOverrides = familyOverrideLoad.Value,
                 AcceptedOpeningFamilies = acceptedOpeningLoad.Value,
+                GeometryRepairOptions = effectiveGeometryRepairOptions,
                 ViewContexts = contexts,
             });
 
@@ -119,6 +136,10 @@ public sealed class FloorGeoPackageExporter
             contexts,
             resultWithSetupWarnings,
             overrideLoad.Value,
+            effectiveGeometryRepairOptions,
+            effectivePackageOptions,
+            profileName,
+            string.IsNullOrWhiteSpace(baselineKey) ? projectKey : baselineKey!,
             sourceModelName);
     }
 

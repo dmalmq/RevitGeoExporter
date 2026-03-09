@@ -6,6 +6,7 @@ using Autodesk.Revit.DB.Architecture;
 using NetTopologySuite.Geometries;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Extractors;
@@ -13,20 +14,21 @@ namespace RevitGeoExporter.Extractors;
 public sealed class DetailExtractor
 {
     private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
-    private const double MinimumDetailLineLengthMeters = 0.05d;
     private const double StairDetailSpacingMeters = 0.60d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
     private readonly Transform _internalToSharedTransform;
     private readonly CrsTransformer _transformer;
+    private readonly GeometryRepairOptions _geometryRepairOptions;
 
-    public DetailExtractor(Document document)
+    public DetailExtractor(Document document, GeometryRepairOptions? geometryRepairOptions = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _internalToSharedTransform =
             _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
         _transformer = new CrsTransformer();
+        _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -34,6 +36,7 @@ public sealed class DetailExtractor
         string levelId,
         IReadOnlyList<CurveElement> detailCurves,
         IReadOnlyList<Stairs> stairs,
+        GeometryRepairResult geometryRepair,
         ICollection<string> warnings)
     {
         if (level is null)
@@ -59,6 +62,11 @@ public sealed class DetailExtractor
         if (warnings is null)
         {
             throw new ArgumentNullException(nameof(warnings));
+        }
+
+        if (geometryRepair is null)
+        {
+            throw new ArgumentNullException(nameof(geometryRepair));
         }
 
         List<ExportLineString> features = new();
@@ -88,10 +96,11 @@ public sealed class DetailExtractor
                         ["id"] = StableIdGenerator.Create("detail", curveElement.Id.Value, levelId),
                         ["level_id"] = levelId,
                         ["element_id"] = curveElement.Id.Value,
+                        ["source_label"] = "detail-curve",
                     }));
         }
 
-        features.AddRange(ExtractStairStepLines(stairs, levelId, warnings));
+        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings));
         return features;
     }
 
@@ -169,6 +178,7 @@ public sealed class DetailExtractor
     private IReadOnlyList<ExportLineString> ExtractStairStepLines(
         IReadOnlyList<Stairs> stairs,
         string levelId,
+        GeometryRepairResult geometryRepair,
         ICollection<string> warnings)
     {
         List<ExportLineString> features = new();
@@ -181,7 +191,7 @@ public sealed class DetailExtractor
                     continue;
                 }
 
-                if (!TryBuildRunStepLines(run, out List<LineString2D> stepLines, warnings))
+                if (!TryBuildRunStepLines(run, out List<LineString2D> stepLines, geometryRepair, warnings))
                 {
                     continue;
                 }
@@ -197,6 +207,7 @@ public sealed class DetailExtractor
                                 ["id"] = StableIdGenerator.Create("detail.stair.step", syntheticElementId, levelId),
                                 ["level_id"] = levelId,
                                 ["element_id"] = run.Id.Value,
+                                ["source_label"] = "stair-step",
                             }));
                 }
             }
@@ -205,7 +216,11 @@ public sealed class DetailExtractor
         return features;
     }
 
-    private bool TryBuildRunStepLines(StairsRun run, out List<LineString2D> lines, ICollection<string> warnings)
+    private bool TryBuildRunStepLines(
+        StairsRun run,
+        out List<LineString2D> lines,
+        GeometryRepairResult geometryRepair,
+        ICollection<string> warnings)
     {
         lines = new List<LineString2D>();
         CurveLoop footprintBoundary;
@@ -233,7 +248,7 @@ public sealed class DetailExtractor
         }
 
         double pathLengthMeters = GetLength(pathPoints);
-        if (pathLengthMeters < MinimumDetailLineLengthMeters)
+        if (pathLengthMeters < _geometryRepairOptions.MinimumOpeningLengthMeters)
         {
             return false;
         }
@@ -268,8 +283,9 @@ public sealed class DetailExtractor
                 continue;
             }
 
-            if (GetLength(segment.Points) < MinimumDetailLineLengthMeters)
+            if (GetLength(segment.Points) < _geometryRepairOptions.MinimumOpeningLengthMeters)
             {
+                geometryRepair.SimplifiedDetails++;
                 continue;
             }
 

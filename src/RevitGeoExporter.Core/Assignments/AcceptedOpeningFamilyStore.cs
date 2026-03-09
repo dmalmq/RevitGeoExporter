@@ -1,28 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using Newtonsoft.Json;
 using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Core.Assignments;
 
 public sealed class AcceptedOpeningFamilyStore
 {
-    private static readonly JsonSerializerSettings JsonSettings = new()
-    {
-        Formatting = Formatting.Indented,
-    };
-
-    private readonly string _rootDirectory;
+    private readonly MappingRuleStore _mappingRuleStore;
 
     public AcceptedOpeningFamilyStore(string? rootDirectory = null)
     {
-        _rootDirectory = string.IsNullOrWhiteSpace(rootDirectory)
-            ? GetDefaultRootDirectory()
-            : rootDirectory!.Trim();
+        _mappingRuleStore = new MappingRuleStore(rootDirectory);
     }
 
     public IReadOnlyList<string> Load(string projectKey)
@@ -32,18 +21,8 @@ public sealed class AcceptedOpeningFamilyStore
 
     public LoadResult<IReadOnlyList<string>> LoadWithDiagnostics(string projectKey)
     {
-        string path = GetFilePath(projectKey);
-        LoadResult<List<string>> result = JsonFileLoadHelper.Load(
-            path,
-            createDefaultValue: () => new List<string>(),
-            deserialize: json =>
-            {
-                AcceptedOpeningFamilyDocument? document =
-                    JsonConvert.DeserializeObject<AcceptedOpeningFamilyDocument>(json);
-                return NormalizeFamilies(document?.Families);
-            },
-            documentLabel: "Accepted opening families");
-        return new LoadResult<IReadOnlyList<string>>(result.Value, result.Warnings);
+        LoadResult<ProjectMappingRules> result = _mappingRuleStore.LoadWithDiagnostics(projectKey);
+        return new LoadResult<IReadOnlyList<string>>(result.Value.AcceptedOpeningFamilies, result.Warnings);
     }
 
     public void Save(string projectKey, IReadOnlyList<string> families)
@@ -53,38 +32,12 @@ public sealed class AcceptedOpeningFamilyStore
             throw new ArgumentNullException(nameof(families));
         }
 
-        List<string> normalizedFamilies = NormalizeFamilies(families);
-        string path = GetFilePath(projectKey);
-        if (normalizedFamilies.Count == 0)
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-
-            return;
-        }
-
-        string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        AcceptedOpeningFamilyDocument document = new()
-        {
-            ProjectKey = NormalizeProjectKey(projectKey),
-            Families = normalizedFamilies,
-        };
-        string json = JsonConvert.SerializeObject(document, JsonSettings);
-        File.WriteAllText(path, json);
-    }
-
-    private string GetFilePath(string projectKey)
-    {
-        string normalizedProjectKey = NormalizeProjectKey(projectKey);
-        string hashedProjectKey = ComputeSha256(normalizedProjectKey);
-        return Path.Combine(_rootDirectory, $"{hashedProjectKey}.json");
+        ProjectMappingRules current = _mappingRuleStore.Load(projectKey);
+        ProjectMappingRules updated = ProjectMappingRules.Create(
+            current.FloorCategoryOverrides,
+            current.FamilyCategoryOverrides,
+            NormalizeFamilies(families));
+        _mappingRuleStore.Save(projectKey, updated);
     }
 
     private static List<string> NormalizeFamilies(IEnumerable<string>? families)
@@ -97,40 +50,4 @@ public sealed class AcceptedOpeningFamilyStore
             .ToList();
     }
 
-    private static string NormalizeProjectKey(string? projectKey)
-    {
-        if (string.IsNullOrWhiteSpace(projectKey))
-        {
-            throw new ArgumentException("Project key is required.", nameof(projectKey));
-        }
-
-        return projectKey!.Trim();
-    }
-
-    private static string ComputeSha256(string value)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(value);
-        using SHA256 sha256 = SHA256.Create();
-        byte[] hash = sha256.ComputeHash(bytes);
-        StringBuilder builder = new(hash.Length * 2);
-        for (int i = 0; i < hash.Length; i++)
-        {
-            builder.Append(hash[i].ToString("x2"));
-        }
-
-        return builder.ToString();
-    }
-
-    private static string GetDefaultRootDirectory()
-    {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "RevitGeoExporter", "accepted-opening-families");
-    }
-
-    private sealed class AcceptedOpeningFamilyDocument
-    {
-        public string? ProjectKey { get; set; }
-
-        public List<string>? Families { get; set; }
-    }
 }

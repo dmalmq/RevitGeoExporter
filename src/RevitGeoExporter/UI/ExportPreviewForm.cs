@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
+using RevitGeoExporter.Help;
 using RevitGeoExporter.Export;
 using DrawingColor = System.Drawing.Color;
 using WinFormsControl = System.Windows.Forms.Control;
@@ -23,12 +24,19 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly ComboBox _viewComboBox = new();
     private readonly CheckBox _unitsCheckBox = new();
     private readonly CheckBox _openingsCheckBox = new();
+    private readonly CheckBox _detailsCheckBox = new();
+    private readonly CheckBox _levelsCheckBox = new();
     private readonly CheckBox _stairsCheckBox = new();
     private readonly CheckBox _escalatorsCheckBox = new();
     private readonly CheckBox _elevatorsCheckBox = new();
+    private readonly CheckBox _warningsOnlyCheckBox = new();
+    private readonly CheckBox _overriddenOnlyCheckBox = new();
+    private readonly CheckBox _unassignedOnlyCheckBox = new();
+    private readonly TextBox _searchTextBox = new();
     private readonly Button _fitButton = new();
     private readonly Button _resetButton = new();
     private readonly Button _closeButton = new();
+    private readonly Button _helpButton = new();
     private readonly Label _statusLabel = new();
     private readonly PreviewCanvasControl _canvas = new();
     private readonly DataGridView _legendGrid = new();
@@ -95,15 +103,21 @@ public sealed class ExportPreviewForm : WinFormsForm
         TableLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 9,
+            ColumnCount = 15,
         };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 84f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
@@ -130,23 +144,53 @@ public sealed class ExportPreviewForm : WinFormsForm
         _openingsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
         toolbar.Controls.Add(_openingsCheckBox, 3, 0);
 
+        _detailsCheckBox.Dock = DockStyle.Fill;
+        _detailsCheckBox.Text = T("Details", "Details");
+        _detailsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_detailsCheckBox, 4, 0);
+
+        _levelsCheckBox.Dock = DockStyle.Fill;
+        _levelsCheckBox.Text = T("Levels", "Levels");
+        _levelsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_levelsCheckBox, 5, 0);
+
         _stairsCheckBox.Dock = DockStyle.Fill;
         _stairsCheckBox.Text = T("Stairs", "Stairs");
         _stairsCheckBox.Checked = true;
         _stairsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_stairsCheckBox, 4, 0);
+        toolbar.Controls.Add(_stairsCheckBox, 6, 0);
 
         _escalatorsCheckBox.Dock = DockStyle.Fill;
         _escalatorsCheckBox.Text = T("Escalators", "Escalators");
         _escalatorsCheckBox.Checked = true;
         _escalatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_escalatorsCheckBox, 5, 0);
+        toolbar.Controls.Add(_escalatorsCheckBox, 7, 0);
 
         _elevatorsCheckBox.Dock = DockStyle.Fill;
         _elevatorsCheckBox.Text = T("Elevators", "Elevators");
         _elevatorsCheckBox.Checked = true;
         _elevatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_elevatorsCheckBox, 6, 0);
+        toolbar.Controls.Add(_elevatorsCheckBox, 8, 0);
+
+        _warningsOnlyCheckBox.Dock = DockStyle.Fill;
+        _warningsOnlyCheckBox.Text = T("Warnings", "Warnings");
+        _warningsOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_warningsOnlyCheckBox, 9, 0);
+
+        _overriddenOnlyCheckBox.Dock = DockStyle.Fill;
+        _overriddenOnlyCheckBox.Text = T("Overrides", "Overrides");
+        _overriddenOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_overriddenOnlyCheckBox, 10, 0);
+
+        _unassignedOnlyCheckBox.Dock = DockStyle.Fill;
+        _unassignedOnlyCheckBox.Text = T("Unassigned", "Unassigned");
+        _unassignedOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_unassignedOnlyCheckBox, 11, 0);
+
+        _searchTextBox.Dock = DockStyle.Fill;
+        _searchTextBox.Text = string.Empty;
+        _searchTextBox.TextChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_searchTextBox, 12, 0);
 
         FlowLayoutPanel buttons = new()
         {
@@ -166,7 +210,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         _resetButton.Click += (_, _) => _canvas.ResetView();
         buttons.Controls.Add(_resetButton);
 
-        toolbar.Controls.Add(buttons, 7, 0);
+        toolbar.Controls.Add(buttons, 13, 0);
         return toolbar;
     }
 
@@ -375,6 +419,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         _closeButton.DialogResult = DialogResult.OK;
         actions.Controls.Add(_closeButton);
 
+        _helpButton.Text = T("Help", "ヘルプ");
+        _helpButton.Width = 88;
+        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.PreviewAndAssignments, _language, Text);
+        actions.Controls.Add(_helpButton);
+
         footer.Controls.Add(actions, 1, 0);
         AcceptButton = _closeButton;
         CancelButton = _closeButton;
@@ -438,6 +487,8 @@ public sealed class ExportPreviewForm : WinFormsForm
     {
         _unitsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Unit);
         _openingsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Opening);
+        _detailsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Detail);
+        _levelsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Level);
 
         foreach (ViewPlan view in _request.SelectedViews)
         {
@@ -496,9 +547,15 @@ public sealed class ExportPreviewForm : WinFormsForm
     {
         _canvas.ShowUnits = _unitsCheckBox.Checked;
         _canvas.ShowOpenings = _openingsCheckBox.Checked;
+        _canvas.ShowDetails = _detailsCheckBox.Checked;
+        _canvas.ShowLevels = _levelsCheckBox.Checked;
         _canvas.ShowStairs = _stairsCheckBox.Checked;
         _canvas.ShowEscalators = _escalatorsCheckBox.Checked;
         _canvas.ShowElevators = _elevatorsCheckBox.Checked;
+        _canvas.ShowWarningsOnly = _warningsOnlyCheckBox.Checked;
+        _canvas.ShowOverriddenOnly = _overriddenOnlyCheckBox.Checked;
+        _canvas.ShowUnassignedOnly = _unassignedOnlyCheckBox.Checked;
+        _canvas.SearchText = _searchTextBox.Text;
         _canvas.RefreshFilters();
     }
 
@@ -901,8 +958,8 @@ public sealed class ExportPreviewForm : WinFormsForm
             ? T(" | unsaved assignment changes", " | unsaved assignment changes")
             : string.Empty;
         _statusLabel.Text = T(
-            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types",
-            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types") + suffix;
+            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels",
+            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels") + suffix;
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)

@@ -8,8 +8,10 @@ using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Extractors;
+using NetTopologySuite.Simplify;
 
 namespace RevitGeoExporter.Export;
 
@@ -17,8 +19,6 @@ public sealed class FloorExportDataPreparer
 {
     private static readonly bool RawFloorOnlyDebugMode = false;
 
-    private const double MaxUnitGapMeters = 0.15d;
-    private const double MinimumUnitAreaSquareMeters = 0.01d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
@@ -85,6 +85,8 @@ public sealed class FloorExportDataPreparer
             options?.FamilyCategoryOverrides ?? EmptyOverrides();
         IReadOnlyList<string> acceptedOpeningFamilies =
             options?.AcceptedOpeningFamilies ?? Array.Empty<string>();
+        GeometryRepairOptions geometryRepairOptions =
+            (options?.GeometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         FloorCategoryResolver floorCategoryResolver = new(_zoneCatalog, floorCategoryOverrides);
         IReadOnlyList<ViewExportContext> contexts =
             options?.ViewContexts ?? _contextProvider.BuildContexts(
@@ -109,14 +111,15 @@ public sealed class FloorExportDataPreparer
             sourceModelName,
             floorCategoryResolver,
             familyCategoryOverrides);
-        DetailExtractor detailExtractor = new(_document);
-        OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog);
+        DetailExtractor detailExtractor = new(_document, geometryRepairOptions);
+        OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
 
         List<PreparedViewExportData> preparedViews = new(contexts.Count);
         foreach (ViewExportContext context in contexts)
         {
             List<string> viewWarnings = new();
+            GeometryRepairResult geometryRepair = new();
             string levelId = metadataProvider.GetLevelId(context.Level, viewWarnings);
             if (string.IsNullOrWhiteSpace(levelId))
             {
@@ -142,7 +145,7 @@ public sealed class FloorExportDataPreparer
                 List<ExportPolygon> rawUnitFeatures = rawUnitLayer.Features.OfType<ExportPolygon>().ToList();
                 unitFeatures = RawFloorOnlyDebugMode
                     ? rawUnitFeatures
-                    : NormalizeUnitFeatures(rawUnitFeatures, viewWarnings);
+                    : NormalizeUnitFeatures(rawUnitFeatures, geometryRepairOptions, geometryRepair, viewWarnings);
 
                 unitLayer = LayerDefinition.CreateUnitLayer();
                 foreach (ExportPolygon feature in unitFeatures)
@@ -160,6 +163,7 @@ public sealed class FloorExportDataPreparer
                              levelId,
                              context.DetailCurves,
                              context.Stairs,
+                             geometryRepair,
                              viewWarnings))
                 {
                     detailLayer.AddFeature(detailFeature);
@@ -175,6 +179,7 @@ public sealed class FloorExportDataPreparer
                              levelId,
                              context.Openings,
                              unitFeatures,
+                             geometryRepair,
                              viewWarnings))
                 {
                     openingLayer.AddFeature(openingFeature);
@@ -215,6 +220,7 @@ public sealed class FloorExportDataPreparer
                     detailLayer,
                     openingLayer,
                     levelLayer,
+                    geometryRepair,
                     viewWarnings.ToList()));
         }
 
@@ -306,6 +312,8 @@ public sealed class FloorExportDataPreparer
 
     private static List<ExportPolygon> NormalizeUnitFeatures(
         IReadOnlyList<ExportPolygon> unitFeatures,
+        GeometryRepairOptions geometryRepairOptions,
+        GeometryRepairResult geometryRepair,
         ICollection<string> warnings)
     {
         if (unitFeatures.Count == 0)
@@ -323,6 +331,16 @@ public sealed class FloorExportDataPreparer
             if (geometry.IsEmpty)
             {
                 continue;
+            }
+
+            if (geometryRepairOptions.Enabled && geometryRepairOptions.SimplifyToleranceMeters > 0d)
+            {
+                Geometry simplified = TopologyPreservingSimplifier.Simplify(geometry, geometryRepairOptions.SimplifyToleranceMeters);
+                if (!simplified.IsEmpty)
+                {
+                    geometry = simplified;
+                    geometryRepair.SimplifiedPolygons++;
+                }
             }
 
             string category = GetCategory(feature);
@@ -376,16 +394,19 @@ public sealed class FloorExportDataPreparer
             }
         }
 
-        CloseSmallGaps(converted);
-        return BuildExportPolygons(converted);
+        CloseSmallGaps(converted, geometryRepairOptions.MergeNearbyBoundaryThresholdMeters);
+        return BuildExportPolygons(converted, geometryRepairOptions.MinimumPolygonAreaSquareMeters, geometryRepair);
     }
 
-    private static List<ExportPolygon> BuildExportPolygons(IReadOnlyList<UnitGeometryRecord> records)
+    private static List<ExportPolygon> BuildExportPolygons(
+        IReadOnlyList<UnitGeometryRecord> records,
+        double minimumPolygonAreaSquareMeters,
+        GeometryRepairResult geometryRepair)
     {
         List<ExportPolygon> exported = new(records.Count);
         for (int i = 0; i < records.Count; i++)
         {
-            ExportPolygon? feature = ToExportPolygon(records[i].Geometry, records[i].Attributes);
+            ExportPolygon? feature = ToExportPolygon(records[i].Geometry, records[i].Attributes, minimumPolygonAreaSquareMeters, geometryRepair);
             if (feature != null)
             {
                 exported.Add(feature);
@@ -395,9 +416,14 @@ public sealed class FloorExportDataPreparer
         return exported;
     }
 
-    private static void CloseSmallGaps(List<UnitGeometryRecord> records)
+    private static void CloseSmallGaps(List<UnitGeometryRecord> records, double gapThresholdMeters)
     {
-        double halfGap = MaxUnitGapMeters / 2d;
+        if (gapThresholdMeters <= 0d)
+        {
+            return;
+        }
+
+        double halfGap = gapThresholdMeters / 2d;
         List<Geometry> originals = records.Select(r => r.Geometry).ToList();
 
         for (int i = 0; i < records.Count; i++)
@@ -424,14 +450,16 @@ public sealed class FloorExportDataPreparer
 
     private static ExportPolygon? ToExportPolygon(
         Geometry geometry,
-        IReadOnlyDictionary<string, object?> attributes)
+        IReadOnlyDictionary<string, object?> attributes,
+        double minimumPolygonAreaSquareMeters,
+        GeometryRepairResult geometryRepair)
     {
         if (geometry == null || geometry.IsEmpty)
         {
             return null;
         }
 
-        List<Polygon2D> polygons = ExtractPolygons(geometry);
+        List<Polygon2D> polygons = ExtractPolygons(geometry, minimumPolygonAreaSquareMeters, geometryRepair);
         if (polygons.Count == 0)
         {
             return null;
@@ -588,20 +616,23 @@ public sealed class FloorExportDataPreparer
         return !ring.IsEmpty;
     }
 
-    private static List<Polygon2D> ExtractPolygons(Geometry geometry)
+    private static List<Polygon2D> ExtractPolygons(
+        Geometry geometry,
+        double minimumPolygonAreaSquareMeters,
+        GeometryRepairResult geometryRepair)
     {
         List<Polygon2D> polygons = new();
         switch (geometry)
         {
             case Polygon polygon:
-                AddPolygonIfValid(polygons, polygon);
+                AddPolygonIfValid(polygons, polygon, minimumPolygonAreaSquareMeters, geometryRepair);
                 break;
             case MultiPolygon multiPolygon:
                 for (int i = 0; i < multiPolygon.NumGeometries; i++)
                 {
                     if (multiPolygon.GetGeometryN(i) is Polygon child)
                     {
-                        AddPolygonIfValid(polygons, child);
+                        AddPolygonIfValid(polygons, child, minimumPolygonAreaSquareMeters, geometryRepair);
                     }
                 }
 
@@ -609,7 +640,7 @@ public sealed class FloorExportDataPreparer
             case GeometryCollection collection:
                 for (int i = 0; i < collection.NumGeometries; i++)
                 {
-                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i)));
+                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i), minimumPolygonAreaSquareMeters, geometryRepair));
                 }
 
                 break;
@@ -618,10 +649,15 @@ public sealed class FloorExportDataPreparer
         return polygons;
     }
 
-    private static void AddPolygonIfValid(ICollection<Polygon2D> target, Polygon polygon)
+    private static void AddPolygonIfValid(
+        ICollection<Polygon2D> target,
+        Polygon polygon,
+        double minimumPolygonAreaSquareMeters,
+        GeometryRepairResult geometryRepair)
     {
-        if (polygon.IsEmpty || polygon.Area < MinimumUnitAreaSquareMeters)
+        if (polygon.IsEmpty || polygon.Area < minimumPolygonAreaSquareMeters)
         {
+            geometryRepair.DroppedPolygons++;
             return;
         }
 
