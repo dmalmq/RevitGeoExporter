@@ -12,6 +12,8 @@ public sealed class FloorGeoPackageExportResult
 
     public IReadOnlyList<string> Warnings => _warnings;
 
+    public string? DiagnosticsReportPath { get; private set; }
+
     public void AddViewResult(ViewExportResult result)
     {
         if (result is null)
@@ -30,6 +32,13 @@ public sealed class FloorGeoPackageExportResult
         }
 
         _warnings.AddRange(warnings);
+    }
+
+    public void SetDiagnosticsReportPath(string? diagnosticsReportPath)
+    {
+        DiagnosticsReportPath = string.IsNullOrWhiteSpace(diagnosticsReportPath)
+            ? null
+            : diagnosticsReportPath!.Trim();
     }
 }
 

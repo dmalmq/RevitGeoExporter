@@ -6,6 +6,10 @@ public sealed class FloorExportPreparationOptions
 {
     public IReadOnlyDictionary<string, string>? FloorCategoryOverrides { get; set; }
 
+    public IReadOnlyDictionary<string, string>? FamilyCategoryOverrides { get; set; }
+
+    public IReadOnlyList<string>? AcceptedOpeningFamilies { get; set; }
+
     public IReadOnlyList<string>? InitialWarnings { get; set; }
 
     internal IReadOnlyList<ViewExportContext>? ViewContexts { get; set; }

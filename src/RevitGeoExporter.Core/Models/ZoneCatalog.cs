@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -292,6 +293,29 @@ public sealed class ZoneCatalog
     public string GetColorOrDefault(string zoneName)
     {
         return TryGetZoneInfo(zoneName, out ZoneInfo info) ? info.FillColor : DefaultZoneInfo.FillColor;
+    }
+
+    public IReadOnlyList<string> GetKnownCategories(bool includeUnspecified = false)
+    {
+        HashSet<string> categories = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ZoneInfo info in _zoneLookup.Values.Concat(_familyLookup.Values).Append(DefaultZoneInfo).Append(StairsDefault))
+        {
+            string category = NormalizeKey(info.Category);
+            if (category.Length == 0)
+            {
+                continue;
+            }
+
+            if (!includeUnspecified &&
+                string.Equals(category, "unspecified", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            categories.Add(category);
+        }
+
+        return categories.OrderBy(category => category, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static IReadOnlyDictionary<string, ZoneInfo> ParseZoneLookup(JToken? token)
