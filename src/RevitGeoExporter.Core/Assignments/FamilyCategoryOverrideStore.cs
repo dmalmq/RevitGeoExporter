@@ -1,27 +1,16 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Security.Cryptography;
-using System.Text;
-using Newtonsoft.Json;
 using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Core.Assignments;
 
 public sealed class FamilyCategoryOverrideStore
 {
-    private static readonly JsonSerializerSettings JsonSettings = new()
-    {
-        Formatting = Formatting.Indented,
-    };
-
-    private readonly string _rootDirectory;
+    private readonly MappingRuleStore _mappingRuleStore;
 
     public FamilyCategoryOverrideStore(string? rootDirectory = null)
     {
-        _rootDirectory = string.IsNullOrWhiteSpace(rootDirectory)
-            ? GetDefaultRootDirectory()
-            : rootDirectory!.Trim();
+        _mappingRuleStore = new MappingRuleStore(rootDirectory);
     }
 
     public IReadOnlyDictionary<string, string> Load(string projectKey)
@@ -31,18 +20,8 @@ public sealed class FamilyCategoryOverrideStore
 
     public LoadResult<IReadOnlyDictionary<string, string>> LoadWithDiagnostics(string projectKey)
     {
-        string path = GetOverridesFilePath(projectKey);
-        LoadResult<Dictionary<string, string>> result = JsonFileLoadHelper.Load(
-            path,
-            createDefaultValue: EmptyOverrides,
-            deserialize: json =>
-            {
-                FamilyCategoryOverrideDocument? document =
-                    JsonConvert.DeserializeObject<FamilyCategoryOverrideDocument>(json);
-                return NormalizeOverrides(document?.Overrides);
-            },
-            documentLabel: "Family category overrides");
-        return new LoadResult<IReadOnlyDictionary<string, string>>(result.Value, result.Warnings);
+        LoadResult<ProjectMappingRules> result = _mappingRuleStore.LoadWithDiagnostics(projectKey);
+        return new LoadResult<IReadOnlyDictionary<string, string>>(result.Value.FamilyCategoryOverrides, result.Warnings);
     }
 
     public void Save(string projectKey, IReadOnlyDictionary<string, string> overrides)
@@ -52,38 +31,12 @@ public sealed class FamilyCategoryOverrideStore
             throw new ArgumentNullException(nameof(overrides));
         }
 
-        Dictionary<string, string> normalizedOverrides = NormalizeOverrides(overrides);
-        string path = GetOverridesFilePath(projectKey);
-        if (normalizedOverrides.Count == 0)
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-
-            return;
-        }
-
-        string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        FamilyCategoryOverrideDocument document = new()
-        {
-            ProjectKey = NormalizeProjectKey(projectKey),
-            Overrides = normalizedOverrides,
-        };
-        string json = JsonConvert.SerializeObject(document, JsonSettings);
-        File.WriteAllText(path, json);
-    }
-
-    private string GetOverridesFilePath(string projectKey)
-    {
-        string normalizedProjectKey = NormalizeProjectKey(projectKey);
-        string hashedProjectKey = ComputeSha256(normalizedProjectKey);
-        return Path.Combine(_rootDirectory, $"{hashedProjectKey}.json");
+        ProjectMappingRules current = _mappingRuleStore.Load(projectKey);
+        ProjectMappingRules updated = ProjectMappingRules.Create(
+            current.FloorCategoryOverrides,
+            NormalizeOverrides(overrides),
+            current.AcceptedOpeningFamilies);
+        _mappingRuleStore.Save(projectKey, updated);
     }
 
     private static Dictionary<string, string> NormalizeOverrides(IReadOnlyDictionary<string, string>? overrides)
@@ -104,16 +57,6 @@ public sealed class FamilyCategoryOverrideStore
         return normalized;
     }
 
-    private static string NormalizeProjectKey(string? projectKey)
-    {
-        if (string.IsNullOrWhiteSpace(projectKey))
-        {
-            throw new ArgumentException("Project key is required.", nameof(projectKey));
-        }
-
-        return projectKey!.Trim();
-    }
-
     private static string NormalizeFamilyName(string? familyName)
     {
         return string.IsNullOrWhiteSpace(familyName) ? string.Empty : familyName!.Trim();
@@ -124,35 +67,8 @@ public sealed class FamilyCategoryOverrideStore
         return string.IsNullOrWhiteSpace(category) ? string.Empty : category!.Trim();
     }
 
-    private static string ComputeSha256(string value)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(value);
-        using SHA256 sha256 = SHA256.Create();
-        byte[] hash = sha256.ComputeHash(bytes);
-        StringBuilder builder = new(hash.Length * 2);
-        for (int i = 0; i < hash.Length; i++)
-        {
-            builder.Append(hash[i].ToString("x2"));
-        }
-
-        return builder.ToString();
-    }
-
-    private static string GetDefaultRootDirectory()
-    {
-        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appData, "RevitGeoExporter", "family-category-overrides");
-    }
-
     private static Dictionary<string, string> EmptyOverrides()
     {
         return new Dictionary<string, string>(StringComparer.Ordinal);
-    }
-
-    private sealed class FamilyCategoryOverrideDocument
-    {
-        public string? ProjectKey { get; set; }
-
-        public Dictionary<string, string>? Overrides { get; set; }
     }
 }

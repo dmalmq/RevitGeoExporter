@@ -45,6 +45,7 @@ public sealed class ExportDiagnosticsReportBuilder
         {
             SourceModelName = session.SourceModelName,
             TargetEpsg = session.TargetEpsg,
+            ProfileName = session.ProfileName,
             ExportedAtUtc = exportedAtUtc,
             DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),
             Views = views,
@@ -96,6 +97,9 @@ public sealed class ExportDiagnosticsReportBuilder
             .OfType<ExportLineString>()
             .Count(feature => !ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true))
             ?? 0;
+        report.DroppedPolygonCount = prepared.GeometryRepair.DroppedPolygons;
+        report.DroppedOpeningCount = prepared.GeometryRepair.DroppedOpenings;
+        report.SimplifiedPolygonCount = prepared.GeometryRepair.SimplifiedPolygons;
 
         report.UnassignedFloorTypes = prepared.UnitLayer?.Features
             .OfType<ExportPolygon>()

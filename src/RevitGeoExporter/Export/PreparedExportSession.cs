@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
+using RevitGeoExporter.Core.Geometry;
 
 namespace RevitGeoExporter.Export;
 
@@ -14,6 +15,10 @@ public sealed class PreparedExportSession
         IReadOnlyList<ViewExportContext> contexts,
         FloorExportPreparationResult prepared,
         IReadOnlyDictionary<string, string> floorCategoryOverrides,
+        GeometryRepairOptions geometryRepairOptions,
+        ExportPackageOptions packageOptions,
+        string? profileName,
+        string baselineKey,
         string sourceModelName)
     {
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
@@ -25,6 +30,10 @@ public sealed class PreparedExportSession
         Contexts = contexts ?? throw new ArgumentNullException(nameof(contexts));
         Prepared = prepared ?? throw new ArgumentNullException(nameof(prepared));
         FloorCategoryOverrides = floorCategoryOverrides ?? throw new ArgumentNullException(nameof(floorCategoryOverrides));
+        GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+        PackageOptions = packageOptions ?? throw new ArgumentNullException(nameof(packageOptions));
+        ProfileName = string.IsNullOrWhiteSpace(profileName) ? null : profileName!.Trim();
+        BaselineKey = string.IsNullOrWhiteSpace(baselineKey) ? throw new ArgumentException("A baseline key is required.", nameof(baselineKey)) : baselineKey!.Trim();
         SourceModelName = string.IsNullOrWhiteSpace(sourceModelName) ? "Model" : sourceModelName.Trim();
     }
 
@@ -41,6 +50,14 @@ public sealed class PreparedExportSession
     public FloorExportPreparationResult Prepared { get; }
 
     public IReadOnlyDictionary<string, string> FloorCategoryOverrides { get; }
+
+    public GeometryRepairOptions GeometryRepairOptions { get; }
+
+    public ExportPackageOptions PackageOptions { get; }
+
+    public string? ProfileName { get; }
+
+    public string BaselineKey { get; }
 
     public string SourceModelName { get; }
 }

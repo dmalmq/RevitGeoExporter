@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using RevitGeoExporter.Core.Diagnostics;
 
 namespace RevitGeoExporter.Export;
 
@@ -13,6 +14,12 @@ public sealed class FloorGeoPackageExportResult
     public IReadOnlyList<string> Warnings => _warnings;
 
     public string? DiagnosticsReportPath { get; private set; }
+
+    public string? PackageDirectoryPath { get; private set; }
+
+    public string? PackageManifestPath { get; private set; }
+
+    public ExportChangeSummary? ChangeSummary { get; private set; }
 
     public void AddViewResult(ViewExportResult result)
     {
@@ -39,6 +46,17 @@ public sealed class FloorGeoPackageExportResult
         DiagnosticsReportPath = string.IsNullOrWhiteSpace(diagnosticsReportPath)
             ? null
             : diagnosticsReportPath!.Trim();
+    }
+
+    public void SetPackagePaths(string? packageDirectoryPath, string? packageManifestPath)
+    {
+        PackageDirectoryPath = string.IsNullOrWhiteSpace(packageDirectoryPath) ? null : packageDirectoryPath!.Trim();
+        PackageManifestPath = string.IsNullOrWhiteSpace(packageManifestPath) ? null : packageManifestPath!.Trim();
+    }
+
+    public void SetChangeSummary(ExportChangeSummary? changeSummary)
+    {
+        ChangeSummary = changeSummary;
     }
 }
 

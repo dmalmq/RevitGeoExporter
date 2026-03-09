@@ -10,6 +10,8 @@ public sealed class ExportDiagnosticsReport
 
     public int TargetEpsg { get; set; }
 
+    public string? ProfileName { get; set; }
+
     public DateTimeOffset ExportedAtUtc { get; set; }
 
     public long DurationMilliseconds { get; set; }

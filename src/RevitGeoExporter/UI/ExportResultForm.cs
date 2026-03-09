@@ -23,8 +23,12 @@ public sealed class ExportResultForm : WinFormsForm
     private readonly Button _closeButton = new();
     private readonly TabPage _filesTab = new();
     private readonly TabPage _warningsTab = new();
+    private readonly TabPage _changesTab = new();
+    private readonly TabPage _packageTab = new();
     private readonly DataGridView _filesGrid = new();
     private readonly ListBox _warningsList = new();
+    private readonly ListBox _changesList = new();
+    private readonly ListBox _packageList = new();
 
     public ExportResultForm(FloorGeoPackageExportResult result, string outputDirectory, UiLanguage language)
     {
@@ -126,8 +130,18 @@ public sealed class ExportResultForm : WinFormsForm
         _warningsList.HorizontalScrollbar = true;
         _warningsTab.Controls.Add(_warningsList);
 
+        _changesList.Dock = DockStyle.Fill;
+        _changesList.HorizontalScrollbar = true;
+        _changesTab.Controls.Add(_changesList);
+
+        _packageList.Dock = DockStyle.Fill;
+        _packageList.HorizontalScrollbar = true;
+        _packageTab.Controls.Add(_packageList);
+
         tabs.TabPages.Add(_filesTab);
         tabs.TabPages.Add(_warningsTab);
+        tabs.TabPages.Add(_changesTab);
+        tabs.TabPages.Add(_packageTab);
         return tabs;
     }
 
@@ -256,6 +270,35 @@ public sealed class ExportResultForm : WinFormsForm
         _warningsTab.Text = _language == UiLanguage.Japanese
             ? $"警告 ({warningCount})"
             : $"Warnings ({warningCount})";
+        _changesTab.Text = T("Changes", "Changes");
+        _packageTab.Text = T("Package", "Package");
+
+        if (_result.ChangeSummary == null || !_result.ChangeSummary.HasChanges)
+        {
+            _changesList.Items.Add(T("No change summary available.", "変更サマリーはありません。"));
+        }
+        else
+        {
+            foreach (string line in _result.ChangeSummary.Lines)
+            {
+                _changesList.Items.Add(line);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_result.PackageDirectoryPath))
+        {
+            _packageList.Items.Add($"Package directory: {_result.PackageDirectoryPath}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_result.PackageManifestPath))
+        {
+            _packageList.Items.Add($"Manifest: {_result.PackageManifestPath}");
+        }
+
+        if (_packageList.Items.Count == 0)
+        {
+            _packageList.Items.Add(T("No package output was written for this export.", "このエクスポートではパッケージ出力は作成されていません。"));
+        }
     }
 
     private void OpenOutputDirectory()

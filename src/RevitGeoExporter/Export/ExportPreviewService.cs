@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Utilities;
@@ -27,8 +28,9 @@ public sealed class ExportPreviewService
     private readonly IReadOnlyList<string> _supportedFloorCategories;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly IReadOnlyList<string> _acceptedOpeningFamilies;
+    private readonly GeometryRepairOptions _geometryRepairOptions;
 
-    public ExportPreviewService(Document document)
+    public ExportPreviewService(Document document, GeometryRepairOptions? geometryRepairOptions = null)
     {
         if (document is null)
         {
@@ -57,6 +59,7 @@ public sealed class ExportPreviewService
         _metadataProvider = new PreviewExportMetadataProvider();
         _paletteResolver = new PreviewPaletteResolver();
         _supportedFloorCategories = new FloorCategoryResolver(zoneCatalog).SupportedCategories;
+        _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -99,10 +102,10 @@ public sealed class ExportPreviewService
             throw new ArgumentNullException(nameof(view));
         }
 
-        ExportFeatureType previewFeatureTypes = featureTypes & (ExportFeatureType.Unit | ExportFeatureType.Opening);
+        ExportFeatureType previewFeatureTypes = featureTypes & ExportFeatureType.All;
         if (previewFeatureTypes == ExportFeatureType.None)
         {
-            throw new ArgumentException("Preview requires unit and/or opening feature types.", nameof(featureTypes));
+            throw new ArgumentException("Preview requires at least one feature type.", nameof(featureTypes));
         }
 
         PreparedViewExportData prepared = _preparer.PrepareView(
@@ -115,6 +118,7 @@ public sealed class ExportPreviewService
                 FamilyCategoryOverrides = _familyCategoryOverrides,
                 AcceptedOpeningFamilies = _acceptedOpeningFamilies,
                 InitialWarnings = _loadWarnings,
+                GeometryRepairOptions = _geometryRepairOptions,
             });
         List<PreviewFeatureData> features = new();
 
@@ -133,13 +137,15 @@ public sealed class ExportPreviewService
                         category,
                         ReadString(feature.Attributes, "restrict"),
                         ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "source_label"),
                         _paletteResolver.ResolveFillColor(category, fallbackFillColor),
                         UnitStrokeColorHex,
                         ReadBool(feature.Attributes, "is_floor_derived"),
                         ReadNullableString(feature.Attributes, "source_floor_type_name"),
                         ReadNullableString(feature.Attributes, "parsed_zone_candidate"),
                         ReadBool(feature.Attributes, "is_unassigned"),
-                        ReadResolutionSource(feature.Attributes, "category_resolution_source")));
+                        ReadResolutionSource(feature.Attributes, "category_resolution_source"),
+                        ReadBool(feature.Attributes, "is_unassigned")));
             }
         }
 
@@ -156,8 +162,48 @@ public sealed class ExportPreviewService
                         ReadString(feature.Attributes, "category"),
                         null,
                         null,
+                        ReadNullableString(feature.Attributes, "source_label"),
                         OpeningStrokeColorHex,
-                        OpeningStrokeColorHex));
+                        OpeningStrokeColorHex,
+                        hasWarning: !ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true)));
+            }
+        }
+
+        if (prepared.DetailLayer != null)
+        {
+            foreach (ExportLineString feature in prepared.DetailLayer.Features.OfType<ExportLineString>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Detail,
+                        feature,
+                        ReadNullableLong(feature.Attributes, "element_id"),
+                        ReadString(feature.Attributes, "id"),
+                        "detail",
+                        null,
+                        null,
+                        ReadNullableString(feature.Attributes, "source_label"),
+                        "666666",
+                        "666666"));
+            }
+        }
+
+        if (prepared.LevelLayer != null)
+        {
+            foreach (ExportPolygon feature in prepared.LevelLayer.Features.OfType<ExportPolygon>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Level,
+                        feature,
+                        null,
+                        ReadString(feature.Attributes, "id"),
+                        "level",
+                        null,
+                        ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "name"),
+                        "DDE7F0",
+                        "607D8B"));
             }
         }
 
@@ -175,6 +221,13 @@ public sealed class ExportPreviewService
                     .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
                 group.Count()))
             .ToList();
+        List<string> sourceLabels = features
+            .Select(feature => feature.SourceLabel)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         return new PreviewViewData(
             prepared.View.Id.Value,
             prepared.View.Name,
@@ -182,6 +235,7 @@ public sealed class ExportPreviewService
             features,
             unassignedFloors,
             prepared.Warnings,
+            sourceLabels,
             bounds);
     }
 
@@ -206,11 +260,11 @@ public sealed class ExportPreviewService
         return trimmed.Length == 0 ? null : trimmed;
     }
 
-    private static bool ReadBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    private static bool ReadBool(IReadOnlyDictionary<string, object?> attributes, string key, bool defaultValue = false)
     {
         if (!attributes.TryGetValue(key, out object? value) || value == null)
         {
-            return false;
+            return defaultValue;
         }
 
         return value switch

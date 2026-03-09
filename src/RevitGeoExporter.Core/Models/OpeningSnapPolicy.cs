@@ -13,4 +13,15 @@ public static class OpeningSnapPolicy
             ? ElevatorOpeningSnapDistanceMeters
             : DefaultOpeningSnapDistanceMeters;
     }
+
+    public static double ResolveMaxSnapDistance(
+        bool isAcceptedElevatorDoorFamily,
+        bool isNearElevatorBoundary,
+        double defaultOpeningSnapDistanceMeters,
+        double elevatorOpeningSnapDistanceMeters)
+    {
+        return isAcceptedElevatorDoorFamily || isNearElevatorBoundary
+            ? elevatorOpeningSnapDistanceMeters
+            : defaultOpeningSnapDistanceMeters;
+    }
 }

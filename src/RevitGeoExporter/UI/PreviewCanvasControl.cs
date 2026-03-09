@@ -20,9 +20,11 @@ public sealed class PreviewCanvasControl : Control
     private Bounds2D _bounds = Bounds2D.Empty;
     private ViewTransform2D _transform;
     private PreviewFeatureData? _selectedFeature;
+    private PreviewFeatureData? _hoveredFeature;
     private bool _isPointerDown;
     private bool _isPanning;
     private Point _lastPointerLocation;
+    private readonly ToolTip _toolTip = new();
 
     public PreviewCanvasControl()
     {
@@ -38,11 +40,23 @@ public sealed class PreviewCanvasControl : Control
 
     public bool ShowOpenings { get; set; } = true;
 
+    public bool ShowDetails { get; set; } = true;
+
+    public bool ShowLevels { get; set; } = true;
+
     public bool ShowStairs { get; set; } = true;
 
     public bool ShowEscalators { get; set; } = true;
 
     public bool ShowElevators { get; set; } = true;
+
+    public bool ShowWarningsOnly { get; set; }
+
+    public bool ShowOverriddenOnly { get; set; }
+
+    public bool ShowUnassignedOnly { get; set; }
+
+    public string SearchText { get; set; } = string.Empty;
 
     public void SetViewData(IReadOnlyList<PreviewFeatureData> features, Bounds2D bounds)
     {
@@ -86,6 +100,12 @@ public sealed class PreviewCanvasControl : Control
         Invalidate();
     }
 
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        SetHoveredFeature(null);
+    }
+
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
@@ -113,6 +133,7 @@ public sealed class PreviewCanvasControl : Control
         base.OnMouseMove(e);
         if (!_isPointerDown)
         {
+            UpdateHoveredFeature(e.Location);
             return;
         }
 
@@ -132,7 +153,10 @@ public sealed class PreviewCanvasControl : Control
             _transform = _transform.Pan(e.X - _lastPointerLocation.X, e.Y - _lastPointerLocation.Y);
             _lastPointerLocation = e.Location;
             Invalidate();
+            return;
         }
+
+        UpdateHoveredFeature(e.Location);
     }
 
     protected override void OnMouseUp(MouseEventArgs e)
@@ -199,9 +223,19 @@ public sealed class PreviewCanvasControl : Control
             return false;
         }
 
+        if (feature.FeatureType == ExportFeatureType.Detail && !ShowDetails)
+        {
+            return false;
+        }
+
+        if (feature.FeatureType == ExportFeatureType.Level && !ShowLevels)
+        {
+            return false;
+        }
+
         if (feature.FeatureType != ExportFeatureType.Unit)
         {
-            return true;
+            return MatchesMetaFilters(feature);
         }
 
         string category = (feature.Category ?? string.Empty).Trim();
@@ -218,6 +252,33 @@ public sealed class PreviewCanvasControl : Control
         if (category.Equals("elevator", StringComparison.OrdinalIgnoreCase))
         {
             return ShowElevators;
+        }
+
+        return MatchesMetaFilters(feature);
+    }
+
+    private bool MatchesMetaFilters(PreviewFeatureData feature)
+    {
+        if (ShowWarningsOnly && !feature.HasWarning)
+        {
+            return false;
+        }
+
+        if (ShowOverriddenOnly && !feature.UsesFloorCategoryOverride)
+        {
+            return false;
+        }
+
+        if (ShowUnassignedOnly && !feature.IsUnassignedFloor)
+        {
+            return false;
+        }
+
+        string search = (SearchText ?? string.Empty).Trim();
+        if (search.Length > 0 &&
+            feature.SearchText.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            return false;
         }
 
         return true;
@@ -345,6 +406,33 @@ public sealed class PreviewCanvasControl : Control
         _selectedFeature = hitIndex >= 0 ? visible[hitIndex] : null;
         NotifySelectionChanged();
         Invalidate();
+    }
+
+    private void UpdateHoveredFeature(Point location)
+    {
+        List<PreviewFeatureData> visible = GetVisibleFeatures().ToList();
+        Point2D worldPoint = _transform.ScreenToWorld(new Point2D(location.X, location.Y));
+        double toleranceWorld = 8d / _transform.PixelsPerWorldUnit;
+        int hitIndex = GeometryHitTester.FindHitIndex(visible, x => x.Feature, worldPoint, toleranceWorld);
+        SetHoveredFeature(hitIndex >= 0 ? visible[hitIndex] : null);
+    }
+
+    private void SetHoveredFeature(PreviewFeatureData? feature)
+    {
+        if (ReferenceEquals(_hoveredFeature, feature))
+        {
+            return;
+        }
+
+        _hoveredFeature = feature;
+        if (feature == null)
+        {
+            _toolTip.Hide(this);
+            return;
+        }
+
+        string text = $"{feature.FeatureType} | {feature.Category ?? "-"} | {feature.ExportId ?? "-"}";
+        _toolTip.SetToolTip(this, text);
     }
 
     private void NotifySelectionChanged()
