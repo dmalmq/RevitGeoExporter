@@ -71,14 +71,26 @@ public sealed class FloorGeoPackageExporter
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         ViewExportContextProvider contextProvider = new(_document);
-        IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(exportViews, zoneCatalog);
-        EnsureSharedParameters(parameterManager, setupWarnings);
-        EnsureStableIds(parameterManager, contexts, setupWarnings);
-
-        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
         string projectKey = DocumentProjectKeyBuilder.Create(_document);
+        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
         var overrideLoad = floorCategoryOverrideStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(overrideLoad.Warnings);
+
+        FamilyCategoryOverrideStore familyCategoryOverrideStore = new();
+        var familyOverrideLoad = familyCategoryOverrideStore.LoadWithDiagnostics(projectKey);
+        setupWarnings.AddRange(familyOverrideLoad.Warnings);
+
+        AcceptedOpeningFamilyStore acceptedOpeningFamilyStore = new();
+        var acceptedOpeningLoad = acceptedOpeningFamilyStore.LoadWithDiagnostics(projectKey);
+        setupWarnings.AddRange(acceptedOpeningLoad.Warnings);
+
+        IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
+            exportViews,
+            zoneCatalog,
+            familyOverrideLoad.Value,
+            acceptedOpeningLoad.Value);
+        EnsureSharedParameters(parameterManager, setupWarnings);
+        EnsureStableIds(parameterManager, contexts, setupWarnings);
 
         PersistentExportMetadataProvider metadataProvider = new(parameterManager);
         FloorExportDataPreparer preparer = new(_document, zoneCatalog, contextProvider);
@@ -89,6 +101,8 @@ public sealed class FloorGeoPackageExporter
             new FloorExportPreparationOptions
             {
                 FloorCategoryOverrides = overrideLoad.Value,
+                FamilyCategoryOverrides = familyOverrideLoad.Value,
+                AcceptedOpeningFamilies = acceptedOpeningLoad.Value,
                 ViewContexts = contexts,
             });
 

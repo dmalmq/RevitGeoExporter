@@ -19,7 +19,9 @@ public sealed class ViewExportContextProvider
 
     public IReadOnlyList<ViewExportContext> BuildContexts(
         IReadOnlyList<ViewPlan> selectedViews,
-        ZoneCatalog zoneCatalog)
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides = null,
+        IReadOnlyList<string>? acceptedOpeningFamilies = null)
     {
         if (selectedViews is null)
         {
@@ -52,9 +54,9 @@ public sealed class ViewExportContextProvider
                     level,
                     CollectFloorsInView(view.Id),
                     CollectStairsInView(view.Id),
-                    CollectFamilyUnitsInView(view.Id, zoneCatalog),
-                    CollectOpeningInstancesInView(view.Id),
-                    CollectUnsupportedOpeningInstancesInView(view.Id),
+                    CollectFamilyUnitsInView(view.Id, zoneCatalog, familyCategoryOverrides),
+                    CollectOpeningInstancesInView(view.Id, acceptedOpeningFamilies),
+                    CollectUnsupportedOpeningInstancesInView(view.Id, acceptedOpeningFamilies),
                     CollectDetailCurvesInView(view.Id)));
         }
 
@@ -79,33 +81,47 @@ public sealed class ViewExportContextProvider
             .ToList();
     }
 
-    private List<FamilyInstance> CollectFamilyUnitsInView(ElementId viewId, ZoneCatalog zoneCatalog)
+    private List<FamilyInstance> CollectFamilyUnitsInView(
+        ElementId viewId,
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides)
     {
+        IReadOnlyDictionary<string, string> overrides = familyCategoryOverrides ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
         return new FilteredElementCollector(_document, viewId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(instance => zoneCatalog.TryGetFamilyInfo(UnitExtractor.GetFamilyName(instance), out _))
+            .Where(instance =>
+            {
+                string familyName = UnitExtractor.GetFamilyName(instance);
+                return zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
+                       overrides.ContainsKey(familyName);
+            })
             .ToList();
     }
 
-    private List<FamilyInstance> CollectOpeningInstancesInView(ElementId viewId)
+    private List<FamilyInstance> CollectOpeningInstancesInView(
+        ElementId viewId,
+        IReadOnlyList<string>? acceptedOpeningFamilies)
     {
         return new FilteredElementCollector(_document, viewId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(OpeningFamilyClassifier.IsAcceptedOpening)
+            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies))
             .ToList();
     }
 
-    private List<FamilyInstance> CollectUnsupportedOpeningInstancesInView(ElementId viewId)
+    private List<FamilyInstance> CollectUnsupportedOpeningInstancesInView(
+        ElementId viewId,
+        IReadOnlyList<string>? acceptedOpeningFamilies)
     {
         return new FilteredElementCollector(_document, viewId)
             .OfClass(typeof(FamilyInstance))
             .WhereElementIsNotElementType()
             .Cast<FamilyInstance>()
-            .Where(IsUnsupportedOpening)
+            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies))
             .ToList();
     }
 
@@ -118,7 +134,7 @@ public sealed class ViewExportContextProvider
             .ToList();
     }
 
-    private static bool IsUnsupportedOpening(FamilyInstance instance)
+    private static bool IsUnsupportedOpening(FamilyInstance instance, IReadOnlyList<string>? acceptedOpeningFamilies)
     {
         if (instance == null)
         {
@@ -133,6 +149,6 @@ public sealed class ViewExportContextProvider
 
         BuiltInCategory categoryId = (BuiltInCategory)(int)category.Id.Value;
         bool isDoorOrWindow = categoryId == BuiltInCategory.OST_Doors || categoryId == BuiltInCategory.OST_Windows;
-        return isDoorOrWindow && !OpeningFamilyClassifier.IsAcceptedOpening(instance);
+        return isDoorOrWindow && !OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies);
     }
 }

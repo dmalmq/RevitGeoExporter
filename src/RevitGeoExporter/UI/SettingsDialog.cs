@@ -50,6 +50,7 @@ public sealed class SettingsDialog : Form
             TargetEpsg = epsg,
             FeatureTypes = _original.FeatureTypes,
             SelectedViewIds = _original.SelectedViewIds ?? new System.Collections.Generic.List<long>(),
+            GenerateDiagnosticsReport = _original.GenerateDiagnosticsReport,
             UiLanguage = _language,
         };
     }
