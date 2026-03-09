@@ -238,16 +238,16 @@ public sealed class DetailExtractor
             return false;
         }
 
-        int lineCount = Math.Max(1, (int)Math.Floor(pathLengthMeters / StairDetailSpacingMeters));
-        double occupiedLengthMeters = (lineCount - 1) * StairDetailSpacingMeters;
-        double startDistanceMeters = Math.Max(0d, (pathLengthMeters - occupiedLengthMeters) * 0.5d);
         double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
         double halfCutLengthMeters = runWidthMeters * 1.5d;
         HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
 
-        for (int i = 0; i < lineCount; i++)
+        IReadOnlyList<double> linePositions = StairDetailLayout.BuildCenteredLinePositions(
+            pathLengthMeters,
+            StairDetailSpacingMeters);
+        for (int i = 0; i < linePositions.Count; i++)
         {
-            double distanceMeters = startDistanceMeters + (i * StairDetailSpacingMeters);
+            double distanceMeters = linePositions[i];
             double fraction = pathLengthMeters <= 1e-9d ? 0d : distanceMeters / pathLengthMeters;
             if (!TryInterpolateOnPolyline(pathPoints, fraction, out Point2D point, out Point2D tangent))
             {

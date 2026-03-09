@@ -218,11 +218,11 @@ public sealed class ExportResultForm : WinFormsForm
             ? T("GeoPackage export completed with warnings.", "警告付きでGeoPackageのエクスポートが完了しました。")
             : T("GeoPackage export completed.", "GeoPackageのエクスポートが完了しました。");
         _summaryLabel.Text = _language == UiLanguage.Japanese
-            ? $"出力ビュー: {viewCount}    出力ファイル: {fileCount}    合計フィーチャ: {featureCount}    警告: {warningCount}"
+            ? $"出力ビュー: {viewCount}    出力ファイル: {fileCount}    総フィーチャ数: {featureCount}    警告: {warningCount}"
             : $"Views exported: {viewCount}    Files exported: {fileCount}    Total features: {featureCount}    Warnings: {warningCount}";
 
         _outputDirectoryLabel.Text = string.IsNullOrWhiteSpace(_outputDirectory)
-            ? T("Output directory: (not available)", "出力フォルダー: （取得できませんでした）")
+            ? T("Output directory: (not available)", "出力フォルダー: （利用できません）")
             : _language == UiLanguage.Japanese
                 ? $"出力フォルダー: {_outputDirectory}"
                 : $"Output directory: {_outputDirectory}";

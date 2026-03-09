@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Export;
 
@@ -18,6 +19,8 @@ public sealed class ExportPreviewService
     private readonly PreviewExportMetadataProvider _metadataProvider;
     private readonly PreviewPaletteResolver _paletteResolver;
     private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
+    private readonly PreviewFloorAssignmentSession _assignmentSession;
+    private readonly IReadOnlyList<string> _loadWarnings;
     private readonly string _projectKey;
     private readonly IReadOnlyList<string> _supportedFloorCategories;
 
@@ -31,7 +34,11 @@ public sealed class ExportPreviewService
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
         _projectKey = DocumentProjectKeyBuilder.Create(document);
-        _preparer = new FloorExportDataPreparer(document, zoneCatalog, _floorCategoryOverrideStore);
+        LoadResult<IReadOnlyDictionary<string, string>> overrideLoad =
+            _floorCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        _assignmentSession = new PreviewFloorAssignmentSession(overrideLoad.Value);
+        _loadWarnings = overrideLoad.Warnings.ToList();
+        _preparer = new FloorExportDataPreparer(document, zoneCatalog);
         _metadataProvider = new PreviewExportMetadataProvider();
         _paletteResolver = new PreviewPaletteResolver();
         _supportedFloorCategories = new FloorCategoryResolver(zoneCatalog).SupportedCategories;
@@ -42,14 +49,32 @@ public sealed class ExportPreviewService
         return _supportedFloorCategories;
     }
 
-    public void SetFloorCategoryOverride(string floorTypeName, string category)
+    public bool HasPendingFloorCategoryChanges => _assignmentSession.HasPendingChanges;
+
+    public void StageFloorCategoryOverride(string floorTypeName, string category)
     {
-        _floorCategoryOverrideStore.SetOverride(_projectKey, floorTypeName, category);
+        _assignmentSession.StageOverride(floorTypeName, category);
     }
 
-    public void ClearFloorCategoryOverride(string floorTypeName)
+    public void StageClearFloorCategoryOverride(string floorTypeName)
     {
-        _floorCategoryOverrideStore.ClearOverride(_projectKey, floorTypeName);
+        _assignmentSession.StageClearOverride(floorTypeName);
+    }
+
+    public void ApplyPendingFloorCategoryOverrides()
+    {
+        if (!_assignmentSession.HasPendingChanges)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<string, string> savedOverrides = _assignmentSession.ApplyPendingChanges();
+        _floorCategoryOverrideStore.Save(_projectKey, savedOverrides);
+    }
+
+    public void DiscardPendingFloorCategoryOverrides()
+    {
+        _assignmentSession.DiscardPendingChanges();
     }
 
     public PreviewViewData PrepareView(ViewPlan view, ExportFeatureType featureTypes)
@@ -65,7 +90,15 @@ public sealed class ExportPreviewService
             throw new ArgumentException("Preview requires unit and/or opening feature types.", nameof(featureTypes));
         }
 
-        PreparedViewExportData prepared = _preparer.PrepareView(view, previewFeatureTypes, _metadataProvider);
+        PreparedViewExportData prepared = _preparer.PrepareView(
+            view,
+            previewFeatureTypes,
+            _metadataProvider,
+            new FloorExportPreparationOptions
+            {
+                FloorCategoryOverrides = _assignmentSession.GetEffectiveOverrides(),
+                InitialWarnings = _loadWarnings,
+            });
         List<PreviewFeatureData> features = new();
 
         if (prepared.UnitLayer != null)
