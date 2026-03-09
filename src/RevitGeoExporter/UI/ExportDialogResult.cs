@@ -12,12 +12,14 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
+        bool generateDiagnosticsReport,
         UiLanguage uiLanguage)
     {
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
         TargetEpsg = targetEpsg;
         FeatureTypes = featureTypes;
+        GenerateDiagnosticsReport = generateDiagnosticsReport;
         UiLanguage = uiLanguage;
     }
 
@@ -29,7 +31,6 @@ public sealed class ExportDialogResult
 
     public ExportFeatureType FeatureTypes { get; }
 
-
-
+    public bool GenerateDiagnosticsReport { get; }
     public UiLanguage UiLanguage { get; }
 }

@@ -22,6 +22,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
+    private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly GroupBox _viewsGroup = new();
     private readonly GroupBox _optionsGroup = new();
     private readonly Button _selectAllButton = new();
@@ -191,6 +192,7 @@ public sealed class ExportDialog : WinFormsForm
                 ViewSelectionItem.DisplayLanguage = _language;
                 _viewList.Refresh();
                 ApplyLanguage();
+                UpdateDiagnosticsText();
                 UpdateVersionLabel();
             }
         };
@@ -211,6 +213,7 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Text = "detail";
         _openingCheckBox.Text = "opening";
         _levelCheckBox.Text = "level";
+        _diagnosticsCheckBox.AutoSize = true;
         _unitCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
@@ -219,6 +222,7 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
+        featuresPanel.Controls.Add(_diagnosticsCheckBox);
         panel.Controls.Add(featuresPanel, 0, 3);
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
@@ -378,6 +382,7 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
+        _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
 
         _targetEpsgTextBox.Text = settings.TargetEpsg > 0
             ? settings.TargetEpsg.ToString()
@@ -386,6 +391,7 @@ public sealed class ExportDialog : WinFormsForm
         SelectPresetIfAvailable(settings.TargetEpsg);
         SelectLanguage(_language);
         ApplyLanguage();
+        UpdateDiagnosticsText();
         UpdateVersionLabel();
         UpdatePreviewButtonEnabled();
     }
@@ -426,6 +432,14 @@ public sealed class ExportDialog : WinFormsForm
         _versionLabel.Text = _language == UiLanguage.Japanese
             ? $"Version {ProjectInfo.VersionTag}"
             : $"Version {ProjectInfo.VersionTag}";
+    }
+
+    private void UpdateDiagnosticsText()
+    {
+        _diagnosticsCheckBox.Text = UiLanguageText.Select(
+            _language,
+            "Write diagnostics report",
+            "診断レポートを出力");
     }
 
     private void ConfirmExport()
@@ -482,6 +496,7 @@ public sealed class ExportDialog : WinFormsForm
             outputDirectory,
             epsg,
             featureTypes,
+            _diagnosticsCheckBox.Checked,
             _language);
         DialogResult = DialogResult.OK;
         Close();
@@ -622,6 +637,7 @@ public sealed class ExportDialog : WinFormsForm
             TargetEpsg = targetEpsg,
             FeatureTypes = GetSelectedFeatureTypes(),
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
+            GenerateDiagnosticsReport = _diagnosticsCheckBox.Checked,
             UiLanguage = _language,
         };
     }

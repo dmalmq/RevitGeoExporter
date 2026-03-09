@@ -87,13 +87,17 @@ public sealed class OpeningExtractor
             }
 
             double maxSnapDistance = GetSnapDistance(opening, lineString, snapSegments);
-            lineString = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
+            SnapResult snapResult = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
+            lineString = snapResult.Line;
+            bool isElevatorDoor = OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening);
 
             string id = _metadataProvider.GetElementId(opening, warnings);
             AddFeature(
                 features,
                 seenGeometryKeys,
                 lineString,
+                snapResult.WasSnapped,
+                isElevatorDoor,
                 id,
                 GetOpeningCategory(opening),
                 levelId,
@@ -199,17 +203,17 @@ public sealed class OpeningExtractor
         return false;
     }
 
-    private static LineString2D SnapToClosestOutline(LineString2D line, IReadOnlyList<BoundarySegment> segments)
+    private static SnapResult SnapToClosestOutline(LineString2D line, IReadOnlyList<BoundarySegment> segments)
     {
         return SnapToClosestOutline(line, segments, MaxOutlineSnapDistanceMeters);
     }
 
-    private static LineString2D SnapToClosestOutline(
+    private static SnapResult SnapToClosestOutline(
         LineString2D line, IReadOnlyList<BoundarySegment> segments, double maxDistance)
     {
         if (segments == null || segments.Count == 0 || line.Points.Count < 2)
         {
-            return line;
+            return new SnapResult(line, false);
         }
 
         Point2D start = line.Points[0];
@@ -218,7 +222,7 @@ public sealed class OpeningExtractor
         double length = Distance(start, end);
         if (length < MinOpeningLengthMeters)
         {
-            return line;
+            return new SnapResult(line, false);
         }
 
         BoundarySegment? nearest = null;
@@ -241,13 +245,13 @@ public sealed class OpeningExtractor
 
         if (nearest == null || bestDistance > maxDistance)
         {
-            return line;
+            return new SnapResult(line, false);
         }
 
         BoundarySegment segment = nearest.Value;
         if (!TryNormalize(segment.End.X - segment.Start.X, segment.End.Y - segment.Start.Y, out Point2D dir))
         {
-            return line;
+            return new SnapResult(line, false);
         }
 
         double segmentLength = Distance(segment.Start, segment.End);
@@ -257,12 +261,12 @@ public sealed class OpeningExtractor
         halfLength = Math.Min(halfLength, Math.Min(distanceToStart, distanceToEnd));
         if (halfLength < MinOpeningLengthMeters * 0.5d)
         {
-            return line;
+            return new SnapResult(line, false);
         }
 
         Point2D snappedStart = new(projected.X - (dir.X * halfLength), projected.Y - (dir.Y * halfLength));
         Point2D snappedEnd = new(projected.X + (dir.X * halfLength), projected.Y + (dir.Y * halfLength));
-        return new LineString2D(new[] { snappedStart, snappedEnd });
+        return new SnapResult(new LineString2D(new[] { snappedStart, snappedEnd }), true);
     }
 
     private bool TryGetRunEndpoints(
@@ -442,6 +446,8 @@ public sealed class OpeningExtractor
         ICollection<ExportLineString> target,
         ISet<string> seenGeometryKeys,
         LineString2D lineString,
+        bool wasSnappedToOutline,
+        bool isElevatorDoor,
         string id,
         string category,
         string levelId,
@@ -462,6 +468,8 @@ public sealed class OpeningExtractor
                     ["category"] = category,
                     ["level_id"] = levelId,
                     ["element_id"] = elementId,
+                    ["is_snapped_to_outline"] = wasSnappedToOutline,
+                    ["is_elevator_door"] = isElevatorDoor,
                 }));
     }
 
@@ -812,5 +820,18 @@ public sealed class OpeningExtractor
         public Point2D End { get; }
 
         public string Category { get; }
+    }
+
+    private readonly struct SnapResult
+    {
+        public SnapResult(LineString2D line, bool wasSnapped)
+        {
+            Line = line;
+            WasSnapped = wasSnapped;
+        }
+
+        public LineString2D Line { get; }
+
+        public bool WasSnapped { get; }
     }
 }

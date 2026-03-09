@@ -54,6 +54,7 @@ public sealed class ViewExportContextProvider
                     CollectStairsInView(view.Id),
                     CollectFamilyUnitsInView(view.Id, zoneCatalog),
                     CollectOpeningInstancesInView(view.Id),
+                    CollectUnsupportedOpeningInstancesInView(view.Id),
                     CollectDetailCurvesInView(view.Id)));
         }
 
@@ -98,6 +99,16 @@ public sealed class ViewExportContextProvider
             .ToList();
     }
 
+    private List<FamilyInstance> CollectUnsupportedOpeningInstancesInView(ElementId viewId)
+    {
+        return new FilteredElementCollector(_document, viewId)
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(IsUnsupportedOpening)
+            .ToList();
+    }
+
     private List<CurveElement> CollectDetailCurvesInView(ElementId viewId)
     {
         return new FilteredElementCollector(_document, viewId)
@@ -105,5 +116,23 @@ public sealed class ViewExportContextProvider
             .WhereElementIsNotElementType()
             .Cast<CurveElement>()
             .ToList();
+    }
+
+    private static bool IsUnsupportedOpening(FamilyInstance instance)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+
+        Category? category = instance.Category;
+        if (category == null)
+        {
+            return false;
+        }
+
+        BuiltInCategory categoryId = (BuiltInCategory)(int)category.Id.Value;
+        bool isDoorOrWindow = categoryId == BuiltInCategory.OST_Doors || categoryId == BuiltInCategory.OST_Windows;
+        return isDoorOrWindow && !OpeningFamilyClassifier.IsAcceptedOpening(instance);
     }
 }

@@ -13,5 +13,7 @@ public sealed class ExportDialogSettings
 
     public List<long> SelectedViewIds { get; set; } = new();
 
+    public bool GenerateDiagnosticsReport { get; set; } = true;
+
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
 }

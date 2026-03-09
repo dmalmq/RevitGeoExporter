@@ -16,6 +16,16 @@ internal static class OpeningFamilyClassifier
         return IsDoorOrWindow(instance) || IsAcceptedElevatorDoorFamily(instance);
     }
 
+    public static bool IsPotentialOpening(FamilyInstance instance)
+    {
+        if (instance == null)
+        {
+            return false;
+        }
+
+        return IsDoorOrWindow(instance) || IsAcceptedElevatorDoorFamily(instance);
+    }
+
     public static bool IsAcceptedElevatorDoorFamily(FamilyInstance instance)
     {
         string familyName = GetFamilyName(instance);

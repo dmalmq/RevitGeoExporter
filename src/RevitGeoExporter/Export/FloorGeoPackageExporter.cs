@@ -26,6 +26,20 @@ public sealed class FloorGeoPackageExporter
         ExportFeatureType featureTypes = ExportFeatureType.All,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
+        PreparedExportSession session = PrepareExport(
+            outputDirectory,
+            targetEpsg,
+            selectedViews,
+            featureTypes);
+        return WritePreparedExport(session, progressCallback);
+    }
+
+    public PreparedExportSession PrepareExport(
+        string outputDirectory,
+        int targetEpsg,
+        IReadOnlyList<ViewPlan> selectedViews,
+        ExportFeatureType featureTypes = ExportFeatureType.All)
+    {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
             throw new ArgumentException("Output directory is required.", nameof(outputDirectory));
@@ -78,20 +92,43 @@ public sealed class FloorGeoPackageExporter
                 ViewContexts = contexts,
             });
 
-        FloorGeoPackageExportResult result = new();
-        result.AddWarnings(setupWarnings);
-        result.AddWarnings(prepared.Warnings);
+        List<string> allWarnings = new(setupWarnings.Count + prepared.Warnings.Count);
+        allWarnings.AddRange(setupWarnings);
+        allWarnings.AddRange(prepared.Warnings);
+        FloorExportPreparationResult resultWithSetupWarnings = new(prepared.Views, allWarnings);
+        string sourceModelName = GetSourceModelName(_document);
+        return new PreparedExportSession(
+            outputDirectory,
+            targetEpsg,
+            featureTypes,
+            exportViews,
+            contexts,
+            resultWithSetupWarnings,
+            overrideLoad.Value,
+            sourceModelName);
+    }
 
-        int totalSteps = Math.Max(1, prepared.Views.Count * CountSelectedFeatureTypes(featureTypes));
+    public FloorGeoPackageExportResult WritePreparedExport(
+        PreparedExportSession session,
+        Action<ExportProgressUpdate>? progressCallback = null)
+    {
+        if (session is null)
+        {
+            throw new ArgumentNullException(nameof(session));
+        }
+
+        FloorGeoPackageExportResult result = new();
+        result.AddWarnings(session.Prepared.Warnings);
+
+        int totalSteps = Math.Max(1, session.Prepared.Views.Count * CountSelectedFeatureTypes(session.FeatureTypes));
         int completedSteps = 0;
         progressCallback?.Invoke(new ExportProgressUpdate(0, totalSteps, "Preparing export..."));
 
-        string sourceModelName = GetSourceModelName(_document);
-        string safeModelName = SanitizeFileName(sourceModelName);
+        string safeModelName = SanitizeFileName(session.SourceModelName);
         HashSet<string> usedFileStems = new(StringComparer.OrdinalIgnoreCase);
         GpkgWriter writer = new();
 
-        foreach (PreparedViewExportData viewData in prepared.Views)
+        foreach (PreparedViewExportData viewData in session.Prepared.Views)
         {
             string fileStem = BuildUniqueFileStem(
                 safeModelName,
@@ -99,10 +136,10 @@ public sealed class FloorGeoPackageExporter
                 viewData.View.Id.Value,
                 usedFileStems);
 
-            if (featureTypes.HasFlag(ExportFeatureType.Unit) && viewData.UnitLayer != null)
+            if (session.FeatureTypes.HasFlag(ExportFeatureType.Unit) && viewData.UnitLayer != null)
             {
-                string unitFile = Path.Combine(outputDirectory, $"{fileStem}_unit.gpkg");
-                writer.Write(unitFile, targetEpsg, new[] { viewData.UnitLayer });
+                string unitFile = Path.Combine(session.OutputDirectory, $"{fileStem}_unit.gpkg");
+                writer.Write(unitFile, session.TargetEpsg, new[] { viewData.UnitLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
@@ -115,10 +152,10 @@ public sealed class FloorGeoPackageExporter
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [unit]"));
             }
 
-            if (featureTypes.HasFlag(ExportFeatureType.Detail) && viewData.DetailLayer != null)
+            if (session.FeatureTypes.HasFlag(ExportFeatureType.Detail) && viewData.DetailLayer != null)
             {
-                string detailFile = Path.Combine(outputDirectory, $"{fileStem}_detail.gpkg");
-                writer.Write(detailFile, targetEpsg, new[] { viewData.DetailLayer });
+                string detailFile = Path.Combine(session.OutputDirectory, $"{fileStem}_detail.gpkg");
+                writer.Write(detailFile, session.TargetEpsg, new[] { viewData.DetailLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
@@ -131,10 +168,10 @@ public sealed class FloorGeoPackageExporter
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [detail]"));
             }
 
-            if (featureTypes.HasFlag(ExportFeatureType.Opening) && viewData.OpeningLayer != null)
+            if (session.FeatureTypes.HasFlag(ExportFeatureType.Opening) && viewData.OpeningLayer != null)
             {
-                string openingFile = Path.Combine(outputDirectory, $"{fileStem}_opening.gpkg");
-                writer.Write(openingFile, targetEpsg, new[] { viewData.OpeningLayer });
+                string openingFile = Path.Combine(session.OutputDirectory, $"{fileStem}_opening.gpkg");
+                writer.Write(openingFile, session.TargetEpsg, new[] { viewData.OpeningLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
@@ -147,10 +184,10 @@ public sealed class FloorGeoPackageExporter
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [opening]"));
             }
 
-            if (featureTypes.HasFlag(ExportFeatureType.Level) && viewData.LevelLayer != null)
+            if (session.FeatureTypes.HasFlag(ExportFeatureType.Level) && viewData.LevelLayer != null)
             {
-                string levelFile = Path.Combine(outputDirectory, $"{fileStem}_level.gpkg");
-                writer.Write(levelFile, targetEpsg, new[] { viewData.LevelLayer });
+                string levelFile = Path.Combine(session.OutputDirectory, $"{fileStem}_level.gpkg");
+                writer.Write(levelFile, session.TargetEpsg, new[] { viewData.LevelLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,

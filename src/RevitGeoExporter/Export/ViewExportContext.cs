@@ -14,6 +14,7 @@ public sealed class ViewExportContext
         IReadOnlyList<Stairs> stairs,
         IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<FamilyInstance> openings,
+        IReadOnlyList<FamilyInstance> unsupportedOpenings,
         IReadOnlyList<CurveElement> detailCurves)
     {
         View = view ?? throw new ArgumentNullException(nameof(view));
@@ -22,6 +23,7 @@ public sealed class ViewExportContext
         Stairs = stairs ?? throw new ArgumentNullException(nameof(stairs));
         FamilyUnits = familyUnits ?? throw new ArgumentNullException(nameof(familyUnits));
         Openings = openings ?? throw new ArgumentNullException(nameof(openings));
+        UnsupportedOpenings = unsupportedOpenings ?? throw new ArgumentNullException(nameof(unsupportedOpenings));
         DetailCurves = detailCurves ?? throw new ArgumentNullException(nameof(detailCurves));
     }
 
@@ -36,6 +38,8 @@ public sealed class ViewExportContext
     public IReadOnlyList<FamilyInstance> FamilyUnits { get; }
 
     public IReadOnlyList<FamilyInstance> Openings { get; }
+
+    public IReadOnlyList<FamilyInstance> UnsupportedOpenings { get; }
 
     public IReadOnlyList<CurveElement> DetailCurves { get; }
 }
