@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Autodesk.Revit.DB;
-using Autodesk.Revit.DB.Architecture;
 using RevitGeoExporter.Core;
+using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Models;
 
@@ -56,12 +56,27 @@ public sealed class FloorGeoPackageExporter
         List<string> setupWarnings = new();
         SharedParameterManager parameterManager = new(_document);
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
+        ViewExportContextProvider contextProvider = new(_document);
+        IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(exportViews, zoneCatalog);
         EnsureSharedParameters(parameterManager, setupWarnings);
-        EnsureStableIds(parameterManager, exportViews, zoneCatalog, setupWarnings);
+        EnsureStableIds(parameterManager, contexts, setupWarnings);
+
+        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
+        string projectKey = DocumentProjectKeyBuilder.Create(_document);
+        var overrideLoad = floorCategoryOverrideStore.LoadWithDiagnostics(projectKey);
+        setupWarnings.AddRange(overrideLoad.Warnings);
 
         PersistentExportMetadataProvider metadataProvider = new(parameterManager);
-        FloorExportDataPreparer preparer = new(_document);
-        FloorExportPreparationResult prepared = preparer.PrepareViews(exportViews, featureTypes, metadataProvider);
+        FloorExportDataPreparer preparer = new(_document, zoneCatalog, contextProvider);
+        FloorExportPreparationResult prepared = preparer.PrepareViews(
+            exportViews,
+            featureTypes,
+            metadataProvider,
+            new FloorExportPreparationOptions
+            {
+                FloorCategoryOverrides = overrideLoad.Value,
+                ViewContexts = contexts,
+            });
 
         FloorGeoPackageExportResult result = new();
         result.AddWarnings(setupWarnings);
@@ -188,28 +203,25 @@ public sealed class FloorGeoPackageExporter
 
     private static void EnsureStableIds(
         SharedParameterManager manager,
-        IReadOnlyList<ViewPlan> selectedViews,
-        ZoneCatalog zoneCatalog,
+        IReadOnlyList<ViewExportContext> contexts,
         ICollection<string> warnings)
     {
         using Transaction transaction = new(manager.Document, "IMDF Export - Assign IDs");
         transaction.Start();
 
-        IReadOnlyList<Level> levels = selectedViews
-            .Select(view => view.GenLevel)
-            .Where(level => level != null)
-            .Cast<Level>()
+        IReadOnlyList<Level> levels = contexts
+            .Select(context => context.Level)
             .Distinct(new LevelIdComparer())
             .ToList();
         manager.EnsureLevelIds(levels, warnings);
 
         Dictionary<long, Element> uniqueElements = new();
-        foreach (ViewPlan view in selectedViews)
+        foreach (ViewExportContext context in contexts)
         {
-            AddUniqueElements(uniqueElements, CollectFloorsInView(manager.Document, view.Id));
-            AddUniqueElements(uniqueElements, CollectStairsInView(manager.Document, view.Id));
-            AddUniqueElements(uniqueElements, CollectFamilyUnitsInView(manager.Document, view.Id, zoneCatalog));
-            AddUniqueElements(uniqueElements, CollectOpeningInstancesInView(manager.Document, view.Id));
+            AddUniqueElements(uniqueElements, context.Floors);
+            AddUniqueElements(uniqueElements, context.Stairs);
+            AddUniqueElements(uniqueElements, context.FamilyUnits);
+            AddUniqueElements(uniqueElements, context.Openings);
         }
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
@@ -224,60 +236,6 @@ public sealed class FloorGeoPackageExporter
             TElement element = elements[i];
             target[element.Id.Value] = element;
         }
-    }
-
-    private static List<Floor> CollectFloorsInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(Floor))
-            .WhereElementIsNotElementType()
-            .Cast<Floor>()
-            .ToList();
-    }
-
-    private static List<Stairs> CollectStairsInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(Stairs))
-            .WhereElementIsNotElementType()
-            .Cast<Stairs>()
-            .ToList();
-    }
-
-    private static List<FamilyInstance> CollectFamilyUnitsInView(
-        Document document,
-        ElementId viewId,
-        ZoneCatalog zoneCatalog)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(FamilyInstance))
-            .WhereElementIsNotElementType()
-            .Cast<FamilyInstance>()
-            .Where(instance => RevitGeoExporter.Extractors.UnitExtractor.GetFamilyName(instance) != null &&
-                               zoneCatalog.TryGetFamilyInfo(RevitGeoExporter.Extractors.UnitExtractor.GetFamilyName(instance), out _))
-            .ToList();
-    }
-
-    private static List<FamilyInstance> CollectOpeningInstancesInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(FamilyInstance))
-            .WhereElementIsNotElementType()
-            .Cast<FamilyInstance>()
-            .Where(IsDoorOrWindow)
-            .ToList();
-    }
-
-    private static bool IsDoorOrWindow(FamilyInstance instance)
-    {
-        Category? category = instance.Category;
-        if (category == null)
-        {
-            return false;
-        }
-
-        BuiltInCategory categoryId = (BuiltInCategory)(int)category.Id.Value;
-        return categoryId == BuiltInCategory.OST_Doors || categoryId == BuiltInCategory.OST_Windows;
     }
 
     private static string BuildUniqueFileStem(

@@ -38,8 +38,9 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         }
 
         ExportDialogSettingsStore settingsStore = new();
-        ExportDialogSettings settings = settingsStore.Load();
-        ExportPreviewService previewService = new(document);
+        var settingsLoad = settingsStore.LoadWithDiagnostics();
+        ExportDialogSettings settings = settingsLoad.Value;
+        ShowWarningsIfNeeded(settingsLoad.Warnings, settings.UiLanguage);
 
         ExportDialogResult? request = null;
         using (ExportDialog dialog = new(
@@ -47,6 +48,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                    settings,
                    previewRequest =>
                    {
+                       ExportPreviewService previewService = new(document);
                        using ExportPreviewForm previewForm = new(previewRequest, previewService);
                        previewForm.ShowDialog();
                    }))
@@ -72,7 +74,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             using (ExportProgressForm progressForm = new())
             {
                 progressForm.Show();
-                System.Windows.Forms.Application.DoEvents();
+                progressForm.Refresh();
 
                 result = exporter.ExportSelectedViews(
                     request.OutputDirectory,
@@ -82,7 +84,6 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     progressCallback: update =>
                     {
                         progressForm.UpdateProgress(update);
-                        System.Windows.Forms.Application.DoEvents();
                     });
 
                 progressForm.Close();
@@ -207,5 +208,20 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
     private static string T(UiLanguage language, string english, string japanese)
     {
         return UiLanguageText.Select(language, english, japanese);
+    }
+
+    private static void ShowWarningsIfNeeded(IReadOnlyList<string> warnings, UiLanguage language)
+    {
+        if (warnings == null || warnings.Count == 0)
+        {
+            return;
+        }
+
+        string prefix = T(
+            language,
+            "Some saved application settings could not be loaded. Defaults were used where needed.",
+            "保存済み設定の一部を読み込めなかったため、必要な項目には既定値を使用しました。");
+        string message = $"{prefix}{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, warnings)}";
+        TaskDialog.Show(ProjectInfo.Name, message);
     }
 }

@@ -58,6 +58,27 @@ public sealed class FloorCategoryOverrideStoreTests
         }
     }
 
+    [Fact]
+    public void LoadWithDiagnostics_ReturnsWarningAndEmptyOverridesForMalformedJson()
+    {
+        string tempDirectory = CreateTempDirectory();
+        try
+        {
+            FloorCategoryOverrideStore store = new(tempDirectory);
+            string path = Path.Combine(tempDirectory, ComputeProjectFileName("project-a"));
+            File.WriteAllText(path, "{bad json");
+
+            var result = store.LoadWithDiagnostics("project-a");
+
+            Assert.Empty(result.Value);
+            Assert.Single(result.Warnings);
+        }
+        finally
+        {
+            Directory.Delete(tempDirectory, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         string path = Path.Combine(
@@ -65,5 +86,12 @@ public sealed class FloorCategoryOverrideStoreTests
             $"RevitGeoExporter-FloorOverrideTests-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private static string ComputeProjectFileName(string projectKey)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        byte[] hash = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(projectKey));
+        return $"{BitConverter.ToString(hash).Replace("-", string.Empty).ToLowerInvariant()}.json";
     }
 }

@@ -4,6 +4,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
+using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Core.Assignments;
 
@@ -25,23 +26,23 @@ public sealed class FloorCategoryOverrideStore
 
     public IReadOnlyDictionary<string, string> Load(string projectKey)
     {
-        string path = GetOverridesFilePath(projectKey);
-        if (!File.Exists(path))
-        {
-            return EmptyOverrides();
-        }
+        return LoadWithDiagnostics(projectKey).Value;
+    }
 
-        try
-        {
-            string json = File.ReadAllText(path);
-            FloorCategoryOverrideDocument? document =
-                JsonConvert.DeserializeObject<FloorCategoryOverrideDocument>(json);
-            return NormalizeOverrides(document?.Overrides);
-        }
-        catch
-        {
-            return EmptyOverrides();
-        }
+    public LoadResult<IReadOnlyDictionary<string, string>> LoadWithDiagnostics(string projectKey)
+    {
+        string path = GetOverridesFilePath(projectKey);
+        LoadResult<Dictionary<string, string>> result = JsonFileLoadHelper.Load(
+            path,
+            createDefaultValue: EmptyOverrides,
+            deserialize: json =>
+            {
+                FloorCategoryOverrideDocument? document =
+                    JsonConvert.DeserializeObject<FloorCategoryOverrideDocument>(json);
+                return NormalizeOverrides(document?.Overrides);
+            },
+            documentLabel: "Floor category overrides");
+        return new LoadResult<IReadOnlyDictionary<string, string>>(result.Value, result.Warnings);
     }
 
     public void Save(string projectKey, IReadOnlyDictionary<string, string> overrides)

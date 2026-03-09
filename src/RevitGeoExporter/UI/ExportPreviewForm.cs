@@ -38,6 +38,8 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly ComboBox _assignmentCategoryComboBox = new();
     private readonly Button _assignButton = new();
     private readonly Button _clearAssignmentButton = new();
+    private readonly Button _saveAssignmentsButton = new();
+    private readonly Button _discardAssignmentsButton = new();
     private readonly Label _assignmentTargetValueLabel = new();
     private readonly Label _assignmentCandidateValueLabel = new();
     private readonly Label _assignmentCurrentValueLabel = new();
@@ -69,6 +71,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         MinimumSize = new Size(1120, 720);
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
+        FormClosing += OnFormClosing;
 
         TableLayoutPanel root = new()
         {
@@ -283,10 +286,31 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         panel.Controls.Add(assignmentActions, 0, 6);
 
+        FlowLayoutPanel persistenceActions = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            Padding = new Padding(0, 8, 0, 0),
+        };
+
+        _saveAssignmentsButton.Text = T("Save Assignments", "Save Assignments");
+        _saveAssignmentsButton.AutoSize = true;
+        _saveAssignmentsButton.Click += (_, _) => SavePendingAssignments();
+        persistenceActions.Controls.Add(_saveAssignmentsButton);
+
+        _discardAssignmentsButton.Text = T("Discard Pending", "Discard Pending");
+        _discardAssignmentsButton.AutoSize = true;
+        _discardAssignmentsButton.Click += (_, _) => DiscardPendingAssignments();
+        persistenceActions.Controls.Add(_discardAssignmentsButton);
+
+        panel.Controls.Add(persistenceActions, 0, 7);
+
         _assignmentHintLabel.Dock = DockStyle.Fill;
         _assignmentHintLabel.AutoSize = true;
         _assignmentHintLabel.Padding = new Padding(0, 10, 0, 0);
-        panel.Controls.Add(_assignmentHintLabel, 0, 7);
+        panel.Controls.Add(_assignmentHintLabel, 0, 8);
 
         UpdateAssignmentControls();
         return panel;
@@ -642,14 +666,14 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        _previewService.SetFloorCategoryOverride(_assignmentTarget.FloorTypeName, category);
+        _previewService.StageFloorCategoryOverride(_assignmentTarget.FloorTypeName, category);
         string floorTypeName = _assignmentTarget.FloorTypeName;
         _pendingAssignmentFloorTypeName = floorTypeName;
         _cache.Clear();
         LoadSelectedView();
         _statusLabel.Text = T(
-            $"Saved floor override: {floorTypeName} -> {category}.",
-            $"Saved floor override: {floorTypeName} -> {category}.");
+            $"Pending floor override: {floorTypeName} -> {category}. Save assignments to persist it.",
+            $"Pending floor override: {floorTypeName} -> {category}. Save assignments to persist it.");
     }
 
     private void ClearSelectedFloorCategoryOverride()
@@ -660,13 +684,43 @@ public sealed class ExportPreviewForm : WinFormsForm
         }
 
         string floorTypeName = _assignmentTarget.FloorTypeName;
-        _previewService.ClearFloorCategoryOverride(floorTypeName);
+        _previewService.StageClearFloorCategoryOverride(floorTypeName);
         _pendingAssignmentFloorTypeName = floorTypeName;
         _cache.Clear();
         LoadSelectedView();
         _statusLabel.Text = T(
-            $"Cleared floor override: {floorTypeName}.",
-            $"Cleared floor override: {floorTypeName}.");
+            $"Pending override removal: {floorTypeName}. Save assignments to persist it.",
+            $"Pending override removal: {floorTypeName}. Save assignments to persist it.");
+    }
+
+    private void SavePendingAssignments()
+    {
+        if (!_previewService.HasPendingFloorCategoryChanges)
+        {
+            return;
+        }
+
+        _previewService.ApplyPendingFloorCategoryOverrides();
+        _cache.Clear();
+        LoadSelectedView();
+        _statusLabel.Text = T(
+            "Saved preview floor assignments.",
+            "Saved preview floor assignments.");
+    }
+
+    private void DiscardPendingAssignments()
+    {
+        if (!_previewService.HasPendingFloorCategoryChanges)
+        {
+            return;
+        }
+
+        _previewService.DiscardPendingFloorCategoryOverrides();
+        _cache.Clear();
+        LoadSelectedView();
+        _statusLabel.Text = T(
+            "Discarded pending preview floor assignments.",
+            "Discarded pending preview floor assignments.");
     }
 
     private void RestoreAssignmentTargetAfterReload()
@@ -730,9 +784,11 @@ public sealed class ExportPreviewForm : WinFormsForm
             _assignmentCategoryComboBox.Enabled = false;
             _assignButton.Enabled = false;
             _clearAssignmentButton.Enabled = false;
+            _saveAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
+            _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
             _assignmentHintLabel.Text = T(
-                "Select an unassigned floor unit on the canvas or from the list to assign a category. Saved overrides can also be adjusted or cleared.",
-                "Select an unassigned floor unit on the canvas or from the list to assign a category. Saved overrides can also be adjusted or cleared.");
+                "Select an unassigned floor unit on the canvas or from the list to stage a category change. Use Save Assignments to persist pending changes.",
+                "Select an unassigned floor unit on the canvas or from the list to stage a category change. Use Save Assignments to persist pending changes.");
             return;
         }
 
@@ -743,13 +799,15 @@ public sealed class ExportPreviewForm : WinFormsForm
         SelectAssignmentCategory(_assignmentTarget.CurrentCategory);
         _assignButton.Enabled = _assignmentCategoryComboBox.Enabled;
         _clearAssignmentButton.Enabled = _assignmentTarget.HasOverride;
+        _saveAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
+        _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
         _assignmentHintLabel.Text = _assignmentTarget.HasOverride
             ? T(
-                "This floor type currently uses a saved override. Assign again to change it, or clear the override to return to automatic resolution.",
-                "This floor type currently uses a saved override. Assign again to change it, or clear the override to return to automatic resolution.")
+                "This floor type currently uses a saved override. Assign again to stage a replacement, or clear the override and save to return to automatic resolution.",
+                "This floor type currently uses a saved override. Assign again to stage a replacement, or clear the override and save to return to automatic resolution.")
             : T(
-                "Assigning a category saves a project-specific override for this floor type without changing the Revit model.",
-                "Assigning a category saves a project-specific override for this floor type without changing the Revit model.");
+                "Assigning a category stages a project-specific override for this floor type without changing the Revit model. Save Assignments to persist it.",
+                "Assigning a category stages a project-specific override for this floor type without changing the Revit model. Save Assignments to persist it.");
     }
 
     private void SelectAssignmentCategory(string? category)
@@ -809,9 +867,20 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private void UpdateStatus(PreviewViewData preview)
     {
+        string suffix = _previewService.HasPendingFloorCategoryChanges
+            ? T(" | unsaved assignment changes", " | unsaved assignment changes")
+            : string.Empty;
         _statusLabel.Text = T(
             $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types",
-            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types");
+            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types") + suffix;
+    }
+
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (_previewService.HasPendingFloorCategoryChanges)
+        {
+            _previewService.DiscardPendingFloorCategoryOverrides();
+        }
     }
 
     private static string BuildAssignmentSummary(FloorAssignmentTarget target)
