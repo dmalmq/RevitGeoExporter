@@ -73,91 +73,88 @@ public sealed class ZoneCatalog
             zones,
             new ZoneInfo("walkway", "FFFFFF", "rachi_gai"),
             "ラチ外コンコース",
-            "繝ｩ繝∝､悶さ繝ｳ繧ｳ繝ｼ繧ｹ",
+            "改札外コンコース",
             "Circulation (outside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FEFEF2", "rachi_nai"),
             "ラチ内コンコース",
-            "繝ｩ繝∝・繧ｳ繝ｳ繧ｳ繝ｼ繧ｹ",
+            "改札内コンコース",
             "Circulation (inside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "EFFAED", "rachi_nai"),
-            "ラチ内コンコース(JR東日本新幹線)",
-            "繝ｩ繝∝・繧ｳ繝ｳ繧ｳ繝ｼ繧ｹ(JR譚ｱ譁ｰ蟷ｹ邱・",
+            "ラチ内コンコース(JR東新幹線)",
+            "改札内コンコース(JR東新幹線)",
             "Circulation (JR East Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FFF4E0", "rachi_nai"),
             "ラチ内コンコース(JR東海新幹線)",
-            "繝ｩ繝∝・繧ｳ繝ｳ繧ｳ繝ｼ繧ｹ(JR譚ｱ豬ｷ譁ｰ蟷ｹ邱・",
+            "改札内コンコース(JR東海新幹線)",
             "Circulation (JR Central Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "E1F3F9", "rachi_nai"),
             "ラチ内店舗",
-            "繝ｩ繝∝・蠎苓・",
+            "改札内店舗",
             "Retail (inside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "F3FCFF", "rachi_gai"),
             "ラチ外店舗",
-            "繝ｩ繝∝､門ｺ苓・",
+            "改札外店舗",
             "Retail (outside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("platform", "F9E8E1", "rachi_nai"),
             "新幹線ホーム",
-            "譁ｰ蟷ｹ邱壹・繝ｼ繝",
             "Platform (Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("platform", "FFF6F3", "rachi_nai"),
             "在来線ホーム",
-            "蝨ｨ譚･邱壹・繝ｼ繝",
             "Platform (conventional lines)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("nonpublic", "F3F3F3", null),
             "その他",
-            "縺昴・莉・",
+            "雑所",
             "Other / miscellaneous");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("information", "EFEFF9", null),
             "案内所",
-            "譯亥・謇",
+            "案内",
             "Information desk");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("ticketing", "A3CA7F", "rachi_gai"),
             "みどりの窓口",
-            "縺ｿ縺ｩ繧翫・遯灘哨",
+            "緑の窓口",
             "Ticket office (Midori no Madoguchi)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("road", "E4E5E5", null),
             "道路",
-            "驕楢ｷｯ",
             "Road");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("outdoors", "FFFFFF", null),
+            "屋外",
             "外構",
-            "螟匁ｧ・",
             "Roof",
             "屋根",
             "Exterior / grounds");
@@ -166,50 +163,44 @@ public sealed class ZoneCatalog
             zones,
             new ZoneInfo("restroom.male", "BBD2EF", null),
             "男子トイレ",
-            "逕ｷ蟄舌ヨ繧､繝ｬ",
             "Men's restroom");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("restroom.female", "FFA4A4", null),
             "女子トイレ",
-            "螂ｳ蟄舌ヨ繧､繝ｬ",
             "Women's restroom");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("restroom.unisex", "D9FFD9", null),
             "多目的トイレ",
-            "螟夂岼逧・ヨ繧､繝ｬ",
             "Accessible / multipurpose restroom");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("ticketing", "C2E389", null),
-            "券売機スペース",
-            "蛻ｸ螢ｲ讖溷ｮ､",
+            "券売機室",
             "Ticket machine area");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("waitingroom", "BABABA", null),
             "待合室",
-            "蠕・粋螳､",
             "Waiting room");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "979797", "rachi_gai"),
-            "物販・飲食（駅外商業施設）",
-            "蠎苓・・井ｻ門膚讌ｭ譁ｽ險ｭ・・",
+            "商業・飲食（改札外関連施設）",
+            "店舗・物販（外部商業施設）",
             "Retail (external commercial facilities)");
 
         Dictionary<string, ZoneInfo> families = new(StringComparer.Ordinal)
         {
             ["j EV"] = new ZoneInfo("elevator", "E0E0E0", null),
-            ["j エスカレーター-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
             ["j エスカレータ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
-            ["j 繧ｨ繧ｹ繧ｫ繝ｬ繝ｼ繧ｿ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
+            ["j エスカレーター-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
         };
 
         return new ZoneCatalog(zones, families);

@@ -16,8 +16,6 @@ public sealed class OpeningExtractor
     private const double MinOpeningLengthMeters = 0.10d;
     private const double EndpointInsetMeters = 0.05d;
     private const double MaxOutlineSnapDistanceMeters = 5.0d;
-    private const double MaxOpeningSnapDistanceMeters = 0.20d;
-    private const double MaxElevatorOpeningSnapDistanceMeters = 0.50d;
     private const double StairLevelElevationToleranceFeet = 0.75d;
 
     private readonly Document _document;
@@ -43,8 +41,6 @@ public sealed class OpeningExtractor
         Level level,
         string levelId,
         IReadOnlyList<FamilyInstance> openingInstances,
-        IReadOnlyList<Stairs> stairs,
-        IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<ExportPolygon> unitFeatures,
         ICollection<string> warnings)
     {
@@ -61,16 +57,6 @@ public sealed class OpeningExtractor
         if (openingInstances is null)
         {
             throw new ArgumentNullException(nameof(openingInstances));
-        }
-
-        if (stairs is null)
-        {
-            throw new ArgumentNullException(nameof(stairs));
-        }
-
-        if (familyUnits is null)
-        {
-            throw new ArgumentNullException(nameof(familyUnits));
         }
 
         if (unitFeatures is null)
@@ -100,7 +86,7 @@ public sealed class OpeningExtractor
                 continue;
             }
 
-            double maxSnapDistance = GetSnapDistance(lineString, snapSegments);
+            double maxSnapDistance = GetSnapDistance(opening, lineString, snapSegments);
             lineString = SnapToClosestOutline(lineString, snapSegments, maxSnapDistance);
 
             string id = _metadataProvider.GetElementId(opening, warnings);
@@ -165,11 +151,19 @@ public sealed class OpeningExtractor
         }
     }
 
-    private static double GetSnapDistance(LineString2D line, IReadOnlyList<BoundarySegment> segments)
+    private static double GetSnapDistance(
+        FamilyInstance opening,
+        LineString2D line,
+        IReadOnlyList<BoundarySegment> segments)
     {
-        return HasNearbyCategory(line, segments, "elevator", MaxElevatorOpeningSnapDistanceMeters)
-            ? MaxElevatorOpeningSnapDistanceMeters
-            : MaxOpeningSnapDistanceMeters;
+        bool isNearElevatorBoundary = HasNearbyCategory(
+            line,
+            segments,
+            "elevator",
+            OpeningSnapPolicy.ElevatorOpeningSnapDistanceMeters);
+        return OpeningSnapPolicy.ResolveMaxSnapDistance(
+            OpeningFamilyClassifier.IsAcceptedElevatorDoorFamily(opening),
+            isNearElevatorBoundary);
     }
 
     private static bool HasNearbyCategory(
@@ -708,7 +702,7 @@ public sealed class OpeningExtractor
 
     private static string GetOpeningCategory(FamilyInstance opening)
     {
-        string familyName = opening.Symbol?.FamilyName ?? opening.Name ?? string.Empty;
+        string familyName = OpeningFamilyClassifier.GetFamilyName(opening);
         return familyName.IndexOf("emergency", StringComparison.OrdinalIgnoreCase) >= 0
             ? "emergencyexit"
             : "pedestrian";

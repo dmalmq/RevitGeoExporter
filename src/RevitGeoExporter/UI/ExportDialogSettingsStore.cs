@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Newtonsoft.Json;
+using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.UI;
 
@@ -11,24 +12,27 @@ public sealed class ExportDialogSettingsStore
         Formatting = Formatting.Indented,
     };
 
+    private readonly string _settingsFilePath;
+
+    public ExportDialogSettingsStore(string? settingsFilePath = null)
+    {
+        _settingsFilePath = string.IsNullOrWhiteSpace(settingsFilePath)
+            ? GetDefaultSettingsFilePath()
+            : settingsFilePath!.Trim();
+    }
+
     public ExportDialogSettings Load()
     {
-        string path = GetSettingsFilePath();
-        if (!File.Exists(path))
-        {
-            return new ExportDialogSettings();
-        }
+        return LoadWithDiagnostics().Value;
+    }
 
-        try
-        {
-            string json = File.ReadAllText(path);
-            ExportDialogSettings? settings = JsonConvert.DeserializeObject<ExportDialogSettings>(json);
-            return settings ?? new ExportDialogSettings();
-        }
-        catch
-        {
-            return new ExportDialogSettings();
-        }
+    public LoadResult<ExportDialogSettings> LoadWithDiagnostics()
+    {
+        return JsonFileLoadHelper.Load(
+            _settingsFilePath,
+            createDefaultValue: () => new ExportDialogSettings(),
+            deserialize: json => JsonConvert.DeserializeObject<ExportDialogSettings>(json),
+            documentLabel: "Export dialog settings");
     }
 
     public void Save(ExportDialogSettings settings)
@@ -38,18 +42,17 @@ public sealed class ExportDialogSettingsStore
             throw new ArgumentNullException(nameof(settings));
         }
 
-        string path = GetSettingsFilePath();
-        string? directory = Path.GetDirectoryName(path);
+        string? directory = Path.GetDirectoryName(_settingsFilePath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
         string json = JsonConvert.SerializeObject(settings, JsonSettings);
-        File.WriteAllText(path, json);
+        File.WriteAllText(_settingsFilePath, json);
     }
 
-    private static string GetSettingsFilePath()
+    private static string GetDefaultSettingsFilePath()
     {
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         return Path.Combine(appData, "RevitGeoExporter", "settings.json");

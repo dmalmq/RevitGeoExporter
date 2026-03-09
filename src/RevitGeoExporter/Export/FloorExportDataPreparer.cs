@@ -25,26 +25,25 @@ public sealed class FloorExportDataPreparer
     private readonly LevelCollector _levelCollector;
     private readonly SharedCoordinateValidator _coordinateValidator;
     private readonly ZoneCatalog _zoneCatalog;
-    private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
-    private readonly string _projectKey;
+    private readonly ViewExportContextProvider _contextProvider;
 
     public FloorExportDataPreparer(
         Document document,
         ZoneCatalog? zoneCatalog = null,
-        FloorCategoryOverrideStore? floorCategoryOverrideStore = null)
+        ViewExportContextProvider? contextProvider = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _levelCollector = new LevelCollector();
         _coordinateValidator = new SharedCoordinateValidator();
         _zoneCatalog = zoneCatalog ?? ZoneCatalog.CreateDefault();
-        _floorCategoryOverrideStore = floorCategoryOverrideStore ?? new FloorCategoryOverrideStore();
-        _projectKey = DocumentProjectKeyBuilder.Create(_document);
+        _contextProvider = contextProvider ?? new ViewExportContextProvider(_document);
     }
 
     public FloorExportPreparationResult PrepareViews(
         IReadOnlyList<ViewPlan> selectedViews,
         ExportFeatureType featureTypes,
-        IExportMetadataProvider metadataProvider)
+        IExportMetadataProvider metadataProvider,
+        FloorExportPreparationOptions? options = null)
     {
         if (selectedViews is null)
         {
@@ -72,13 +71,19 @@ public sealed class FloorExportDataPreparer
         }
 
         List<string> warnings = new();
+        if (options?.InitialWarnings != null)
+        {
+            warnings.AddRange(options.InitialWarnings);
+        }
+
         SharedCoordinateValidationResult validation = _coordinateValidator.Validate(_document);
         warnings.AddRange(validation.Warnings);
 
         IReadOnlyDictionary<string, string> floorCategoryOverrides =
-            _floorCategoryOverrideStore.Load(_projectKey);
+            options?.FloorCategoryOverrides ?? EmptyOverrides();
         FloorCategoryResolver floorCategoryResolver = new(_zoneCatalog, floorCategoryOverrides);
-        List<ViewExportContext> contexts = BuildViewContexts(exportViews, _zoneCatalog);
+        IReadOnlyList<ViewExportContext> contexts =
+            options?.ViewContexts ?? _contextProvider.BuildContexts(exportViews, _zoneCatalog);
         if (contexts.Count == 0)
         {
             throw new InvalidOperationException("Selected views did not contain any exportable level context.");
@@ -160,8 +165,6 @@ public sealed class FloorExportDataPreparer
                              context.Level,
                              levelId,
                              context.Openings,
-                             context.Stairs,
-                             context.FamilyUnits,
                              unitFeatures,
                              viewWarnings))
                 {
@@ -212,9 +215,10 @@ public sealed class FloorExportDataPreparer
     public PreparedViewExportData PrepareView(
         ViewPlan view,
         ExportFeatureType featureTypes,
-        IExportMetadataProvider metadataProvider)
+        IExportMetadataProvider metadataProvider,
+        FloorExportPreparationOptions? options = null)
     {
-        FloorExportPreparationResult result = PrepareViews(new[] { view }, featureTypes, metadataProvider);
+        FloorExportPreparationResult result = PrepareViews(new[] { view }, featureTypes, metadataProvider, options);
         if (result.Views.Count == 0)
         {
             throw new InvalidOperationException("The selected view did not produce any prepared export data.");
@@ -228,34 +232,6 @@ public sealed class FloorExportDataPreparer
         return featureTypes.HasFlag(ExportFeatureType.Unit) ||
                featureTypes.HasFlag(ExportFeatureType.Opening) ||
                featureTypes.HasFlag(ExportFeatureType.Level);
-    }
-
-    private List<ViewExportContext> BuildViewContexts(
-        IReadOnlyList<ViewPlan> selectedViews,
-        ZoneCatalog zoneCatalog)
-    {
-        List<ViewExportContext> contexts = new(selectedViews.Count);
-        foreach (ViewPlan view in selectedViews)
-        {
-            Level? level = view.GenLevel;
-            if (level == null)
-            {
-                continue;
-            }
-
-            contexts.Add(
-                new ViewExportContext(
-                    view,
-                    level,
-                    CollectFloorsInView(_document, view.Id),
-                    CollectWallsInView(_document, view.Id),
-                    CollectStairsInView(_document, view.Id),
-                    CollectFamilyUnitsInView(_document, view.Id, zoneCatalog),
-                    CollectOpeningInstancesInView(_document, view.Id),
-                    CollectDetailCurvesInView(_document, view.Id)));
-        }
-
-        return contexts;
     }
 
     private static void AddFloorUnits(
@@ -701,65 +677,6 @@ public sealed class FloorExportDataPreparer
                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static List<Floor> CollectFloorsInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(Floor))
-            .WhereElementIsNotElementType()
-            .Cast<Floor>()
-            .ToList();
-    }
-
-    private static List<Stairs> CollectStairsInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(Stairs))
-            .WhereElementIsNotElementType()
-            .Cast<Stairs>()
-            .ToList();
-    }
-
-    private static List<Wall> CollectWallsInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(Wall))
-            .WhereElementIsNotElementType()
-            .Cast<Wall>()
-            .ToList();
-    }
-
-    private static List<FamilyInstance> CollectFamilyUnitsInView(
-        Document document,
-        ElementId viewId,
-        ZoneCatalog zoneCatalog)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(FamilyInstance))
-            .WhereElementIsNotElementType()
-            .Cast<FamilyInstance>()
-            .Where(instance => zoneCatalog.TryGetFamilyInfo(UnitExtractor.GetFamilyName(instance), out _))
-            .ToList();
-    }
-
-    private static List<FamilyInstance> CollectOpeningInstancesInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(FamilyInstance))
-            .WhereElementIsNotElementType()
-            .Cast<FamilyInstance>()
-            .Where(IsDoorOrWindow)
-            .ToList();
-    }
-
-    private static List<CurveElement> CollectDetailCurvesInView(Document document, ElementId viewId)
-    {
-        return new FilteredElementCollector(document, viewId)
-            .OfClass(typeof(CurveElement))
-            .WhereElementIsNotElementType()
-            .Cast<CurveElement>()
-            .ToList();
-    }
-
     private static Dictionary<long, int> BuildLevelOrdinalMap(IReadOnlyList<Level> levels)
     {
         Dictionary<long, int> ordinalByLevelId = new();
@@ -788,16 +705,9 @@ public sealed class FloorExportDataPreparer
         return ordinalByLevelId;
     }
 
-    private static bool IsDoorOrWindow(FamilyInstance instance)
+    private static IReadOnlyDictionary<string, string> EmptyOverrides()
     {
-        Category? category = instance.Category;
-        if (category == null)
-        {
-            return false;
-        }
-
-        BuiltInCategory categoryId = (BuiltInCategory)(int)category.Id.Value;
-        return categoryId == BuiltInCategory.OST_Doors || categoryId == BuiltInCategory.OST_Windows;
+        return new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     private static string GetSourceModelName(Document document)
@@ -842,45 +752,6 @@ public sealed class FloorExportDataPreparer
                 return a;
             }
         }
-    }
-
-    private sealed class ViewExportContext
-    {
-        public ViewExportContext(
-            ViewPlan view,
-            Level level,
-            IReadOnlyList<Floor> floors,
-            IReadOnlyList<Wall> walls,
-            IReadOnlyList<Stairs> stairs,
-            IReadOnlyList<FamilyInstance> familyUnits,
-            IReadOnlyList<FamilyInstance> openings,
-            IReadOnlyList<CurveElement> detailCurves)
-        {
-            View = view;
-            Level = level;
-            Floors = floors;
-            Walls = walls;
-            Stairs = stairs;
-            FamilyUnits = familyUnits;
-            Openings = openings;
-            DetailCurves = detailCurves;
-        }
-
-        public ViewPlan View { get; }
-
-        public Level Level { get; }
-
-        public IReadOnlyList<Floor> Floors { get; }
-
-        public IReadOnlyList<Wall> Walls { get; }
-
-        public IReadOnlyList<Stairs> Stairs { get; }
-
-        public IReadOnlyList<FamilyInstance> FamilyUnits { get; }
-
-        public IReadOnlyList<FamilyInstance> Openings { get; }
-
-        public IReadOnlyList<CurveElement> DetailCurves { get; }
     }
 
     private readonly struct UnitGeometryRecord

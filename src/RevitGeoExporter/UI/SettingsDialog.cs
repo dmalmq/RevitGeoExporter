@@ -173,7 +173,6 @@ public sealed class SettingsDialog : Form
         _epsgTextBox.Dock = DockStyle.Fill;
         form.Controls.Add(_epsgTextBox, 1, 3);
 
-
         TableLayoutPanel actionsContainer = new()
         {
             Dock = DockStyle.Fill,
@@ -279,7 +278,7 @@ public sealed class SettingsDialog : Form
     private void UpdateVersionLabel()
     {
         _versionLabel.Text = _language == UiLanguage.Japanese
-            ? $"繝舌・繧ｸ繝ｧ繝ｳ {ProjectInfo.VersionTag}"
+            ? $"バージョン {ProjectInfo.VersionTag}"
             : $"Version {ProjectInfo.VersionTag}";
     }
 
