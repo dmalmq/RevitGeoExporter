@@ -254,6 +254,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         panel.Controls.Add(unassignedLabel, 0, 1);
 
         _unassignedFloorsListBox.Dock = DockStyle.Fill;
+        _unassignedFloorsListBox.SelectionMode = SelectionMode.MultiExtended;
         _unassignedFloorsListBox.SelectedIndexChanged += (_, _) => OnUnassignedFloorSelectionChanged();
         panel.Controls.Add(_unassignedFloorsListBox, 0, 2);
 
@@ -659,38 +660,50 @@ public sealed class ExportPreviewForm : WinFormsForm
     private void AssignSelectedFloorCategory()
     {
         if (_assignmentTarget == null ||
-            string.IsNullOrWhiteSpace(_assignmentTarget.FloorTypeName) ||
             _assignmentCategoryComboBox.SelectedItem is not string category ||
             string.IsNullOrWhiteSpace(category))
         {
             return;
         }
 
-        _previewService.StageFloorCategoryOverride(_assignmentTarget.FloorTypeName, category);
-        string floorTypeName = _assignmentTarget.FloorTypeName;
-        _pendingAssignmentFloorTypeName = floorTypeName;
-        _cache.Clear();
-        LoadSelectedView();
-        _statusLabel.Text = T(
-            $"Pending floor override: {floorTypeName} -> {category}. Save assignments to persist it.",
-            $"Pending floor override: {floorTypeName} -> {category}. Save assignments to persist it.");
-    }
-
-    private void ClearSelectedFloorCategoryOverride()
-    {
-        if (_assignmentTarget == null || !_assignmentTarget.HasOverride)
+        IReadOnlyList<string> floorTypeNames = GetSelectedFloorTypeNames();
+        if (floorTypeNames.Count == 0)
         {
             return;
         }
 
-        string floorTypeName = _assignmentTarget.FloorTypeName;
-        _previewService.StageClearFloorCategoryOverride(floorTypeName);
-        _pendingAssignmentFloorTypeName = floorTypeName;
+        foreach (string floorTypeName in floorTypeNames)
+        {
+            _previewService.StageFloorCategoryOverride(floorTypeName, category);
+        }
+
+        _pendingAssignmentFloorTypeName = floorTypeNames[0];
         _cache.Clear();
         LoadSelectedView();
         _statusLabel.Text = T(
-            $"Pending override removal: {floorTypeName}. Save assignments to persist it.",
-            $"Pending override removal: {floorTypeName}. Save assignments to persist it.");
+            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.",
+            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.");
+    }
+
+    private void ClearSelectedFloorCategoryOverride()
+    {
+        IReadOnlyList<string> floorTypeNames = GetSelectedFloorTypeNames();
+        if (floorTypeNames.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string floorTypeName in floorTypeNames)
+        {
+            _previewService.StageClearFloorCategoryOverride(floorTypeName);
+        }
+
+        _pendingAssignmentFloorTypeName = floorTypeNames[0];
+        _cache.Clear();
+        LoadSelectedView();
+        _statusLabel.Text = T(
+            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.",
+            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.");
     }
 
     private void SavePendingAssignments()
@@ -787,8 +800,8 @@ public sealed class ExportPreviewForm : WinFormsForm
             _saveAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
             _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
             _assignmentHintLabel.Text = T(
-                "Select an unassigned floor unit on the canvas or from the list to stage a category change. Use Save Assignments to persist pending changes.",
-                "Select an unassigned floor unit on the canvas or from the list to stage a category change. Use Save Assignments to persist pending changes.");
+                "Select one or more floor types from the list, or click a floor-derived unit on the canvas, to stage category changes. Use Save Assignments to persist pending changes.",
+                "Select one or more floor types from the list, or click a floor-derived unit on the canvas, to stage category changes. Use Save Assignments to persist pending changes.");
             return;
         }
 
@@ -803,11 +816,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
         _assignmentHintLabel.Text = _assignmentTarget.HasOverride
             ? T(
-                "This floor type currently uses a saved override. Assign again to stage a replacement, or clear the override and save to return to automatic resolution.",
-                "This floor type currently uses a saved override. Assign again to stage a replacement, or clear the override and save to return to automatic resolution.")
+                "This floor type currently uses a saved override. You can batch-assign or clear multiple selected floor types, then save the staged changes.",
+                "This floor type currently uses a saved override. You can batch-assign or clear multiple selected floor types, then save the staged changes.")
             : T(
-                "Assigning a category stages a project-specific override for this floor type without changing the Revit model. Save Assignments to persist it.",
-                "Assigning a category stages a project-specific override for this floor type without changing the Revit model. Save Assignments to persist it.");
+                "Assigning a category stages a project-specific override for the selected floor type(s) without changing the Revit model. Save Assignments to persist it.",
+                "Assigning a category stages a project-specific override for the selected floor type(s) without changing the Revit model. Save Assignments to persist it.");
     }
 
     private void SelectAssignmentCategory(string? category)
@@ -863,6 +876,23 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             _suppressUnassignedSelectionChanged = false;
         }
+    }
+
+    private IReadOnlyList<string> GetSelectedFloorTypeNames()
+    {
+        List<string> names = _unassignedFloorsListBox.SelectedItems
+            .OfType<UnassignedFloorItem>()
+            .Select(item => item.Group.FloorTypeName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (names.Count == 0 && _assignmentTarget != null && !string.IsNullOrWhiteSpace(_assignmentTarget.FloorTypeName))
+        {
+            names.Add(_assignmentTarget.FloorTypeName);
+        }
+
+        return names;
     }
 
     private void UpdateStatus(PreviewViewData preview)

@@ -18,6 +18,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly TextBox _outputDirectoryTextBox = new();
     private readonly ComboBox _crsPresetComboBox = new();
     private readonly TextBox _targetEpsgTextBox = new();
+    private readonly ComboBox _profileComboBox = new();
     private readonly CheckBox _unitCheckBox = new();
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
@@ -32,6 +33,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
     private readonly Label _versionLabel = new();
+    private readonly Label _profilesLabel = new();
     private readonly Label _languageLabel = new();
     private readonly Label _featureTypesLabel = new();
     private readonly Label _outputDirectoryLabel = new();
@@ -39,11 +41,20 @@ public sealed class ExportDialog : WinFormsForm
 
     private readonly IReadOnlyList<ViewSelectionItem> _viewItems;
     private readonly Action<ExportPreviewRequest>? _previewRequested;
+    private readonly Action<ExportProfileScope, string, ExportDialogSettings>? _saveProfileRequested;
+    private readonly Action<ExportProfile>? _deleteProfileRequested;
+    private readonly Action? _openMappingsRequested;
+    private readonly List<ExportProfile> _profiles;
     private UiLanguage _language = UiLanguage.English;
+    private bool _isApplyingProfile;
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
         ExportDialogSettings settings,
+        IReadOnlyList<ExportProfile>? profiles = null,
+        Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
+        Action<ExportProfile>? deleteProfileRequested = null,
+        Action? openMappingsRequested = null,
         Action<ExportPreviewRequest>? previewRequested = null)
     {
         if (views is null)
@@ -59,6 +70,10 @@ public sealed class ExportDialog : WinFormsForm
         _viewItems = views
             .Select(view => new ViewSelectionItem(view))
             .ToList();
+        _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
+        _saveProfileRequested = saveProfileRequested;
+        _deleteProfileRequested = deleteProfileRequested;
+        _openMappingsRequested = openMappingsRequested;
         _previewRequested = previewRequested;
 
         InitializeComponents();
@@ -161,11 +176,11 @@ public sealed class ExportDialog : WinFormsForm
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 10,
+            RowCount = 12,
             Padding = new Padding(10),
         };
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 64f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 120f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
@@ -173,12 +188,20 @@ public sealed class ExportDialog : WinFormsForm
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 56f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 70f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 36f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
         panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
         _optionsGroup.Controls.Add(panel);
 
+        _profilesLabel.Dock = DockStyle.Fill;
+        _profilesLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_profilesLabel, 0, 0);
+
+        panel.Controls.Add(BuildProfilesPanel(), 0, 1);
+
         _languageLabel.Dock = DockStyle.Fill;
         _languageLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_languageLabel, 0, 0);
+        panel.Controls.Add(_languageLabel, 0, 2);
 
         _languageComboBox.Dock = DockStyle.Fill;
         _languageComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -192,15 +215,16 @@ public sealed class ExportDialog : WinFormsForm
                 ViewSelectionItem.DisplayLanguage = _language;
                 _viewList.Refresh();
                 ApplyLanguage();
+                UpdateProfileText();
                 UpdateDiagnosticsText();
                 UpdateVersionLabel();
             }
         };
-        panel.Controls.Add(_languageComboBox, 0, 1);
+        panel.Controls.Add(_languageComboBox, 0, 3);
 
         _featureTypesLabel.Dock = DockStyle.Fill;
         _featureTypesLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_featureTypesLabel, 0, 2);
+        panel.Controls.Add(_featureTypesLabel, 0, 4);
 
         FlowLayoutPanel featuresPanel = new()
         {
@@ -223,11 +247,11 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
         featuresPanel.Controls.Add(_diagnosticsCheckBox);
-        panel.Controls.Add(featuresPanel, 0, 3);
+        panel.Controls.Add(featuresPanel, 0, 5);
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
         _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_outputDirectoryLabel, 0, 5);
+        panel.Controls.Add(_outputDirectoryLabel, 0, 6);
 
         TableLayoutPanel outputPanel = new()
         {
@@ -258,11 +282,11 @@ public sealed class ExportDialog : WinFormsForm
             }
         };
         outputPanel.Controls.Add(_browseButton, 1, 0);
-        panel.Controls.Add(outputPanel, 0, 6);
+        panel.Controls.Add(outputPanel, 0, 7);
 
         _crsLabel.Dock = DockStyle.Fill;
         _crsLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_crsLabel, 0, 7);
+        panel.Controls.Add(_crsLabel, 0, 8);
 
         TableLayoutPanel crsPanel = new()
         {
@@ -291,9 +315,58 @@ public sealed class ExportDialog : WinFormsForm
 
         _targetEpsgTextBox.Dock = DockStyle.Fill;
         crsPanel.Controls.Add(_targetEpsgTextBox, 0, 1);
-        panel.Controls.Add(crsPanel, 0, 8);
+        panel.Controls.Add(crsPanel, 0, 9);
+
+        Button mappingsButton = new()
+        {
+            Dock = DockStyle.Left,
+            Width = 120,
+        };
+        mappingsButton.Click += (_, _) => _openMappingsRequested?.Invoke();
+        mappingsButton.Text = "Mappings...";
+        panel.Controls.Add(mappingsButton, 0, 10);
 
         return _optionsGroup;
+    }
+
+    private WinFormsControl BuildProfilesPanel()
+    {
+        TableLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+
+        _profileComboBox.Dock = DockStyle.Fill;
+        _profileComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _profileComboBox.SelectedIndexChanged += (_, _) => ApplySelectedProfile();
+        panel.Controls.Add(_profileComboBox, 0, 0);
+
+        FlowLayoutPanel actions = new()
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+        };
+
+        Button saveProjectButton = new() { Width = 88, Height = 26, Text = "Save Project" };
+        saveProjectButton.Click += (_, _) => SaveProfile(ExportProfileScope.Project);
+        actions.Controls.Add(saveProjectButton);
+
+        Button saveGlobalButton = new() { Width = 88, Height = 26, Text = "Save Global" };
+        saveGlobalButton.Click += (_, _) => SaveProfile(ExportProfileScope.Global);
+        actions.Controls.Add(saveGlobalButton);
+
+        Button deleteButton = new() { Width = 72, Height = 26, Text = "Delete" };
+        deleteButton.Click += (_, _) => DeleteSelectedProfile();
+        actions.Controls.Add(deleteButton);
+
+        panel.Controls.Add(actions, 0, 1);
+        return panel;
     }
 
     private WinFormsControl BuildActionsPanel()
@@ -375,6 +448,7 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         _outputDirectoryTextBox.Text = settings.OutputDirectory ?? string.Empty;
+        PopulateProfiles();
 
         ExportFeatureType featureTypes =
             settings.FeatureTypes == ExportFeatureType.None ? ExportFeatureType.All : settings.FeatureTypes;
@@ -391,6 +465,7 @@ public sealed class ExportDialog : WinFormsForm
         SelectPresetIfAvailable(settings.TargetEpsg);
         SelectLanguage(_language);
         ApplyLanguage();
+        UpdateProfileText();
         UpdateDiagnosticsText();
         UpdateVersionLabel();
         UpdatePreviewButtonEnabled();
@@ -440,6 +515,12 @@ public sealed class ExportDialog : WinFormsForm
             _language,
             "Write diagnostics report",
             "診断レポートを出力");
+    }
+
+    private void UpdateProfileText()
+    {
+        _profilesLabel.Text = UiLanguageText.Select(_language, "Export Profiles", "エクスポートプロファイル");
+        _profileComboBox.Refresh();
     }
 
     private void ConfirmExport()
@@ -653,6 +734,130 @@ public sealed class ExportDialog : WinFormsForm
         UpdatePreviewButtonEnabled();
     }
 
+    private void PopulateProfiles()
+    {
+        _profileComboBox.Items.Clear();
+        _profileComboBox.Items.Add(ProfileItem.CreateCurrent(_language));
+        ProfileItem.DisplayLanguage = _language;
+        foreach (ExportProfile profile in _profiles
+                     .OrderBy(profile => profile.Scope)
+                     .ThenBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _profileComboBox.Items.Add(new ProfileItem(profile));
+        }
+
+        _profileComboBox.SelectedIndex = 0;
+    }
+
+    private void ApplySelectedProfile()
+    {
+        if (_isApplyingProfile)
+        {
+            return;
+        }
+
+        if (_profileComboBox.SelectedItem is not ProfileItem item || item.Profile == null)
+        {
+            return;
+        }
+
+        _isApplyingProfile = true;
+        try
+        {
+            ExportDialogSettings settings = item.Profile.ToSettings();
+            _outputDirectoryTextBox.Text = settings.OutputDirectory;
+            _targetEpsgTextBox.Text = settings.TargetEpsg.ToString();
+            _unitCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Unit);
+            _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
+            _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
+            _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
+            _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
+            SelectPresetIfAvailable(settings.TargetEpsg);
+            SelectLanguage(settings.UiLanguage);
+        }
+        finally
+        {
+            _isApplyingProfile = false;
+        }
+    }
+
+    private void SaveProfile(ExportProfileScope scope)
+    {
+        if (_saveProfileRequested == null)
+        {
+            return;
+        }
+
+        using TextPromptForm prompt = new(
+            "Save Export Profile",
+            "Profile name",
+            (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Scope == scope
+                ? (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name ?? string.Empty
+                : string.Empty);
+        if (prompt.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        string name = prompt.Value;
+        if (name.Length == 0)
+        {
+            return;
+        }
+
+        ExportDialogSettings settings = BuildSettings();
+        _saveProfileRequested(scope, name, settings);
+
+        ExportProfile profile = ExportProfile.FromSettings(name, scope, settings);
+        int existingIndex = _profiles.FindIndex(candidate =>
+            candidate.Scope == scope &&
+            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existingIndex >= 0)
+        {
+            _profiles[existingIndex] = profile;
+        }
+        else
+        {
+            _profiles.Add(profile);
+        }
+
+        PopulateProfiles();
+        SelectProfile(profile);
+    }
+
+    private void DeleteSelectedProfile()
+    {
+        if (_deleteProfileRequested == null ||
+            _profileComboBox.SelectedItem is not ProfileItem item ||
+            item.Profile == null)
+        {
+            return;
+        }
+
+        _deleteProfileRequested(item.Profile);
+        _profiles.RemoveAll(candidate =>
+            candidate.Scope == item.Profile.Scope &&
+            string.Equals(candidate.Name, item.Profile.Name, StringComparison.OrdinalIgnoreCase));
+        PopulateProfiles();
+    }
+
+    private void SelectProfile(ExportProfile profile)
+    {
+        for (int i = 0; i < _profileComboBox.Items.Count; i++)
+        {
+            if (_profileComboBox.Items[i] is ProfileItem item &&
+                item.Profile != null &&
+                item.Profile.Scope == profile.Scope &&
+                string.Equals(item.Profile.Name, profile.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                _profileComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _profileComboBox.SelectedIndex = 0;
+    }
+
     private sealed class ViewSelectionItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -702,6 +907,35 @@ public sealed class ExportDialog : WinFormsForm
         public override string ToString()
         {
             return $"EPSG:{Epsg} - {ZoneName}";
+        }
+    }
+
+    private sealed class ProfileItem
+    {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
+        public ProfileItem(ExportProfile? profile)
+        {
+            Profile = profile;
+        }
+
+        public ExportProfile? Profile { get; }
+
+        public static ProfileItem CreateCurrent(UiLanguage language)
+        {
+            DisplayLanguage = language;
+            return new ProfileItem(null);
+        }
+
+        public override string ToString()
+        {
+            if (Profile == null)
+            {
+                return DisplayLanguage == UiLanguage.Japanese ? "(現在の設定)" : "(Current settings)";
+            }
+
+            string scopeLabel = Profile.Scope == ExportProfileScope.Project ? "Project" : "Global";
+            return $"[{scopeLabel}] {Profile.Name}";
         }
     }
 }

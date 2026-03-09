@@ -44,11 +44,34 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         var settingsLoad = settingsStore.LoadWithDiagnostics();
         ExportDialogSettings settings = settingsLoad.Value;
         ShowWarningsIfNeeded(settingsLoad.Warnings, settings.UiLanguage);
+        string projectKey = DocumentProjectKeyBuilder.Create(document);
+        ExportProfileStore profileStore = new();
+        var profileLoad = profileStore.LoadWithDiagnostics(projectKey);
+        ShowWarningsIfNeeded(profileLoad.Warnings, settings.UiLanguage);
 
         ExportDialogResult? request = null;
         using (ExportDialog dialog = new(
                    views,
                    settings,
+                   profileLoad.Value,
+                   saveProfileRequested: (scope, name, profileSettings) =>
+                   {
+                       profileStore.SaveProfile(projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
+                   },
+                   deleteProfileRequested: profile =>
+                   {
+                       profileStore.DeleteProfile(projectKey, profile);
+                   },
+                   openMappingsRequested: () =>
+                   {
+                       using ProjectMappingsForm mappingsForm = new(
+                           projectKey,
+                           RevitGeoExporter.Core.Models.ZoneCatalog.CreateDefault(),
+                           new RevitGeoExporter.Core.Assignments.FloorCategoryOverrideStore(),
+                           new RevitGeoExporter.Core.Assignments.FamilyCategoryOverrideStore(),
+                           new RevitGeoExporter.Core.Assignments.AcceptedOpeningFamilyStore());
+                       mappingsForm.ShowDialog();
+                   },
                    previewRequest =>
                    {
                        ExportPreviewService previewService = new(document);
