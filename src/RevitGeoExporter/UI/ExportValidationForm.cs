@@ -13,21 +13,27 @@ public sealed class ExportValidationForm : WinFormsForm
 {
     private readonly ExportValidationResult _result;
     private readonly UiLanguage _language;
+    private readonly bool _canResolveIssues;
 
     private readonly Label _titleLabel = new();
     private readonly Label _summaryLabel = new();
     private readonly DataGridView _issuesGrid = new();
     private readonly Button _continueButton = new();
+    private readonly Button _resolveButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _helpButton = new();
 
-    public ExportValidationForm(ExportValidationResult result, UiLanguage language)
+    public ExportValidationForm(ExportValidationResult result, UiLanguage language, bool canResolveIssues)
     {
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _language = language;
+        _canResolveIssues = canResolveIssues;
+        Outcome = ExportValidationOutcome.Cancel;
         InitializeComponents();
         Populate();
     }
+
+    public ExportValidationOutcome Outcome { get; private set; }
 
     private void InitializeComponents()
     {
@@ -114,7 +120,7 @@ public sealed class ExportValidationForm : WinFormsForm
         _issuesGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
             Name = "FeatureType",
-            HeaderText = T("Feature Type", "フィーチャタイプ"),
+            HeaderText = T("Feature Type", "フィーチャ種別"),
             FillWeight = 12f,
         });
         _issuesGrid.Columns.Add(new DataGridViewTextBoxColumn
@@ -139,7 +145,12 @@ public sealed class ExportValidationForm : WinFormsForm
         _cancelButton.Width = 110;
         _cancelButton.Height = 30;
         _cancelButton.Text = T("Cancel", "キャンセル");
-        _cancelButton.DialogResult = DialogResult.Cancel;
+        _cancelButton.Click += (_, _) =>
+        {
+            Outcome = ExportValidationOutcome.Cancel;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
         panel.Controls.Add(_cancelButton);
 
         _helpButton.Width = 110;
@@ -148,13 +159,19 @@ public sealed class ExportValidationForm : WinFormsForm
         _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.ValidationAndDiagnostics, _language, Text);
         panel.Controls.Add(_helpButton);
 
-        _continueButton.Width = 130;
-        _continueButton.Height = 30;
-        _continueButton.Click += (_, _) =>
+        _resolveButton.Width = 130;
+        _resolveButton.Height = 30;
+        _resolveButton.Click += (_, _) =>
         {
-            DialogResult = DialogResult.OK;
+            Outcome = ExportValidationOutcome.ResolveIssues;
+            DialogResult = DialogResult.Retry;
             Close();
         };
+        panel.Controls.Add(_resolveButton);
+
+        _continueButton.Width = 140;
+        _continueButton.Height = 30;
+        _continueButton.Click += (_, _) => ContinueExport();
         panel.Controls.Add(_continueButton);
 
         CancelButton = _cancelButton;
@@ -169,7 +186,9 @@ public sealed class ExportValidationForm : WinFormsForm
         int infoCount = _result.Issues.Count(issue => issue.Severity == ValidationSeverity.Info);
 
         _titleLabel.Text = _result.HasErrors
-            ? T("Export is blocked until validation errors are resolved.", "検証エラーが解消されるまで書き出しは実行できません。")
+            ? T(
+                "Validation found issues that may affect export. Resolve them now or continue anyway.",
+                "書き出しに影響する可能性のある問題が見つかりました。ここで解消するか、そのまま続行できます。")
             : T("Review validation results before export.", "書き出し前に検証結果を確認してください。");
         _summaryLabel.Text = _language == UiLanguage.Japanese
             ? $"エラー: {errorCount}    警告: {warningCount}    情報: {infoCount}"
@@ -195,16 +214,35 @@ public sealed class ExportValidationForm : WinFormsForm
                 T("No validation issues were found.", "検証で問題は見つかりませんでした。"));
         }
 
+        _resolveButton.Enabled = _canResolveIssues;
+        _resolveButton.Text = T("Resolve Issues...", "問題を解消...");
+        _continueButton.Text = _result.HasErrors
+            ? T("Continue Anyway", "このまま続行")
+            : T("Continue Export", "書き出しを続行");
+    }
+
+    private void ContinueExport()
+    {
         if (_result.HasErrors)
         {
-            _continueButton.Enabled = false;
-            _continueButton.Text = T("Resolve Errors", "エラーを解消");
+            DialogResult confirmation = MessageBox.Show(
+                this,
+                T(
+                    "Validation still contains errors. Export may produce incomplete or inconsistent output. Continue anyway?",
+                    "まだエラーが残っています。書き出し結果が不完全または不整合になる可能性があります。このまま続行しますか?"),
+                Text,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (confirmation != DialogResult.Yes)
+            {
+                return;
+            }
         }
-        else
-        {
-            _continueButton.Enabled = true;
-            _continueButton.Text = T("Continue Export", "書き出しを続行");
-        }
+
+        Outcome = ExportValidationOutcome.ContinueExport;
+        DialogResult = DialogResult.OK;
+        Close();
     }
 
     private string T(string english, string japanese)

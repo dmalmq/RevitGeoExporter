@@ -2,14 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using RevitGeoExporter.Core;
-using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Diagnostics;
 using RevitGeoExporter.Core.Geometry;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Resources;
@@ -79,7 +81,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                            ZoneCatalog.CreateDefault());
                        settingsHub.ShowDialog();
                    },
-                       previewRequest =>
+                   previewRequest =>
                    {
                        ExportPreviewService previewService = new(document, previewRequest.GeometryRepairOptions);
                        using ExportPreviewForm previewForm = new(previewRequest, previewService);
@@ -103,31 +105,53 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         try
         {
             FloorGeoPackageExporter exporter = new(document);
-            PreparedExportSession session = exporter.PrepareExport(
-                request.OutputDirectory,
-                request.TargetEpsg,
-                request.SelectedViews,
-                request.FeatureTypes,
-                request.GeometryRepairOptions,
-                new ExportPackageOptions
-                {
-                    Enabled = request.GeneratePackageOutput,
-                    IncludeLegendFile = request.IncludePackageLegend,
-                },
-                request.SelectedProfileName,
-                BuildBaselineKey(projectKey, request.SelectedProfileName));
-
             ExportValidationSnapshotBuilder snapshotBuilder = new();
-            ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
             ExportValidationService validationService = new();
-            ExportValidationResult validationResult = validationService.Validate(validationRequest);
 
-            using (ExportValidationForm validationForm = new(validationResult, request.UiLanguage))
+            PreparedExportSession session;
+            ExportValidationResult validationResult;
+            while (true)
             {
-                if (validationForm.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                session = exporter.PrepareExport(
+                    request.OutputDirectory,
+                    request.TargetEpsg,
+                    request.SelectedViews,
+                    request.FeatureTypes,
+                    request.GeometryRepairOptions,
+                    new ExportPackageOptions
+                    {
+                        Enabled = request.GeneratePackageOutput,
+                        IncludeLegendFile = request.IncludePackageLegend,
+                    },
+                    request.SelectedProfileName,
+                    BuildBaselineKey(projectKey, request.SelectedProfileName));
+
+                ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
+                validationResult = validationService.Validate(validationRequest);
+
+                using ExportValidationForm validationForm = new(
+                    validationResult,
+                    request.UiLanguage,
+                    ValidationIssueResolutionForm.HasResolvableIssues(validationRequest));
+                _ = validationForm.ShowDialog();
+
+                if (validationForm.Outcome == ExportValidationOutcome.ResolveIssues)
+                {
+                    bool appliedChanges = TryResolveValidationIssues(document, projectKey, validationRequest, request.UiLanguage);
+                    if (!appliedChanges)
+                    {
+                        continue;
+                    }
+
+                    continue;
+                }
+
+                if (validationForm.Outcome != ExportValidationOutcome.ContinueExport)
                 {
                     return Result.Cancelled;
                 }
+
+                break;
             }
 
             FloorGeoPackageExportResult result;
@@ -199,6 +223,72 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         }
     }
 
+    private static bool TryResolveValidationIssues(
+        Document document,
+        string projectKey,
+        ExportValidationRequest validationRequest,
+        UiLanguage language)
+    {
+        using ValidationIssueResolutionForm resolutionForm = new(validationRequest, language);
+        if (resolutionForm.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+        {
+            return false;
+        }
+
+        IReadOnlyList<string> warnings = ApplyValidationResolutions(
+            document,
+            projectKey,
+            resolutionForm.SelectedFloorAssignments,
+            resolutionForm.SelectedElementIdsToRegenerate);
+        ShowWarningsIfNeeded(warnings, language);
+        return true;
+    }
+
+    private static IReadOnlyList<string> ApplyValidationResolutions(
+        Document document,
+        string projectKey,
+        IReadOnlyDictionary<string, string> floorAssignments,
+        IReadOnlyList<long> elementIdsToRegenerate)
+    {
+        List<string> warnings = new();
+
+        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
+        foreach (KeyValuePair<string, string> entry in floorAssignments)
+        {
+            floorCategoryOverrideStore.SetOverride(projectKey, entry.Key, entry.Value);
+        }
+
+        List<long> distinctElementIds = elementIdsToRegenerate
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+        if (distinctElementIds.Count == 0)
+        {
+            return warnings;
+        }
+
+        SharedParameterManager parameterManager = new(document);
+        using Transaction transaction = new(document, "IMDF Export - Resolve Validation Issues");
+        transaction.Start();
+        parameterManager.EnsureParameters(warnings);
+
+        foreach (long sourceElementId in distinctElementIds)
+        {
+            ElementId elementId = new(sourceElementId);
+            Element? element = document.GetElement(elementId);
+            if (element == null)
+            {
+                warnings.Add($"Element {sourceElementId} could not be found when regenerating export IDs.");
+                continue;
+            }
+
+            _ = parameterManager.RegenerateElementId(element, warnings);
+        }
+
+        transaction.Commit();
+        return warnings;
+    }
+
     private static void ShowExportFailureDialog(Exception exception, ExportDialogResult? request)
     {
         UiLanguage language = request?.UiLanguage ?? UiLanguage.English;
@@ -209,11 +299,11 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             MainInstruction = T(
                 language,
                 "Export failed.",
-                "エクスポートに失敗しました。"),
+                "Export failed."),
             MainContent = T(
                 language,
                 "The export could not be completed. You can save an error report as a text file.",
-                "エクスポートを完了できませんでした。エラー報告をテキストファイルとして保存できます。"),
+                "The export could not be completed. You can save an error report as a text file."),
             ExpandedContent = reportText,
             AllowCancellation = true,
             CommonButtons = TaskDialogCommonButtons.Close,
@@ -223,7 +313,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             T(
                 language,
                 "Save Error Report",
-                "エラー報告を保存"));
+                "Save Error Report"));
 
         TaskDialogResult dialogResult = dialog.Show();
         if (dialogResult != TaskDialogResult.CommandLink1)
@@ -244,7 +334,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             Title = T(
                 language,
                 "Save Export Error Report",
-                "エクスポートエラー報告の保存"),
+                "Save Export Error Report"),
             Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*",
             DefaultExt = "txt",
             AddExtension = true,
@@ -268,7 +358,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             TaskDialog.Show(
                 ProjectInfo.Name,
                 language == UiLanguage.Japanese
-                    ? $"エラー報告を保存しました。\n{saveDialog.FileName}"
+                    ? $"驛｢・ｧ繝ｻ・ｨ驛｢譎｢・ｽ・ｩ驛｢譎｢・ｽ・ｼ髫ｲ・ｰ郢晢ｽｻ繝ｻ・ｰ繝ｻ・ｱ驛｢・ｧ陷代・・ｽ・ｿ隴取得・ｽ・ｭ陋滂ｽ･繝ｻ・ｰ驍ｵ・ｺ繝ｻ・ｾ驍ｵ・ｺ陷会ｽｱ隨ｳ繝ｻ・ｸ・ｲ郢晢ｽｻn{saveDialog.FileName}"
                     : $"Error report saved.\n{saveDialog.FileName}");
         }
         catch (Exception ex)
@@ -276,7 +366,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             TaskDialog.Show(
                 ProjectInfo.Name,
                 language == UiLanguage.Japanese
-                    ? $"エラー報告の保存に失敗しました。\n\n{ex.Message}"
+                    ? $"驛｢・ｧ繝ｻ・ｨ驛｢譎｢・ｽ・ｩ驛｢譎｢・ｽ・ｼ髫ｲ・ｰ郢晢ｽｻ繝ｻ・ｰ繝ｻ・ｱ驍ｵ・ｺ繝ｻ・ｮ髣厄ｽｫ隴取得・ｽ・ｭ陋滂ｽ･遶頑･｢譽斐・・ｱ髫ｰ・ｨ陷会ｽｱ繝ｻ・ｰ驍ｵ・ｺ繝ｻ・ｾ驍ｵ・ｺ陷会ｽｱ隨ｳ繝ｻ・ｸ・ｲ郢晢ｽｻn\n{ex.Message}"
                     : $"Failed to save error report.\n\n{ex.Message}");
         }
     }
@@ -324,8 +414,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
 
         string prefix = T(
             language,
-            "Some saved application settings could not be loaded. Defaults were used where needed.",
-            "保存済み設定の一部を読み込めませんでした。必要に応じて既定値を使用しました。");
+            "Some issues were encountered while applying validation fixes.",
+            "Some issues were encountered while applying validation fixes.");
         string message = $"{prefix}{Environment.NewLine}{Environment.NewLine}{string.Join(Environment.NewLine, warnings)}";
         TaskDialog.Show(ProjectInfo.Name, message);
     }
