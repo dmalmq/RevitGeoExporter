@@ -12,9 +12,9 @@ public sealed class GeometryRepairOptions
 
     public double SimplifyToleranceMeters { get; set; } = 0d;
 
-    public double OpeningSnapDistanceMeters { get; set; } = 5.0d;
+    public double OpeningSnapDistanceMeters { get; set; } = 0.20d;
 
-    public double ElevatorOpeningSnapDistanceMeters { get; set; } = 5.0d;
+    public double ElevatorOpeningSnapDistanceMeters { get; set; } = 0.20d;
 
     public double MergeNearbyBoundaryThresholdMeters { get; set; } = 0.15d;
 
@@ -40,8 +40,8 @@ public sealed class GeometryRepairOptions
             clone.MinimumPolygonAreaSquareMeters = 0.01d;
             clone.MinimumOpeningLengthMeters = 0.10d;
             clone.SimplifyToleranceMeters = 0d;
-            clone.OpeningSnapDistanceMeters = 5.0d;
-            clone.ElevatorOpeningSnapDistanceMeters = 5.0d;
+            clone.OpeningSnapDistanceMeters = 0.20d;
+            clone.ElevatorOpeningSnapDistanceMeters = 0.20d;
             clone.MergeNearbyBoundaryThresholdMeters = 0.15d;
         }
 

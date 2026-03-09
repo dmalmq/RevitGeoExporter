@@ -138,6 +138,24 @@ public sealed class SharedParameterManager
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    public string RegenerateElementId(Element element, ICollection<string> warnings)
+    {
+        if (element is null)
+        {
+            throw new ArgumentNullException(nameof(element));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        string newValue = Guid.NewGuid().ToString();
+        return TrySetStringParameter(element, ImdfIdParameterName, newValue, warnings)
+            ? newValue
+            : string.Empty;
+    }
+
     private static string GetDefaultSharedParameterFilePath()
     {
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -249,5 +267,33 @@ public sealed class SharedParameterManager
         }
 
         return newValue;
+    }
+
+    private static bool TrySetStringParameter(
+        Element element,
+        string parameterName,
+        string value,
+        ICollection<string> warnings)
+    {
+        Parameter? parameter = element.LookupParameter(parameterName);
+        if (parameter == null || parameter.StorageType != StorageType.String)
+        {
+            warnings.Add($"Element {element.Id.Value} is missing string parameter '{parameterName}', so the value could not be updated.");
+            return false;
+        }
+
+        if (parameter.IsReadOnly)
+        {
+            warnings.Add($"Element {element.Id.Value} parameter '{parameterName}' is read-only, so the value could not be updated.");
+            return false;
+        }
+
+        if (!parameter.Set(value))
+        {
+            warnings.Add($"Failed to update parameter '{parameterName}' for element {element.Id.Value}.");
+            return false;
+        }
+
+        return true;
     }
 }
