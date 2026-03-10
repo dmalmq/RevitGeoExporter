@@ -1,312 +1,209 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
 using System.Linq;
-using System.Windows.Forms;
-using RevitGeoExporter.Help;
+using System.Windows;
+using System.Windows.Controls;
 using RevitGeoExporter.Export;
-using WinFormsControl = System.Windows.Forms.Control;
-using WinFormsForm = System.Windows.Forms.Form;
+using RevitGeoExporter.Help;
 
 namespace RevitGeoExporter.UI;
 
-public sealed class ExportResultForm : WinFormsForm
+public sealed class ExportResultForm : IDisposable
 {
     private readonly FloorGeoPackageExportResult _result;
     private readonly string _outputDirectory;
     private readonly UiLanguage _language;
-
-    private readonly Label _titleLabel = new();
-    private readonly Label _summaryLabel = new();
-    private readonly Label _outputDirectoryLabel = new();
-    private readonly Button _openFolderButton = new();
-    private readonly Button _closeButton = new();
-    private readonly Button _helpButton = new();
-    private readonly TabPage _filesTab = new();
-    private readonly TabPage _warningsTab = new();
-    private readonly TabPage _changesTab = new();
-    private readonly TabPage _packageTab = new();
-    private readonly DataGridView _filesGrid = new();
-    private readonly ListBox _warningsList = new();
-    private readonly ListBox _changesList = new();
-    private readonly ListBox _packageList = new();
+    private readonly Window _window;
 
     public ExportResultForm(FloorGeoPackageExportResult result, string outputDirectory, UiLanguage language)
     {
         _result = result ?? throw new ArgumentNullException(nameof(result));
         _outputDirectory = ResolveOutputDirectory(result, outputDirectory);
         _language = Enum.IsDefined(typeof(UiLanguage), language) ? language : UiLanguage.English;
-        InitializeComponents();
-        Populate();
-    }
 
-    private void InitializeComponents()
-    {
-        Text = T("Export Results", "エクスポート結果");
-        Width = 1080;
-        Height = 680;
-        MinimumSize = new Size(920, 520);
-        StartPosition = FormStartPosition.CenterScreen;
-        MinimizeBox = false;
-        MaximizeBox = true;
-        FormBorderStyle = FormBorderStyle.Sizable;
-
-        TableLayoutPanel root = new()
+        _window = new Window
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            Padding = new Padding(12),
+            Title = T("Export Results", "エクスポート結果"),
+            Width = 1080,
+            Height = 680,
+            MinWidth = 920,
+            MinHeight = 520,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            Content = BuildLayout(),
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 118f));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52f));
-        Controls.Add(root);
-
-        root.Controls.Add(BuildHeaderPanel(), 0, 0);
-        root.Controls.Add(BuildBodyPanel(), 0, 1);
-        root.Controls.Add(BuildActionsPanel(), 0, 2);
     }
 
-    private WinFormsControl BuildHeaderPanel()
+    public bool? ShowDialog() => _window.ShowDialog();
+
+    public void Dispose()
     {
-        TableLayoutPanel header = new()
+        if (_window.IsVisible)
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-        };
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
-        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130f));
-
-        TableLayoutPanel labels = new()
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-        };
-        labels.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
-        labels.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
-        labels.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
-
-        _titleLabel.Dock = DockStyle.Fill;
-        _titleLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _titleLabel.Font = new Font(Font, FontStyle.Bold);
-        labels.Controls.Add(_titleLabel, 0, 0);
-
-        _summaryLabel.Dock = DockStyle.Fill;
-        _summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
-        labels.Controls.Add(_summaryLabel, 0, 1);
-
-        _outputDirectoryLabel.Dock = DockStyle.Fill;
-        _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _outputDirectoryLabel.AutoEllipsis = true;
-        labels.Controls.Add(_outputDirectoryLabel, 0, 2);
-
-        header.Controls.Add(labels, 0, 0);
-
-        _openFolderButton.Width = 112;
-        _openFolderButton.Height = 30;
-        _openFolderButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-        _openFolderButton.Text = T("Open Folder", "フォルダーを開く");
-        _openFolderButton.Click += (_, _) => OpenOutputDirectory();
-        header.Controls.Add(_openFolderButton, 1, 0);
-
-        return header;
+            _window.Close();
+        }
     }
 
-    private WinFormsControl BuildBodyPanel()
+    private UIElement BuildLayout()
     {
-        TabControl tabs = new()
-        {
-            Dock = DockStyle.Fill,
-        };
-
-        _filesTab.Padding = new Padding(6);
-        _warningsTab.Padding = new Padding(6);
-
-        ConfigureFilesGrid();
-        _filesTab.Controls.Add(_filesGrid);
-
-        _warningsList.Dock = DockStyle.Fill;
-        _warningsList.HorizontalScrollbar = true;
-        _warningsTab.Controls.Add(_warningsList);
-
-        _changesList.Dock = DockStyle.Fill;
-        _changesList.HorizontalScrollbar = true;
-        _changesTab.Controls.Add(_changesList);
-
-        _packageList.Dock = DockStyle.Fill;
-        _packageList.HorizontalScrollbar = true;
-        _packageTab.Controls.Add(_packageList);
-
-        tabs.TabPages.Add(_filesTab);
-        tabs.TabPages.Add(_warningsTab);
-        tabs.TabPages.Add(_changesTab);
-        tabs.TabPages.Add(_packageTab);
-        return tabs;
-    }
-
-    private WinFormsControl BuildActionsPanel()
-    {
-        FlowLayoutPanel actions = new()
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            Padding = new Padding(0, 10, 0, 0),
-        };
-
-        _closeButton.Width = 96;
-        _closeButton.Height = 30;
-        _closeButton.Text = T("Close", "閉じる");
-        _closeButton.DialogResult = DialogResult.OK;
-        actions.Controls.Add(_closeButton);
-
-        _helpButton.Width = 96;
-        _helpButton.Height = 30;
-        _helpButton.Text = T("Help", "ヘルプ");
-        _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.TroubleshootingFaq, _language, Text);
-        actions.Controls.Add(_helpButton);
-
-        AcceptButton = _closeButton;
-        CancelButton = _closeButton;
-        return actions;
-    }
-
-    private void ConfigureFilesGrid()
-    {
-        _filesGrid.Dock = DockStyle.Fill;
-        _filesGrid.ReadOnly = true;
-        _filesGrid.MultiSelect = false;
-        _filesGrid.RowHeadersVisible = false;
-        _filesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        _filesGrid.AllowUserToAddRows = false;
-        _filesGrid.AllowUserToDeleteRows = false;
-        _filesGrid.AllowUserToResizeRows = false;
-        _filesGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        _filesGrid.AutoGenerateColumns = false;
-
-        _filesGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "ViewName",
-            HeaderText = T("View", "ビュー"),
-            FillWeight = 22f,
-        });
-
-        _filesGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "LevelName",
-            HeaderText = T("Level", "レベル"),
-            FillWeight = 18f,
-        });
-
-        _filesGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "FeatureType",
-            HeaderText = T("Feature Type", "フィーチャ種別"),
-            FillWeight = 14f,
-        });
-
-        _filesGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "FeatureCount",
-            HeaderText = T("Features", "フィーチャ数"),
-            FillWeight = 10f,
-            DefaultCellStyle = new DataGridViewCellStyle
-            {
-                Alignment = DataGridViewContentAlignment.MiddleRight,
-            },
-        });
-
-        _filesGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = "OutputFilePath",
-            HeaderText = T("Output File", "出力ファイル"),
-            FillWeight = 36f,
-        });
-    }
-
-    private void Populate()
-    {
-        int viewCount = _result.ViewResults
-            .Select(x => x.ViewName)
-            .Distinct(StringComparer.Ordinal)
-            .Count();
+        int viewCount = _result.ViewResults.Select(x => x.ViewName).Distinct(StringComparer.Ordinal).Count();
         int fileCount = _result.ViewResults.Count;
         int warningCount = _result.Warnings.Count;
         int featureCount = _result.ViewResults.Sum(x => x.FeatureCount);
 
-        _titleLabel.Text = warningCount > 0
-            ? T("GeoPackage export completed with warnings.", "警告付きでGeoPackageのエクスポートが完了しました。")
-            : T("GeoPackage export completed.", "GeoPackageのエクスポートが完了しました。");
-        _summaryLabel.Text = _language == UiLanguage.Japanese
-            ? $"出力ビュー: {viewCount}    出力ファイル: {fileCount}    総フィーチャ数: {featureCount}    警告: {warningCount}"
-            : $"Views exported: {viewCount}    Files exported: {fileCount}    Total features: {featureCount}    Warnings: {warningCount}";
+        Grid root = new() { Margin = new Thickness(12) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        _outputDirectoryLabel.Text = string.IsNullOrWhiteSpace(_outputDirectory)
-            ? T("Output directory: (not available)", "出力フォルダー: （利用できません）")
-            : _language == UiLanguage.Japanese
-                ? $"出力フォルダー: {_outputDirectory}"
-                : $"Output directory: {_outputDirectory}";
-        _openFolderButton.Enabled = !string.IsNullOrWhiteSpace(_outputDirectory) && Directory.Exists(_outputDirectory);
+        Grid header = new();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        foreach (ViewExportResult export in _result.ViewResults)
+        StackPanel labels = new();
+        labels.Children.Add(new TextBlock
         {
-            _filesGrid.Rows.Add(
-                export.ViewName,
-                export.LevelName,
-                export.FeatureType,
-                export.FeatureCount,
-                export.OutputFilePath);
-        }
-
-        if (_result.Warnings.Count == 0)
+            Text = warningCount > 0
+                ? T("GeoPackage export completed with warnings.", "警告付きでGeoPackageのエクスポートが完了しました。")
+                : T("GeoPackage export completed.", "GeoPackageのエクスポートが完了しました。"),
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 14,
+        });
+        labels.Children.Add(new TextBlock
         {
-            _warningsList.Items.Add(T("No warnings.", "警告はありません。"));
-        }
-        else
+            Margin = new Thickness(0, 6, 0, 0),
+            Text = _language == UiLanguage.Japanese
+                ? $"出力ビュー: {viewCount}    出力ファイル: {fileCount}    総フィーチャ数: {featureCount}    警告: {warningCount}"
+                : $"Views exported: {viewCount}    Files exported: {fileCount}    Total features: {featureCount}    Warnings: {warningCount}",
+        });
+        labels.Children.Add(new TextBlock
         {
-            foreach (string warning in _result.Warnings)
-            {
-                _warningsList.Items.Add(warning);
-            }
-        }
+            Margin = new Thickness(0, 6, 0, 0),
+            Text = string.IsNullOrWhiteSpace(_outputDirectory)
+                ? T("Output directory: (not available)", "出力フォルダー: （利用できません）")
+                : _language == UiLanguage.Japanese
+                    ? $"出力フォルダー: {_outputDirectory}"
+                    : $"Output directory: {_outputDirectory}",
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
 
-        _filesTab.Text = _language == UiLanguage.Japanese
-            ? $"出力ファイル ({fileCount})"
-            : $"Exported Files ({fileCount})";
-        _warningsTab.Text = _language == UiLanguage.Japanese
-            ? $"警告 ({warningCount})"
-            : $"Warnings ({warningCount})";
-        _changesTab.Text = T("Changes", "Changes");
-        _packageTab.Text = T("Package", "Package");
+        header.Children.Add(labels);
 
-        if (_result.ChangeSummary == null || !_result.ChangeSummary.HasChanges)
+        Button openFolderButton = new()
         {
-            _changesList.Items.Add(T("No change summary available.", "変更サマリーはありません。"));
-        }
-        else
-        {
-            foreach (string line in _result.ChangeSummary.Lines)
-            {
-                _changesList.Items.Add(line);
-            }
-        }
+            Content = T("Open Folder", "フォルダーを開く"),
+            Width = 112,
+            Height = 30,
+            Margin = new Thickness(12, 0, 0, 0),
+            IsEnabled = !string.IsNullOrWhiteSpace(_outputDirectory) && Directory.Exists(_outputDirectory),
+        };
+        openFolderButton.Click += (_, _) => OpenOutputDirectory();
+        Grid.SetColumn(openFolderButton, 1);
+        header.Children.Add(openFolderButton);
 
+        root.Children.Add(header);
+
+        TabControl tabs = new();
+        tabs.Items.Add(BuildFilesTab(fileCount));
+        tabs.Items.Add(BuildStringTab(
+            _result.Warnings.Count == 0 ? new[] { T("No warnings.", "警告はありません。") } : _result.Warnings,
+            _language == UiLanguage.Japanese ? $"警告 ({warningCount})" : $"Warnings ({warningCount})"));
+
+        IReadOnlyList<string> changeLines = _result.ChangeSummary == null || !_result.ChangeSummary.HasChanges
+            ? new[] { T("No change summary available.", "変更サマリーはありません。") }
+            : _result.ChangeSummary.Lines;
+        tabs.Items.Add(BuildStringTab(changeLines, T("Changes", "Changes")));
+
+        List<string> packageLines = new();
         if (!string.IsNullOrWhiteSpace(_result.PackageDirectoryPath))
         {
-            _packageList.Items.Add($"Package directory: {_result.PackageDirectoryPath}");
+            packageLines.Add($"Package directory: {_result.PackageDirectoryPath}");
         }
 
         if (!string.IsNullOrWhiteSpace(_result.PackageManifestPath))
         {
-            _packageList.Items.Add($"Manifest: {_result.PackageManifestPath}");
+            packageLines.Add($"Manifest: {_result.PackageManifestPath}");
         }
 
-        if (_packageList.Items.Count == 0)
+        if (packageLines.Count == 0)
         {
-            _packageList.Items.Add(T("No package output was written for this export.", "このエクスポートではパッケージ出力は作成されていません。"));
+            packageLines.Add(T("No package output was written for this export.", "このエクスポートではパッケージ出力は作成されていません。"));
         }
+
+        tabs.Items.Add(BuildStringTab(packageLines, T("Package", "Package")));
+
+        Grid.SetRow(tabs, 1);
+        tabs.Margin = new Thickness(0, 10, 0, 0);
+        root.Children.Add(tabs);
+
+        StackPanel actions = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+
+        Button closeButton = new() { Content = T("Close", "閉じる"), Width = 96, IsDefault = true };
+        closeButton.Click += (_, _) =>
+        {
+            _window.DialogResult = true;
+            _window.Close();
+        };
+
+        Button helpButton = new() { Content = T("Help", "ヘルプ"), Width = 96, Margin = new Thickness(8, 0, 0, 0) };
+        helpButton.Click += (_, _) => HelpLauncher.Show(null, HelpTopic.TroubleshootingFaq, _language, _window.Title);
+
+        actions.Children.Add(helpButton);
+        actions.Children.Add(closeButton);
+        Grid.SetRow(actions, 2);
+        root.Children.Add(actions);
+
+        return root;
+    }
+
+    private TabItem BuildFilesTab(int fileCount)
+    {
+        DataGrid grid = new()
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            ItemsSource = _result.ViewResults.Select(export => new FileRow
+            {
+                ViewName = export.ViewName,
+                LevelName = export.LevelName,
+                FeatureType = export.FeatureType,
+                FeatureCount = export.FeatureCount,
+                OutputFilePath = export.OutputFilePath,
+            }).ToList(),
+        };
+
+        grid.Columns.Add(new DataGridTextColumn { Header = T("View", "ビュー"), Binding = new System.Windows.Data.Binding(nameof(FileRow.ViewName)), Width = new DataGridLength(0.22, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Level", "レベル"), Binding = new System.Windows.Data.Binding(nameof(FileRow.LevelName)), Width = new DataGridLength(0.18, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Feature Type", "フィーチャ種別"), Binding = new System.Windows.Data.Binding(nameof(FileRow.FeatureType)), Width = new DataGridLength(0.14, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Features", "フィーチャ数"), Binding = new System.Windows.Data.Binding(nameof(FileRow.FeatureCount)), Width = new DataGridLength(0.1, DataGridLengthUnitType.Star) });
+        grid.Columns.Add(new DataGridTextColumn { Header = T("Output File", "出力ファイル"), Binding = new System.Windows.Data.Binding(nameof(FileRow.OutputFilePath)), Width = new DataGridLength(0.36, DataGridLengthUnitType.Star) });
+
+        return new TabItem
+        {
+            Header = _language == UiLanguage.Japanese ? $"出力ファイル ({fileCount})" : $"Exported Files ({fileCount})",
+            Content = grid,
+        };
+    }
+
+    private static TabItem BuildStringTab(IEnumerable<string> lines, string title)
+    {
+        ListBox list = new();
+        foreach (string line in lines)
+        {
+            list.Items.Add(line);
+        }
+
+        return new TabItem
+        {
+            Header = title,
+            Content = list,
+        };
     }
 
     private void OpenOutputDirectory()
@@ -314,11 +211,10 @@ public sealed class ExportResultForm : WinFormsForm
         if (string.IsNullOrWhiteSpace(_outputDirectory) || !Directory.Exists(_outputDirectory))
         {
             MessageBox.Show(
-                this,
                 T("The output directory was not found.", "出力フォルダーが見つかりませんでした。"),
                 ProjectInfo.Name,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             return;
         }
 
@@ -333,20 +229,16 @@ public sealed class ExportResultForm : WinFormsForm
         catch (Exception ex)
         {
             MessageBox.Show(
-                this,
                 _language == UiLanguage.Japanese
                     ? $"出力フォルダーを開けませんでした。\n\n{ex.Message}"
                     : $"Unable to open the output directory.\n\n{ex.Message}",
                 ProjectInfo.Name,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
     }
 
-    private string T(string english, string japanese)
-    {
-        return UiLanguageText.Select(_language, english, japanese);
-    }
+    private string T(string english, string japanese) => UiLanguageText.Select(_language, english, japanese);
 
     private static string ResolveOutputDirectory(FloorGeoPackageExportResult result, string outputDirectory)
     {
@@ -362,5 +254,14 @@ public sealed class ExportResultForm : WinFormsForm
         return firstPath is null
             ? string.Empty
             : Path.GetDirectoryName(firstPath) ?? string.Empty;
+    }
+
+    private sealed class FileRow
+    {
+        public string ViewName { get; init; } = string.Empty;
+        public string LevelName { get; init; } = string.Empty;
+        public string FeatureType { get; init; } = string.Empty;
+        public int FeatureCount { get; init; }
+        public string OutputFilePath { get; init; } = string.Empty;
     }
 }
