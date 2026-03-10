@@ -4,11 +4,11 @@ using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Core.Assignments;
 
-public sealed class FloorCategoryOverrideStore
+public sealed class RoomCategoryOverrideStore
 {
     private readonly MappingRuleStore _mappingRuleStore;
 
-    public FloorCategoryOverrideStore(string? rootDirectory = null)
+    public RoomCategoryOverrideStore(string? rootDirectory = null)
     {
         _mappingRuleStore = new MappingRuleStore(rootDirectory);
     }
@@ -21,7 +21,7 @@ public sealed class FloorCategoryOverrideStore
     public LoadResult<IReadOnlyDictionary<string, string>> LoadWithDiagnostics(string projectKey)
     {
         LoadResult<ProjectMappingRules> result = _mappingRuleStore.LoadWithDiagnostics(projectKey);
-        return new LoadResult<IReadOnlyDictionary<string, string>>(result.Value.FloorCategoryOverrides, result.Warnings);
+        return new LoadResult<IReadOnlyDictionary<string, string>>(result.Value.RoomCategoryOverrides, result.Warnings);
     }
 
     public void Save(string projectKey, IReadOnlyDictionary<string, string> overrides)
@@ -33,54 +33,53 @@ public sealed class FloorCategoryOverrideStore
 
         ProjectMappingRules current = _mappingRuleStore.Load(projectKey);
         ProjectMappingRules updated = ProjectMappingRules.Create(
+            current.FloorCategoryOverrides,
             NormalizeOverrides(overrides),
-            current.RoomCategoryOverrides,
             current.FamilyCategoryOverrides,
             current.AcceptedOpeningFamilies);
         _mappingRuleStore.Save(projectKey, updated);
     }
 
-    public void SetOverride(string projectKey, string floorTypeName, string category)
+    public void SetOverride(string projectKey, string roomValue, string category)
     {
         Dictionary<string, string> current = CopyOverrides(Load(projectKey));
-        current[NormalizeFloorTypeName(floorTypeName)] = NormalizeCategory(category);
+        current[NormalizeRoomValue(roomValue)] = NormalizeCategory(category);
         Save(projectKey, current);
     }
 
-    public void ClearOverride(string projectKey, string floorTypeName)
+    public void ClearOverride(string projectKey, string roomValue)
     {
         Dictionary<string, string> current = CopyOverrides(Load(projectKey));
-        current.Remove(NormalizeFloorTypeName(floorTypeName));
+        current.Remove(NormalizeRoomValue(roomValue));
         Save(projectKey, current);
     }
 
-    private static Dictionary<string, string> NormalizeOverrides(
-        IReadOnlyDictionary<string, string>? overrides)
+    private static Dictionary<string, string> NormalizeOverrides(IReadOnlyDictionary<string, string>? overrides)
     {
         Dictionary<string, string> normalized = new(StringComparer.Ordinal);
         foreach (KeyValuePair<string, string> entry in overrides ?? EmptyOverrides())
         {
-            string floorTypeName = NormalizeFloorTypeName(entry.Key);
+            string roomValue = NormalizeRoomValue(entry.Key);
             string category = NormalizeCategory(entry.Value);
-            if (floorTypeName.Length == 0 || category.Length == 0)
+            if (roomValue.Length == 0 || category.Length == 0)
             {
                 continue;
             }
 
-            normalized[floorTypeName] = category;
+            normalized[roomValue] = category;
         }
 
         return normalized;
     }
 
-    private static string NormalizeFloorTypeName(string? floorTypeName)
+    private static string NormalizeRoomValue(string? roomValue)
     {
-        if (string.IsNullOrWhiteSpace(floorTypeName))
+        if (string.IsNullOrWhiteSpace(roomValue))
         {
-            throw new ArgumentException("Floor type name is required.", nameof(floorTypeName));
+            throw new ArgumentException("Room mapping value is required.", nameof(roomValue));
         }
 
-        return floorTypeName.Trim();
+        return roomValue.Trim();
     }
 
     private static string NormalizeCategory(string? category)

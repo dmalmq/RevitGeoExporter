@@ -48,6 +48,7 @@ Type: filesandordirs; Name: "{app}"
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "examples\*"; DestDir: "{app}\Examples"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "RevitGeoExporter.addin"; DestDir: "{#AddinsRoot}"; Flags: ignoreversion
 
 [Code]

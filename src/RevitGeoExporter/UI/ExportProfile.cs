@@ -1,6 +1,7 @@
 using System;
-
 using RevitGeoExporter.Core.Geometry;
+using RevitGeoExporter.Export;
+using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.UI;
 
@@ -14,8 +15,7 @@ public sealed class ExportProfile
 
     public int TargetEpsg { get; set; } = ProjectInfo.DefaultTargetEpsg;
 
-    public RevitGeoExporter.Export.ExportFeatureType FeatureTypes { get; set; } =
-        RevitGeoExporter.Export.ExportFeatureType.All;
+    public ExportFeatureType FeatureTypes { get; set; } = ExportFeatureType.All;
 
     public bool GenerateDiagnosticsReport { get; set; } = true;
 
@@ -26,6 +26,10 @@ public sealed class ExportProfile
     public GeometryRepairOptions GeometryRepairOptions { get; set; } = new();
 
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
+
+    public UnitSource UnitSource { get; set; } = UnitSource.Floors;
+
+    public string RoomCategoryParameterName { get; set; } = "Name";
 
     public ExportDialogSettings ToSettings()
     {
@@ -39,6 +43,8 @@ public sealed class ExportProfile
             IncludePackageLegend = IncludePackageLegend,
             GeometryRepairOptions = GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = UiLanguage,
+            UnitSource = UnitSource,
+            RoomCategoryParameterName = RoomCategoryParameterName,
         };
     }
 
@@ -61,6 +67,8 @@ public sealed class ExportProfile
             IncludePackageLegend = settings.IncludePackageLegend,
             GeometryRepairOptions = settings.GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = settings.UiLanguage,
+            UnitSource = settings.UnitSource,
+            RoomCategoryParameterName = settings.RoomCategoryParameterName?.Trim() ?? "Name",
         };
     }
 }

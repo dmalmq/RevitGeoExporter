@@ -72,23 +72,7 @@ public sealed class FloorCategoryResolver
 
     private static IReadOnlyList<string> BuildSupportedCategories(ZoneCatalog zoneCatalog)
     {
-        HashSet<string> categories = new(StringComparer.OrdinalIgnoreCase);
-        foreach (ZoneInfo zoneInfo in zoneCatalog.ZoneLookup.Values)
-        {
-            string category = NormalizeCategory(zoneInfo.Category);
-            if (category.Length == 0 ||
-                string.Equals(category, "unspecified", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(category, "stairs", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(category, "escalator", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(category, "elevator", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            categories.Add(category);
-        }
-
-        return categories
+        return ImdfUnitCategoryCatalog.GetCategories(includeLegacy: true, includeUnspecified: false)
             .OrderBy(category => category, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

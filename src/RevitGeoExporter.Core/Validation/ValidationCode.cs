@@ -12,4 +12,5 @@ public enum ValidationCode
     UnsupportedOpeningFamily = 7,
     UnsnappedOpening = 8,
     MissingVerticalCirculation = 9,
+    NonStandardUnitCategory = 10,
 }

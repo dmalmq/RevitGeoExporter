@@ -32,6 +32,7 @@ public sealed class SettingsHubForm : Form
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
     private readonly DataGridView _floorGrid = new();
+    private readonly DataGridView _roomGrid = new();
     private readonly DataGridView _familyGrid = new();
     private readonly DataGridView _openingGrid = new();
     private readonly Button _saveButton = new();
@@ -213,22 +214,26 @@ public sealed class SettingsHubForm : Form
             Dock = DockStyle.Fill,
         };
         TabPage floorTab = new();
+        TabPage roomTab = new();
         TabPage familyTab = new();
         TabPage openingTab = new();
         ConfigureMappingGrid(_floorGrid);
+        ConfigureMappingGrid(_roomGrid);
         ConfigureMappingGrid(_familyGrid);
         ConfigureOpeningGrid(_openingGrid);
         floorTab.Controls.Add(_floorGrid);
+        roomTab.Controls.Add(_roomGrid);
         familyTab.Controls.Add(_familyGrid);
         openingTab.Controls.Add(_openingGrid);
         mappingTabs.TabPages.Add(floorTab);
+        mappingTabs.TabPages.Add(roomTab);
         mappingTabs.TabPages.Add(familyTab);
         mappingTabs.TabPages.Add(openingTab);
         panel.Controls.Add(mappingTabs, 0, 1);
 
         panel.Controls.Add(BuildScopeButtons(SettingsScope.Project), 0, 2);
 
-        tab.Tag = new object[] { intro, mappingTabs, floorTab, familyTab, openingTab };
+        tab.Tag = new object[] { intro, mappingTabs, floorTab, roomTab, familyTab, openingTab };
         return tab;
     }
 
@@ -404,6 +409,7 @@ public sealed class SettingsHubForm : Form
     private void PopulateMappings(ProjectMappingRules rules)
     {
         PopulateMappingGrid(_floorGrid, rules.FloorCategoryOverrides);
+        PopulateMappingGrid(_roomGrid, rules.RoomCategoryOverrides);
         PopulateMappingGrid(_familyGrid, rules.FamilyCategoryOverrides);
         _openingGrid.Rows.Clear();
         foreach (string familyName in rules.AcceptedOpeningFamilies)
@@ -558,7 +564,7 @@ public sealed class SettingsHubForm : Form
 
     private ProjectMappingRules BuildProjectMappings()
     {
-        return ProjectMappingRules.Create(ReadMappings(_floorGrid), ReadMappings(_familyGrid), ReadFamilies(_openingGrid));
+        return ProjectMappingRules.Create(ReadMappings(_floorGrid), ReadMappings(_roomGrid), ReadMappings(_familyGrid), ReadFamilies(_openingGrid));
     }
 
     private static Dictionary<string, string> ReadMappings(DataGridView grid)
@@ -612,15 +618,18 @@ public sealed class SettingsHubForm : Form
 
         if (_tabs.TabPages[1].Tag is object[] projectObjects)
         {
-            ((Label)projectObjects[0]).Text = L("SettingsHub.ProjectMappingsIntro", "Manage exporter-side floor, family, and accepted opening mappings for the current project.");
+            ((Label)projectObjects[0]).Text = L("SettingsHub.ProjectMappingsIntro", "Manage exporter-side floor, room, family, and accepted opening mappings for the current project.");
             TabControl mappingTabs = (TabControl)projectObjects[1];
             mappingTabs.TabPages[0].Text = L("SettingsHub.FloorOverridesTab", "Floor Overrides");
-            mappingTabs.TabPages[1].Text = L("SettingsHub.FamilyCategoriesTab", "Family Categories");
-            mappingTabs.TabPages[2].Text = L("SettingsHub.AcceptedOpeningsTab", "Accepted Openings");
+            mappingTabs.TabPages[1].Text = "Room Categories";
+            mappingTabs.TabPages[2].Text = L("SettingsHub.FamilyCategoriesTab", "Family Categories");
+            mappingTabs.TabPages[3].Text = L("SettingsHub.AcceptedOpeningsTab", "Accepted Openings");
         }
 
         _floorGrid.Columns[0].HeaderText = L("SettingsHub.FloorTypeName", "Floor Type Name");
         _floorGrid.Columns[1].HeaderText = L("SettingsHub.Category", "Category");
+        _roomGrid.Columns[0].HeaderText = "Room Value";
+        _roomGrid.Columns[1].HeaderText = L("SettingsHub.Category", "Category");
         _familyGrid.Columns[0].HeaderText = L("SettingsHub.FamilyName", "Family Name");
         _familyGrid.Columns[1].HeaderText = L("SettingsHub.Category", "Category");
         _openingGrid.Columns[0].HeaderText = L("SettingsHub.AcceptedOpeningFamilyName", "Accepted Opening Family Name");

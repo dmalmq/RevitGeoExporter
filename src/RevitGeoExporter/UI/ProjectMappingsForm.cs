@@ -16,6 +16,7 @@ public sealed class ProjectMappingsForm : Form
     private readonly IReadOnlyList<string> _categories;
 
     private readonly DataGridView _floorGrid = new();
+    private readonly DataGridView _roomGrid = new();
     private readonly DataGridView _familyGrid = new();
     private readonly DataGridView _openingGrid = new();
     private readonly Button _importButton = new();
@@ -64,17 +65,21 @@ public sealed class ProjectMappingsForm : Form
             Dock = DockStyle.Fill,
         };
         TabPage floorTab = new("Floor Overrides");
+        TabPage roomTab = new("Room Categories");
         TabPage familyTab = new("Family Categories");
         TabPage openingTab = new("Accepted Openings");
 
         ConfigureMappingGrid(_floorGrid, "Floor Type Name");
         floorTab.Controls.Add(_floorGrid);
+        ConfigureMappingGrid(_roomGrid, "Room Value");
+        roomTab.Controls.Add(_roomGrid);
         ConfigureMappingGrid(_familyGrid, "Family Name");
         familyTab.Controls.Add(_familyGrid);
         ConfigureOpeningGrid();
         openingTab.Controls.Add(_openingGrid);
 
         tabs.TabPages.Add(floorTab);
+        tabs.TabPages.Add(roomTab);
         tabs.TabPages.Add(familyTab);
         tabs.TabPages.Add(openingTab);
         root.Controls.Add(tabs, 0, 0);
@@ -224,6 +229,7 @@ public sealed class ProjectMappingsForm : Form
     private void PopulateRules(ProjectMappingRules rules)
     {
         PopulateMappingGrid(_floorGrid, rules.FloorCategoryOverrides);
+        PopulateMappingGrid(_roomGrid, rules.RoomCategoryOverrides);
         PopulateMappingGrid(_familyGrid, rules.FamilyCategoryOverrides);
 
         _openingGrid.Rows.Clear();
@@ -237,6 +243,7 @@ public sealed class ProjectMappingsForm : Form
     {
         return ProjectMappingRules.Create(
             ReadMappings(_floorGrid),
+            ReadMappings(_roomGrid),
             ReadMappings(_familyGrid),
             ReadFamilies(_openingGrid));
     }

@@ -47,6 +47,7 @@ public sealed class UnitExtractor
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly FloorCategoryResolver _floorCategoryResolver;
+    private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
 
@@ -56,6 +57,7 @@ public sealed class UnitExtractor
         IExportMetadataProvider metadataProvider,
         string source,
         FloorCategoryResolver floorCategoryResolver,
+        RoomCategoryResolver roomCategoryResolver,
         IReadOnlyDictionary<string, string>? familyCategoryOverrides = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
@@ -66,6 +68,8 @@ public sealed class UnitExtractor
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _floorCategoryResolver =
             floorCategoryResolver ?? throw new ArgumentNullException(nameof(floorCategoryResolver));
+        _roomCategoryResolver =
+            roomCategoryResolver ?? throw new ArgumentNullException(nameof(roomCategoryResolver));
         _familyCategoryOverrides = familyCategoryOverrides ??
             new Dictionary<string, string>(StringComparer.Ordinal);
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
@@ -127,8 +131,16 @@ public sealed class UnitExtractor
         }
 
         ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(rawFloorTypeName, zoneName);
-        ZoneInfo zoneInfo = resolvedFloorCategory.ZoneInfo;
-        if (resolvedFloorCategory.IsUnassigned)
+        ResolvedMappingCategory resolvedCategory = new(
+            "floor",
+            resolvedFloorCategory.FloorTypeName,
+            resolvedFloorCategory.ParsedZoneCandidate,
+            null,
+            resolvedFloorCategory.ZoneInfo,
+            resolvedFloorCategory.ResolutionSource,
+            resolvedFloorCategory.IsUnassigned);
+        ZoneInfo zoneInfo = resolvedCategory.ZoneInfo;
+        if (resolvedCategory.IsUnassigned)
         {
             warnings.Add(
                 $"Floor {elementId} zone '{zoneName}' was not found in catalog. Default category/restriction applied.");
@@ -153,7 +165,7 @@ public sealed class UnitExtractor
                     name,
                     altName,
                     floor.Id.Value,
-                    resolvedFloorCategory,
+                    resolvedCategory,
                     rawFloorTypeName),
             };
             return true;
@@ -178,7 +190,7 @@ public sealed class UnitExtractor
                     name,
                     altName,
                     floor.Id.Value,
-                    resolvedFloorCategory,
+                    resolvedCategory,
                     rawFloorTypeName));
         }
 
@@ -200,6 +212,53 @@ public sealed class UnitExtractor
         }
 
         feature = features[0];
+        return true;
+    }
+
+
+    public bool TryCreateRoomUnit(
+        Room room,
+        string levelId,
+        string roomCategoryParameterName,
+        ICollection<string> warnings,
+        out ExportPolygon? feature)
+    {
+        feature = null;
+        if (room is null)
+        {
+            return false;
+        }
+
+        string mappingValue = GetRoomCategoryValue(room, roomCategoryParameterName);
+        ResolvedMappingCategory resolvedCategory = _roomCategoryResolver.Resolve(mappingValue, roomCategoryParameterName);
+        if (resolvedCategory.IsUnassigned)
+        {
+            warnings.Add(
+                $"Room {room.Id.Value} value '{mappingValue}' for parameter '{roomCategoryParameterName}' was not mapped to a known category. Default category/restriction applied.");
+        }
+
+        if (!TryExtractRoomPolygons(room, out List<Polygon2D> polygons) || polygons.Count == 0)
+        {
+            warnings.Add($"Room {room.Id.Value} geometry could not be extracted.");
+            return false;
+        }
+
+        string id = _metadataProvider.GetElementId(room, warnings);
+        string? imdfName = _metadataProvider.GetOptionalStringParameter(room, SharedParameterManager.ImdfNameParameterName);
+        string? imdfAltName = _metadataProvider.GetOptionalStringParameter(room, SharedParameterManager.ImdfAltNameParameterName);
+        string? name = string.IsNullOrWhiteSpace(imdfName) ? room.Name : imdfName;
+        string? altName = string.IsNullOrWhiteSpace(imdfAltName) ? room.Number : imdfAltName;
+
+        feature = CreateFeature(
+            id,
+            polygons,
+            levelId,
+            resolvedCategory.ZoneInfo,
+            name,
+            altName,
+            room.Id.Value,
+            resolvedCategory,
+            sourceLabel: roomCategoryParameterName);
         return true;
     }
 
@@ -323,7 +382,7 @@ public sealed class UnitExtractor
         string? name,
         string? altName,
         long? sourceElementId,
-        ResolvedFloorCategory? resolvedFloorCategory = null,
+        ResolvedMappingCategory? resolvedCategory = null,
         string? sourceLabel = null)
     {
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(polygon);
@@ -343,7 +402,7 @@ public sealed class UnitExtractor
             ["preview_fill_color"] = zoneInfo.FillColor,
             ["source_label"] = sourceLabel,
         };
-        AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
+        AddResolvedCategoryAttributes(attributes, resolvedCategory);
 
         return new ExportPolygon(polygon, attributes);
     }
@@ -356,7 +415,7 @@ public sealed class UnitExtractor
         string? name,
         string? altName,
         long? sourceElementId,
-        ResolvedFloorCategory? resolvedFloorCategory = null,
+        ResolvedMappingCategory? resolvedCategory = null,
         string? sourceLabel = null)
     {
         if (polygons == null || polygons.Count == 0)
@@ -384,30 +443,37 @@ public sealed class UnitExtractor
             ["preview_fill_color"] = zoneInfo.FillColor,
             ["source_label"] = sourceLabel,
         };
-        AddResolvedFloorCategoryAttributes(attributes, resolvedFloorCategory);
+        AddResolvedCategoryAttributes(attributes, resolvedCategory);
 
         return new ExportPolygon(polygons, attributes);
     }
 
-    private static void AddResolvedFloorCategoryAttributes(
+    private static void AddResolvedCategoryAttributes(
         IDictionary<string, object?> attributes,
-        ResolvedFloorCategory? resolvedFloorCategory)
+        ResolvedMappingCategory? resolvedCategory)
     {
         if (attributes is null)
         {
             throw new ArgumentNullException(nameof(attributes));
         }
 
-        if (resolvedFloorCategory == null)
+        if (resolvedCategory == null)
         {
             return;
         }
 
-        attributes["is_floor_derived"] = true;
-        attributes["source_floor_type_name"] = resolvedFloorCategory.FloorTypeName;
-        attributes["parsed_zone_candidate"] = resolvedFloorCategory.ParsedZoneCandidate;
-        attributes["is_unassigned"] = resolvedFloorCategory.IsUnassigned;
-        attributes["category_resolution_source"] = resolvedFloorCategory.ResolutionSource.ToString();
+        bool isFloor = string.Equals(resolvedCategory.SourceKind, "floor", StringComparison.OrdinalIgnoreCase);
+        bool isRoom = string.Equals(resolvedCategory.SourceKind, "room", StringComparison.OrdinalIgnoreCase);
+        attributes["is_floor_derived"] = isFloor;
+        attributes["is_room_derived"] = isRoom;
+        attributes["assignment_source_kind"] = resolvedCategory.SourceKind;
+        attributes["assignment_mapping_key"] = resolvedCategory.MappingKey;
+        attributes["assignment_parsed_candidate"] = resolvedCategory.ParsedCandidate;
+        attributes["assignment_parameter_name"] = resolvedCategory.ParameterName;
+        attributes["source_floor_type_name"] = isFloor ? resolvedCategory.MappingKey : null;
+        attributes["parsed_zone_candidate"] = resolvedCategory.ParsedCandidate;
+        attributes["is_unassigned"] = resolvedCategory.IsUnassigned;
+        attributes["category_resolution_source"] = resolvedCategory.ResolutionSource.ToString();
     }
 
 
@@ -538,6 +604,99 @@ public sealed class UnitExtractor
         return true;
     }
 
+
+
+
+    private bool TryExtractRoomPolygons(Room room, out List<Polygon2D> polygons)
+    {
+        polygons = null!;
+        SpatialElementBoundaryOptions options = new()
+        {
+            SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish,
+            StoreFreeBoundaryFaces = false,
+        };
+
+        IList<IList<BoundarySegment>>? loops = room.GetBoundarySegments(options);
+        if (loops == null || loops.Count == 0)
+        {
+            return false;
+        }
+
+        List<List<XYZ>> boundaryLoops = new();
+        foreach (IList<BoundarySegment> loop in loops)
+        {
+            List<XYZ> points = new();
+            foreach (BoundarySegment segment in loop)
+            {
+                Curve? curve = segment.GetCurve();
+                if (curve == null)
+                {
+                    continue;
+                }
+
+                IList<XYZ> tessellated = curve.Tessellate();
+                if (tessellated == null || tessellated.Count == 0)
+                {
+                    continue;
+                }
+
+                if (points.Count > 0)
+                {
+                    tessellated = tessellated.Skip(1).ToList();
+                }
+
+                points.AddRange(tessellated);
+            }
+
+            if (points.Count >= 3)
+            {
+                if (!points[0].IsAlmostEqualTo(points[points.Count - 1]))
+                {
+                    points.Add(points[0]);
+                }
+
+                boundaryLoops.Add(points);
+            }
+        }
+
+        if (boundaryLoops.Count == 0)
+        {
+            return false;
+        }
+
+        return BuildPolygonsFromLoops(boundaryLoops, out polygons);
+    }
+
+    private static string GetRoomCategoryValue(Room room, string roomCategoryParameterName)
+    {
+        string normalizedParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName)
+            ? "Name"
+            : roomCategoryParameterName.Trim();
+
+        if (string.Equals(normalizedParameterName, "Name", StringComparison.OrdinalIgnoreCase))
+        {
+            return room.Name?.Trim() ?? string.Empty;
+        }
+
+        if (string.Equals(normalizedParameterName, "Number", StringComparison.OrdinalIgnoreCase))
+        {
+            return room.Number?.Trim() ?? string.Empty;
+        }
+
+        Parameter? parameter = room.LookupParameter(normalizedParameterName);
+        if (parameter == null)
+        {
+            return room.Name?.Trim() ?? string.Empty;
+        }
+
+        string? value = parameter.AsString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            value = parameter.AsValueString();
+        }
+
+        return string.IsNullOrWhiteSpace(value) ? room.Name?.Trim() ?? string.Empty : value.Trim();
+    }
 
     private bool TryCreatePolygonFromCurveLoop(CurveLoop loop, out Polygon2D polygon)
     {

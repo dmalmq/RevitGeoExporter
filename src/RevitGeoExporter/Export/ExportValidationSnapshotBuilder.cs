@@ -58,7 +58,9 @@ public sealed class ExportValidationSnapshotBuilder
             session.FeatureTypes.HasFlag(ExportFeatureType.Detail),
             session.FeatureTypes.HasFlag(ExportFeatureType.Opening),
             session.FeatureTypes.HasFlag(ExportFeatureType.Level),
-            views);
+            views,
+            session.UnitSource,
+            session.RoomCategoryParameterName);
     }
 
     private static void AddLayerFeatures(
@@ -97,7 +99,9 @@ public sealed class ExportValidationSnapshotBuilder
             hasGeometry,
             geometryValid,
             ReadBool(feature.Attributes, "is_unassigned"),
-            ReadString(feature.Attributes, "source_floor_type_name"),
+            ReadString(feature.Attributes, "assignment_mapping_key") ?? ReadString(feature.Attributes, "source_floor_type_name"),
+            ReadString(feature.Attributes, "assignment_source_kind"),
+            ReadString(feature.Attributes, "assignment_parameter_name"),
             ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true));
     }
 

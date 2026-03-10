@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Help;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
@@ -26,6 +27,10 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
     private readonly CheckBox _diagnosticsCheckBox = new();
+    private readonly Label _unitSourceInlineLabel = new();
+    private readonly ComboBox _unitSourceComboBox = new();
+    private readonly Label _roomParameterInlineLabel = new();
+    private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
@@ -60,6 +65,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly List<ExportProfile> _profiles;
     private UiLanguage _language = UiLanguage.English;
     private bool _isApplyingProfile;
+    private UnitSource _unitSource = UnitSource.Floors;
+    private string _roomCategoryParameterName = "Name";
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
@@ -207,7 +214,7 @@ public sealed class ExportDialog : WinFormsForm
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
-        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 152f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 228f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
@@ -278,6 +285,24 @@ public sealed class ExportDialog : WinFormsForm
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _packageCheckBox.CheckedChanged += (_, _) => _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        _unitSourceInlineLabel.AutoSize = true;
+        _unitSourceComboBox.Width = 180;
+        _unitSourceComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Floors));
+        _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Rooms));
+        _unitSourceComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            _unitSource = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+        };
+
+        _roomParameterInlineLabel.AutoSize = true;
+        _roomCategoryParameterTextBox.Width = 180;
+        _roomCategoryParameterTextBox.TextChanged += (_, _) =>
+        {
+            string value = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim();
+            _roomCategoryParameterName = value.Length == 0 ? "Name" : value;
+        };
+
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
@@ -285,6 +310,10 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_diagnosticsCheckBox);
         featuresPanel.Controls.Add(_packageCheckBox);
         featuresPanel.Controls.Add(_packageLegendCheckBox);
+        featuresPanel.Controls.Add(_unitSourceInlineLabel);
+        featuresPanel.Controls.Add(_unitSourceComboBox);
+        featuresPanel.Controls.Add(_roomParameterInlineLabel);
+        featuresPanel.Controls.Add(_roomCategoryParameterTextBox);
         panel.Controls.Add(featuresPanel, 0, 5);
 
         _outputDirectoryLabel.Dock = DockStyle.Fill;
@@ -563,6 +592,10 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
+        _unitSource = settings.UnitSource;
+        _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
+        SelectUnitSource(_unitSource);
+        _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
         _packageCheckBox.Checked = settings.GeneratePackageOutput;
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -600,6 +633,9 @@ public sealed class ExportDialog : WinFormsForm
         _helpButton.Text = UiLanguageText.Select(_language, "Help", "Help");
         _packageCheckBox.Text = UiLanguageText.Select(_language, "Write GIS package", "Write GIS package");
         _packageLegendCheckBox.Text = UiLanguageText.Select(_language, "Include legend file", "Include legend file");
+        _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Source", "Unit Source");
+        _roomParameterInlineLabel.Text = UiLanguageText.Select(_language, "Room Category Parameter", "Room Category Parameter");
+        _unitSourceComboBox.Refresh();
     }
     private void SelectLanguage(UiLanguage language)
     {
@@ -694,7 +730,9 @@ public sealed class ExportDialog : WinFormsForm
             _packageLegendCheckBox.Checked,
             BuildGeometryRepairOptions(),
             (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name,
-            _language);
+            _language,
+            _unitSource,
+            _roomCategoryParameterName);
         DialogResult = DialogResult.OK;
         Close();
     }
@@ -729,7 +767,7 @@ public sealed class ExportDialog : WinFormsForm
             return;
         }
 
-        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, BuildGeometryRepairOptions(), _language));
+        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, BuildGeometryRepairOptions(), _language, _unitSource, _roomCategoryParameterName));
     }
     private void CheckAllViews()
     {
@@ -806,6 +844,20 @@ public sealed class ExportDialog : WinFormsForm
         UpdatePreviewButtonEnabled();
     }
 
+    private void SelectUnitSource(UnitSource source)
+    {
+        for (int i = 0; i < _unitSourceComboBox.Items.Count; i++)
+        {
+            if (_unitSourceComboBox.Items[i] is UnitSourceItem item && item.Source == source)
+            {
+                _unitSourceComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _unitSourceComboBox.SelectedIndex = 0;
+    }
+
     private void SelectPresetIfAvailable(int targetEpsg)
     {
         for (int i = 0; i < _crsPresetComboBox.Items.Count; i++)
@@ -837,6 +889,8 @@ public sealed class ExportDialog : WinFormsForm
             IncludePackageLegend = _packageLegendCheckBox.Checked,
             GeometryRepairOptions = BuildGeometryRepairOptions(),
             UiLanguage = _language,
+            UnitSource = _unitSource,
+            RoomCategoryParameterName = _roomCategoryParameterName,
         };
     }
 
@@ -888,13 +942,21 @@ public sealed class ExportDialog : WinFormsForm
             _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
-            _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
+            _unitSource = settings.UnitSource;
+        _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
+        SelectUnitSource(_unitSource);
+        _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
+        _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.Checked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
             _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
             LoadGeometryRepairOptions(settings.GeometryRepairOptions);
             SelectPresetIfAvailable(settings.TargetEpsg);
             SelectLanguage(settings.UiLanguage);
+            _unitSource = settings.UnitSource;
+            _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
+            SelectUnitSource(_unitSource);
+            _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
         }
         finally
         {
@@ -1090,6 +1152,22 @@ public sealed class ExportDialog : WinFormsForm
         public override string ToString()
         {
             return $"EPSG:{Epsg} - {ZoneName}";
+        }
+    }
+
+
+    private sealed class UnitSourceItem
+    {
+        public UnitSourceItem(UnitSource source)
+        {
+            Source = source;
+        }
+
+        public UnitSource Source { get; }
+
+        public override string ToString()
+        {
+            return Source == UnitSource.Rooms ? "Rooms" : "Floors";
         }
     }
 

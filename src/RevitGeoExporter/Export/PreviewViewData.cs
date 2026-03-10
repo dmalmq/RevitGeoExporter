@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Export;
 
@@ -14,7 +15,9 @@ public sealed class PreviewViewData
         IReadOnlyList<PreviewUnassignedFloorGroup> unassignedFloors,
         IReadOnlyList<string> warnings,
         IReadOnlyList<string> availableSourceLabels,
-        Bounds2D bounds)
+        Bounds2D bounds,
+        UnitSource unitSource,
+        string roomCategoryParameterName)
     {
         ViewId = viewId;
         ViewName = viewName ?? throw new ArgumentNullException(nameof(viewName));
@@ -24,6 +27,8 @@ public sealed class PreviewViewData
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
         AvailableSourceLabels = availableSourceLabels ?? throw new ArgumentNullException(nameof(availableSourceLabels));
         Bounds = bounds;
+        UnitSource = unitSource;
+        RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
     }
 
     public long ViewId { get; }
@@ -41,4 +46,8 @@ public sealed class PreviewViewData
     public IReadOnlyList<string> AvailableSourceLabels { get; }
 
     public Bounds2D Bounds { get; }
+
+    public UnitSource UnitSource { get; }
+
+    public string RoomCategoryParameterName { get; }
 }

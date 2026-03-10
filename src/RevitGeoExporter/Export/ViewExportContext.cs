@@ -11,6 +11,7 @@ public sealed class ViewExportContext
         ViewPlan view,
         Level level,
         IReadOnlyList<Floor> floors,
+        IReadOnlyList<Room> rooms,
         IReadOnlyList<Stairs> stairs,
         IReadOnlyList<FamilyInstance> familyUnits,
         IReadOnlyList<FamilyInstance> openings,
@@ -20,6 +21,7 @@ public sealed class ViewExportContext
         View = view ?? throw new ArgumentNullException(nameof(view));
         Level = level ?? throw new ArgumentNullException(nameof(level));
         Floors = floors ?? throw new ArgumentNullException(nameof(floors));
+        Rooms = rooms ?? throw new ArgumentNullException(nameof(rooms));
         Stairs = stairs ?? throw new ArgumentNullException(nameof(stairs));
         FamilyUnits = familyUnits ?? throw new ArgumentNullException(nameof(familyUnits));
         Openings = openings ?? throw new ArgumentNullException(nameof(openings));
@@ -32,6 +34,8 @@ public sealed class ViewExportContext
     public Level Level { get; }
 
     public IReadOnlyList<Floor> Floors { get; }
+
+    public IReadOnlyList<Room> Rooms { get; }
 
     public IReadOnlyList<Stairs> Stairs { get; }
 

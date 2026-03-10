@@ -18,10 +18,11 @@ public sealed class PreviewFeatureData
         string? sourceLabel,
         string fillColorHex,
         string strokeColorHex,
-        bool isFloorDerived = false,
-        string? floorTypeName = null,
-        string? parsedZoneCandidate = null,
-        bool isUnassignedFloor = false,
+        string? assignmentSourceKind = null,
+        string? assignmentMappingKey = null,
+        string? assignmentParsedCandidate = null,
+        string? assignmentParameterName = null,
+        bool isUnassigned = false,
         FloorCategoryResolutionSource? categoryResolutionSource = null,
         bool hasWarning = false)
     {
@@ -32,13 +33,14 @@ public sealed class PreviewFeatureData
         Category = category;
         Restriction = restriction;
         Name = name;
-        SourceLabel = string.IsNullOrWhiteSpace(sourceLabel) ? null : sourceLabel!.Trim();
+        SourceLabel = string.IsNullOrWhiteSpace(sourceLabel) ? null : sourceLabel.Trim();
         FillColorHex = fillColorHex ?? throw new ArgumentNullException(nameof(fillColorHex));
         StrokeColorHex = strokeColorHex ?? throw new ArgumentNullException(nameof(strokeColorHex));
-        IsFloorDerived = isFloorDerived;
-        FloorTypeName = string.IsNullOrWhiteSpace(floorTypeName) ? null : floorTypeName!.Trim();
-        ParsedZoneCandidate = string.IsNullOrWhiteSpace(parsedZoneCandidate) ? null : parsedZoneCandidate!.Trim();
-        IsUnassignedFloor = isUnassignedFloor;
+        AssignmentSourceKind = string.IsNullOrWhiteSpace(assignmentSourceKind) ? null : assignmentSourceKind.Trim();
+        AssignmentMappingKey = string.IsNullOrWhiteSpace(assignmentMappingKey) ? null : assignmentMappingKey.Trim();
+        AssignmentParsedCandidate = string.IsNullOrWhiteSpace(assignmentParsedCandidate) ? null : assignmentParsedCandidate.Trim();
+        AssignmentParameterName = string.IsNullOrWhiteSpace(assignmentParameterName) ? null : assignmentParameterName.Trim();
+        IsUnassigned = isUnassigned;
         CategoryResolutionSource = categoryResolutionSource;
         HasWarning = hasWarning;
     }
@@ -63,21 +65,40 @@ public sealed class PreviewFeatureData
 
     public string StrokeColorHex { get; }
 
-    public bool IsFloorDerived { get; }
+    public string? AssignmentSourceKind { get; }
 
-    public string? FloorTypeName { get; }
+    public string? AssignmentMappingKey { get; }
 
-    public string? ParsedZoneCandidate { get; }
+    public string? AssignmentParsedCandidate { get; }
 
-    public bool IsUnassignedFloor { get; }
+    public string? AssignmentParameterName { get; }
+
+    public bool IsUnassigned { get; }
 
     public FloorCategoryResolutionSource? CategoryResolutionSource { get; }
 
     public bool HasWarning { get; }
 
-    public bool UsesFloorCategoryOverride => CategoryResolutionSource == FloorCategoryResolutionSource.Override;
+    public bool UsesCategoryOverride => CategoryResolutionSource == FloorCategoryResolutionSource.Override;
 
-    public bool SupportsFloorCategoryAssignment => IsFloorDerived && (IsUnassignedFloor || UsesFloorCategoryOverride);
+    public bool SupportsCategoryAssignment =>
+        FeatureType == ExportFeatureType.Unit &&
+        !string.IsNullOrWhiteSpace(AssignmentMappingKey) &&
+        (IsUnassigned || UsesCategoryOverride);
+
+    public bool IsFloorDerived => string.Equals(AssignmentSourceKind, "floor", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsRoomDerived => string.Equals(AssignmentSourceKind, "room", StringComparison.OrdinalIgnoreCase);
+
+    public string? FloorTypeName => AssignmentMappingKey;
+
+    public string? ParsedZoneCandidate => AssignmentParsedCandidate;
+
+    public bool IsUnassignedFloor => IsUnassigned;
+
+    public bool UsesFloorCategoryOverride => UsesCategoryOverride;
+
+    public bool SupportsFloorCategoryAssignment => SupportsCategoryAssignment;
 
     public string SearchText =>
         string.Join(
@@ -89,8 +110,9 @@ public sealed class PreviewFeatureData
                 Restriction,
                 Name,
                 SourceLabel,
-                FloorTypeName,
-                ParsedZoneCandidate,
+                AssignmentMappingKey,
+                AssignmentParsedCandidate,
+                AssignmentParameterName,
                 ExportId,
             }.Where(value => !string.IsNullOrWhiteSpace(value)));
 }

@@ -81,6 +81,8 @@ public sealed class FloorExportDataPreparer
 
         IReadOnlyDictionary<string, string> floorCategoryOverrides =
             options?.FloorCategoryOverrides ?? EmptyOverrides();
+        IReadOnlyDictionary<string, string> roomCategoryOverrides =
+            options?.RoomCategoryOverrides ?? EmptyOverrides();
         IReadOnlyDictionary<string, string> familyCategoryOverrides =
             options?.FamilyCategoryOverrides ?? EmptyOverrides();
         IReadOnlyList<string> acceptedOpeningFamilies =
@@ -88,6 +90,7 @@ public sealed class FloorExportDataPreparer
         GeometryRepairOptions geometryRepairOptions =
             (options?.GeometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         FloorCategoryResolver floorCategoryResolver = new(_zoneCatalog, floorCategoryOverrides);
+        RoomCategoryResolver roomCategoryResolver = new(_zoneCatalog, roomCategoryOverrides);
         IReadOnlyList<ViewExportContext> contexts =
             options?.ViewContexts ?? _contextProvider.BuildContexts(
                 exportViews,
@@ -110,6 +113,7 @@ public sealed class FloorExportDataPreparer
             metadataProvider,
             sourceModelName,
             floorCategoryResolver,
+            roomCategoryResolver,
             familyCategoryOverrides);
         DetailExtractor detailExtractor = new(_document, geometryRepairOptions);
         OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions);
@@ -134,7 +138,20 @@ public sealed class FloorExportDataPreparer
             if (NeedsUnitContext(featureTypes))
             {
                 ExportLayer rawUnitLayer = LayerDefinition.CreateUnitLayer();
-                AddFloorUnits(levelId, context.Floors, unitExtractor, rawUnitLayer, viewWarnings);
+                if ((options?.UnitSource ?? UnitSource.Floors) == UnitSource.Rooms)
+                {
+                    AddRoomUnits(
+                        levelId,
+                        context.Rooms,
+                        unitExtractor,
+                        rawUnitLayer,
+                        options?.RoomCategoryParameterName ?? "Name",
+                        viewWarnings);
+                }
+                else
+                {
+                    AddFloorUnits(levelId, context.Floors, unitExtractor, rawUnitLayer, viewWarnings);
+                }
 
                 if (!RawFloorOnlyDebugMode)
                 {
@@ -247,6 +264,27 @@ public sealed class FloorExportDataPreparer
         return featureTypes.HasFlag(ExportFeatureType.Unit) ||
                featureTypes.HasFlag(ExportFeatureType.Opening) ||
                featureTypes.HasFlag(ExportFeatureType.Level);
+    }
+
+
+    private static void AddRoomUnits(
+        string levelId,
+        IReadOnlyList<Room> rooms,
+        UnitExtractor extractor,
+        ExportLayer unitLayer,
+        string roomCategoryParameterName,
+        ICollection<string> warnings)
+    {
+        foreach (Room room in rooms)
+        {
+            if (!extractor.TryCreateRoomUnit(room, levelId, roomCategoryParameterName, warnings, out ExportPolygon? feature) ||
+                feature == null)
+            {
+                continue;
+            }
+
+            unitLayer.AddFeature(feature);
+        }
     }
 
     private static void AddFloorUnits(

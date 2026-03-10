@@ -193,6 +193,8 @@ public sealed class ExportProfileStore
             IncludePackageLegend = profile.IncludePackageLegend,
             GeometryRepairOptions = profile.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = profile.UiLanguage,
+            UnitSource = profile.UnitSource,
+            RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
         };
     }
 

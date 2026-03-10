@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.UI;
 
@@ -23,4 +24,8 @@ public sealed class ExportDialogSettings
     public GeometryRepairOptions GeometryRepairOptions { get; set; } = new();
 
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
+
+    public UnitSource UnitSource { get; set; } = UnitSource.Floors;
+
+    public string RoomCategoryParameterName { get; set; } = "Name";
 }

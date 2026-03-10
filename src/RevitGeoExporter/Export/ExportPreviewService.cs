@@ -20,17 +20,24 @@ public sealed class ExportPreviewService
     private readonly PreviewExportMetadataProvider _metadataProvider;
     private readonly PreviewPaletteResolver _paletteResolver;
     private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
+    private readonly RoomCategoryOverrideStore _roomCategoryOverrideStore;
     private readonly FamilyCategoryOverrideStore _familyCategoryOverrideStore;
     private readonly AcceptedOpeningFamilyStore _acceptedOpeningFamilyStore;
-    private readonly PreviewFloorAssignmentSession _assignmentSession;
+    private readonly PreviewCategoryAssignmentSession _assignmentSession;
     private readonly IReadOnlyList<string> _loadWarnings;
     private readonly string _projectKey;
-    private readonly IReadOnlyList<string> _supportedFloorCategories;
+    private readonly IReadOnlyList<string> _supportedCategories;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly IReadOnlyList<string> _acceptedOpeningFamilies;
     private readonly GeometryRepairOptions _geometryRepairOptions;
+    private readonly UnitSource _unitSource;
+    private readonly string _roomCategoryParameterName;
 
-    public ExportPreviewService(Document document, GeometryRepairOptions? geometryRepairOptions = null)
+    public ExportPreviewService(
+        Document document,
+        UnitSource unitSource = UnitSource.Floors,
+        string roomCategoryParameterName = "Name",
+        GeometryRepairOptions? geometryRepairOptions = null)
     {
         if (document is null)
         {
@@ -39,44 +46,60 @@ public sealed class ExportPreviewService
 
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
         _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
+        _roomCategoryOverrideStore = new RoomCategoryOverrideStore();
         _familyCategoryOverrideStore = new FamilyCategoryOverrideStore();
         _acceptedOpeningFamilyStore = new AcceptedOpeningFamilyStore();
+        _unitSource = unitSource;
+        _roomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         _projectKey = DocumentProjectKeyBuilder.Create(document);
-        LoadResult<IReadOnlyDictionary<string, string>> overrideLoad =
+        LoadResult<IReadOnlyDictionary<string, string>> floorOverrideLoad =
             _floorCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
+        LoadResult<IReadOnlyDictionary<string, string>> roomOverrideLoad =
+            _roomCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
         LoadResult<IReadOnlyDictionary<string, string>> familyOverrideLoad =
             _familyCategoryOverrideStore.LoadWithDiagnostics(_projectKey);
         LoadResult<IReadOnlyList<string>> acceptedOpeningLoad =
             _acceptedOpeningFamilyStore.LoadWithDiagnostics(_projectKey);
-        _assignmentSession = new PreviewFloorAssignmentSession(overrideLoad.Value);
+        _assignmentSession = new PreviewCategoryAssignmentSession(
+            unitSource == UnitSource.Rooms ? roomOverrideLoad.Value : floorOverrideLoad.Value);
         _familyCategoryOverrides = familyOverrideLoad.Value;
         _acceptedOpeningFamilies = acceptedOpeningLoad.Value;
-        _loadWarnings = overrideLoad.Warnings
+        _loadWarnings = floorOverrideLoad.Warnings
+            .Concat(roomOverrideLoad.Warnings)
             .Concat(familyOverrideLoad.Warnings)
             .Concat(acceptedOpeningLoad.Warnings)
             .ToList();
         _preparer = new FloorExportDataPreparer(document, zoneCatalog);
         _metadataProvider = new PreviewExportMetadataProvider();
         _paletteResolver = new PreviewPaletteResolver();
-        _supportedFloorCategories = new FloorCategoryResolver(zoneCatalog).SupportedCategories;
+        _supportedCategories = unitSource == UnitSource.Rooms
+            ? new RoomCategoryResolver(zoneCatalog).SupportedCategories
+            : new FloorCategoryResolver(zoneCatalog).SupportedCategories;
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
     {
-        return _supportedFloorCategories;
+        return _supportedCategories;
+    }
+
+    public string GetAssignmentSourceLabel()
+    {
+        return _unitSource == UnitSource.Rooms
+            ? $"Room Values ({_roomCategoryParameterName})"
+            : "Floor Types";
     }
 
     public bool HasPendingFloorCategoryChanges => _assignmentSession.HasPendingChanges;
 
-    public void StageFloorCategoryOverride(string floorTypeName, string category)
+    public void StageFloorCategoryOverride(string key, string category)
     {
-        _assignmentSession.StageOverride(floorTypeName, category);
+        _assignmentSession.StageOverride(key, category);
     }
 
-    public void StageClearFloorCategoryOverride(string floorTypeName)
+    public void StageClearFloorCategoryOverride(string key)
     {
-        _assignmentSession.StageClearOverride(floorTypeName);
+        _assignmentSession.StageClearOverride(key);
     }
 
     public void ApplyPendingFloorCategoryOverrides()
@@ -87,6 +110,12 @@ public sealed class ExportPreviewService
         }
 
         IReadOnlyDictionary<string, string> savedOverrides = _assignmentSession.ApplyPendingChanges();
+        if (_unitSource == UnitSource.Rooms)
+        {
+            _roomCategoryOverrideStore.Save(_projectKey, savedOverrides);
+            return;
+        }
+
         _floorCategoryOverrideStore.Save(_projectKey, savedOverrides);
     }
 
@@ -114,11 +143,14 @@ public sealed class ExportPreviewService
             _metadataProvider,
             new FloorExportPreparationOptions
             {
-                FloorCategoryOverrides = _assignmentSession.GetEffectiveOverrides(),
+                FloorCategoryOverrides = _unitSource == UnitSource.Floors ? _assignmentSession.GetEffectiveOverrides() : null,
+                RoomCategoryOverrides = _unitSource == UnitSource.Rooms ? _assignmentSession.GetEffectiveOverrides() : null,
                 FamilyCategoryOverrides = _familyCategoryOverrides,
                 AcceptedOpeningFamilies = _acceptedOpeningFamilies,
                 InitialWarnings = _loadWarnings,
                 GeometryRepairOptions = _geometryRepairOptions,
+                UnitSource = _unitSource,
+                RoomCategoryParameterName = _roomCategoryParameterName,
             });
         List<PreviewFeatureData> features = new();
 
@@ -140,9 +172,10 @@ public sealed class ExportPreviewService
                         ReadNullableString(feature.Attributes, "source_label"),
                         _paletteResolver.ResolveFillColor(category, fallbackFillColor),
                         UnitStrokeColorHex,
-                        ReadBool(feature.Attributes, "is_floor_derived"),
-                        ReadNullableString(feature.Attributes, "source_floor_type_name"),
-                        ReadNullableString(feature.Attributes, "parsed_zone_candidate"),
+                        ReadNullableString(feature.Attributes, "assignment_source_kind"),
+                        ReadNullableString(feature.Attributes, "assignment_mapping_key") ?? ReadNullableString(feature.Attributes, "source_floor_type_name"),
+                        ReadNullableString(feature.Attributes, "assignment_parsed_candidate") ?? ReadNullableString(feature.Attributes, "parsed_zone_candidate"),
+                        ReadNullableString(feature.Attributes, "assignment_parameter_name"),
                         ReadBool(feature.Attributes, "is_unassigned"),
                         ReadResolutionSource(feature.Attributes, "category_resolution_source"),
                         ReadBool(feature.Attributes, "is_unassigned")));
@@ -210,16 +243,21 @@ public sealed class ExportPreviewService
         Bounds2D bounds = FeatureBoundsCalculator.FromFeatures(features.Select(x => x.Feature));
         List<PreviewUnassignedFloorGroup> unassignedFloors = features
             .Where(feature => feature.FeatureType == ExportFeatureType.Unit &&
-                              feature.IsFloorDerived &&
-                              feature.IsUnassignedFloor &&
-                              !string.IsNullOrWhiteSpace(feature.FloorTypeName))
-            .GroupBy(feature => feature.FloorTypeName!, StringComparer.Ordinal)
-            .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(group => new PreviewUnassignedFloorGroup(
-                group.Key,
-                group.Select(feature => feature.ParsedZoneCandidate)
-                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
-                group.Count()))
+                              feature.IsUnassigned &&
+                              !string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
+            .GroupBy(feature => $"{feature.AssignmentSourceKind}|{feature.AssignmentParameterName}|{feature.AssignmentMappingKey}", StringComparer.Ordinal)
+            .OrderBy(group => group.First().AssignmentMappingKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                PreviewFeatureData first = group.First();
+                return new PreviewUnassignedFloorGroup(
+                    first.AssignmentMappingKey!,
+                    group.Select(feature => feature.AssignmentParsedCandidate)
+                        .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+                    group.Count(),
+                    first.AssignmentSourceKind ?? (_unitSource == UnitSource.Rooms ? "room" : "floor"),
+                    first.AssignmentParameterName);
+            })
             .ToList();
         List<string> sourceLabels = features
             .Select(feature => feature.SourceLabel)
@@ -236,7 +274,9 @@ public sealed class ExportPreviewService
             unassignedFloors,
             prepared.Warnings,
             sourceLabels,
-            bounds);
+            bounds,
+            _unitSource,
+            _roomCategoryParameterName);
     }
 
     private static string ReadString(IReadOnlyDictionary<string, object?> attributes, string key)
@@ -295,8 +335,12 @@ public sealed class ExportPreviewService
         IReadOnlyDictionary<string, object?> attributes,
         string key)
     {
-        string? value = ReadNullableString(attributes, key);
-        return Enum.TryParse(value, ignoreCase: true, out FloorCategoryResolutionSource parsed)
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return Enum.TryParse(value.ToString(), ignoreCase: true, out FloorCategoryResolutionSource parsed)
             ? parsed
             : null;
     }
