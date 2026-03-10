@@ -17,6 +17,7 @@ public sealed class SharedParameterManager
     private static readonly BuiltInCategory[] UnitIdCategories =
     {
         BuiltInCategory.OST_Floors,
+        BuiltInCategory.OST_Rooms,
         BuiltInCategory.OST_Stairs,
         BuiltInCategory.OST_GenericModel,
         BuiltInCategory.OST_Doors,
@@ -26,6 +27,7 @@ public sealed class SharedParameterManager
     private static readonly BuiltInCategory[] UnitNameCategories =
     {
         BuiltInCategory.OST_Floors,
+        BuiltInCategory.OST_Rooms,
         BuiltInCategory.OST_Stairs,
         BuiltInCategory.OST_GenericModel,
     };

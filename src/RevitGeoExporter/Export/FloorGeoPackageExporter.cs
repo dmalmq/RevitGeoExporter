@@ -29,6 +29,8 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
         string? baselineKey = null,
+        UnitSource unitSource = UnitSource.Floors,
+        string roomCategoryParameterName = "Name",
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
@@ -39,7 +41,9 @@ public sealed class FloorGeoPackageExporter
             geometryRepairOptions,
             packageOptions,
             profileName,
-            baselineKey);
+            baselineKey,
+            unitSource,
+            roomCategoryParameterName);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -51,7 +55,9 @@ public sealed class FloorGeoPackageExporter
         GeometryRepairOptions? geometryRepairOptions = null,
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
-        string? baselineKey = null)
+        string? baselineKey = null,
+        UnitSource unitSource = UnitSource.Floors,
+        string roomCategoryParameterName = "Name")
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -89,6 +95,10 @@ public sealed class FloorGeoPackageExporter
         var overrideLoad = floorCategoryOverrideStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(overrideLoad.Warnings);
 
+        RoomCategoryOverrideStore roomCategoryOverrideStore = new();
+        var roomOverrideLoad = roomCategoryOverrideStore.LoadWithDiagnostics(projectKey);
+        setupWarnings.AddRange(roomOverrideLoad.Warnings);
+
         FamilyCategoryOverrideStore familyCategoryOverrideStore = new();
         var familyOverrideLoad = familyCategoryOverrideStore.LoadWithDiagnostics(projectKey);
         setupWarnings.AddRange(familyOverrideLoad.Warnings);
@@ -117,9 +127,12 @@ public sealed class FloorGeoPackageExporter
             new FloorExportPreparationOptions
             {
                 FloorCategoryOverrides = overrideLoad.Value,
+                RoomCategoryOverrides = roomOverrideLoad.Value,
                 FamilyCategoryOverrides = familyOverrideLoad.Value,
                 AcceptedOpeningFamilies = acceptedOpeningLoad.Value,
                 GeometryRepairOptions = effectiveGeometryRepairOptions,
+                UnitSource = unitSource,
+                RoomCategoryParameterName = roomCategoryParameterName,
                 ViewContexts = contexts,
             });
 
@@ -136,11 +149,14 @@ public sealed class FloorGeoPackageExporter
             contexts,
             resultWithSetupWarnings,
             overrideLoad.Value,
+            roomOverrideLoad.Value,
             effectiveGeometryRepairOptions,
             effectivePackageOptions,
             profileName,
             string.IsNullOrWhiteSpace(baselineKey) ? projectKey : baselineKey!,
-            sourceModelName);
+            sourceModelName,
+            unitSource,
+            roomCategoryParameterName);
     }
 
     public FloorGeoPackageExportResult WritePreparedExport(
@@ -291,6 +307,7 @@ public sealed class FloorGeoPackageExporter
         foreach (ViewExportContext context in contexts)
         {
             AddUniqueElements(uniqueElements, context.Floors);
+            AddUniqueElements(uniqueElements, context.Rooms);
             AddUniqueElements(uniqueElements, context.Stairs);
             AddUniqueElements(uniqueElements, context.FamilyUnits);
             AddUniqueElements(uniqueElements, context.Openings);

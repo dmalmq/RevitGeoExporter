@@ -39,3 +39,10 @@ Output:
 
 - Revit must be restarted after install/uninstall.
 - If Revit 2024 is not detected, the installer prompts for confirmation before continuing.
+
+## Examples
+
+The installer also places importable starter room-mapping JSON files under:
+- `C:\ProgramData\Autodesk\Revit\Addins\2024\RevitGeoExporter\Examples\`
+
+These can be imported from the exporter project mappings flow as a baseline for room-to-unit categorization.

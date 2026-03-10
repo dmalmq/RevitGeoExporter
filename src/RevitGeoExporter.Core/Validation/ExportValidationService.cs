@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Core.Validation;
 
 public sealed class ExportValidationService
 {
     private readonly VerticalCirculationAudit _verticalCirculationAudit = new();
+    private readonly ZoneCatalog _zoneCatalog = ZoneCatalog.CreateDefault();
 
     public ExportValidationResult Validate(ExportValidationRequest request)
     {
@@ -41,7 +43,7 @@ public sealed class ExportValidationService
                 continue;
             }
 
-            AddFeatureIssues(issues, view, features, globalSeenIds, globalDuplicateIds);
+            AddFeatureIssues(issues, view, features, globalSeenIds, globalDuplicateIds, request.UnitSource, request.RoomCategoryParameterName);
             AddUnsupportedOpeningIssues(issues, view);
             AddVerticalAuditIssues(issues, request, view);
 
@@ -59,12 +61,14 @@ public sealed class ExportValidationService
         return new ExportValidationResult(issues);
     }
 
-    private static void AddFeatureIssues(
+    private void AddFeatureIssues(
         ICollection<ValidationIssue> issues,
         ValidationViewSnapshot view,
         IReadOnlyList<ExportFeatureValidationSnapshot> features,
         ISet<string> globalSeenIds,
-        ISet<string> globalDuplicateIds)
+        ISet<string> globalDuplicateIds,
+        UnitSource unitSource,
+        string roomCategoryParameterName)
     {
         foreach (ExportFeatureValidationSnapshot feature in features)
         {
@@ -122,13 +126,31 @@ public sealed class ExportValidationService
                     feature.SourceElementId));
             }
 
-            if (feature.IsUnassignedFloor)
+            if (feature.IsUnassigned)
             {
-                string label = feature.FloorTypeName ?? "<unknown floor type>";
+                string label = feature.AssignmentMappingKey ?? "<unknown mapping value>";
+                string noun = unitSource == UnitSource.Rooms
+                    ? $"Room-based unit value '{label}' for parameter '{roomCategoryParameterName}'"
+                    : $"Floor-derived unit '{label}'";
                 issues.Add(new ValidationIssue(
                     ValidationSeverity.Warning,
                     ValidationCode.UnassignedFloorCategory,
-                    $"Floor-derived unit '{label}' in view '{view.ViewName}' is still unassigned.",
+                    $"{noun} in view '{view.ViewName}' is still unassigned.",
+                    view.ViewName,
+                    view.LevelName,
+                    feature.FeatureType,
+                    feature.Category,
+                    feature.SourceElementId));
+            }
+
+            if (string.Equals(feature.FeatureType, "unit", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(feature.Category) &&
+                !ImdfUnitCategoryCatalog.IsOfficialCategory(feature.Category))
+            {
+                issues.Add(new ValidationIssue(
+                    ValidationSeverity.Warning,
+                    ValidationCode.NonStandardUnitCategory,
+                    $"Unit category '{feature.Category}' in view '{view.ViewName}' is not an official IMDF unit category.",
                     view.ViewName,
                     view.LevelName,
                     feature.FeatureType,

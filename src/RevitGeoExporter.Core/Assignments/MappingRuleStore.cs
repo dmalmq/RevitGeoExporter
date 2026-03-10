@@ -146,7 +146,7 @@ public sealed class MappingRuleStore
             warnings);
 
         return new LoadResult<ProjectMappingRules>(
-            ProjectMappingRules.Create(floorOverrides, familyOverrides, acceptedOpenings),
+            ProjectMappingRules.Create(floorOverrides, null, familyOverrides, acceptedOpenings),
             warnings);
     }
 
@@ -273,3 +273,4 @@ public sealed class MappingRuleStore
         public List<string>? Families { get; set; }
     }
 }
+

@@ -55,6 +55,8 @@ public sealed class SettingsDialog : Form
             IncludePackageLegend = _original.IncludePackageLegend,
             GeometryRepairOptions = _original.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = _language,
+            UnitSource = _original.UnitSource,
+            RoomCategoryParameterName = _original.RoomCategoryParameterName,
         };
     }
 

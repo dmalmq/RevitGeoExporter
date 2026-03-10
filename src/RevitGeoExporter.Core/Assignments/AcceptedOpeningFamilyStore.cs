@@ -35,6 +35,7 @@ public sealed class AcceptedOpeningFamilyStore
         ProjectMappingRules current = _mappingRuleStore.Load(projectKey);
         ProjectMappingRules updated = ProjectMappingRules.Create(
             current.FloorCategoryOverrides,
+            current.RoomCategoryOverrides,
             current.FamilyCategoryOverrides,
             NormalizeFamilies(families));
         _mappingRuleStore.Save(projectKey, updated);
@@ -49,5 +50,4 @@ public sealed class AcceptedOpeningFamilyStore
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
-
 }

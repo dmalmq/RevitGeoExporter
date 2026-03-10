@@ -5,13 +5,15 @@ namespace RevitGeoExporter.Export;
 public sealed class PreviewUnassignedFloorGroup
 {
     public PreviewUnassignedFloorGroup(
-        string floorTypeName,
-        string? parsedZoneCandidate,
-        int unitCount)
+        string mappingKey,
+        string? parsedCandidate,
+        int unitCount,
+        string sourceKind,
+        string? parameterName)
     {
-        if (string.IsNullOrWhiteSpace(floorTypeName))
+        if (string.IsNullOrWhiteSpace(mappingKey))
         {
-            throw new ArgumentException("Floor type name is required.", nameof(floorTypeName));
+            throw new ArgumentException("A mapping key is required.", nameof(mappingKey));
         }
 
         if (unitCount < 0)
@@ -19,14 +21,24 @@ public sealed class PreviewUnassignedFloorGroup
             throw new ArgumentOutOfRangeException(nameof(unitCount));
         }
 
-        FloorTypeName = floorTypeName.Trim();
-        ParsedZoneCandidate = string.IsNullOrWhiteSpace(parsedZoneCandidate) ? null : parsedZoneCandidate!.Trim();
+        MappingKey = mappingKey.Trim();
+        ParsedCandidate = string.IsNullOrWhiteSpace(parsedCandidate) ? null : parsedCandidate.Trim();
         UnitCount = unitCount;
+        SourceKind = string.IsNullOrWhiteSpace(sourceKind) ? "floor" : sourceKind.Trim();
+        ParameterName = string.IsNullOrWhiteSpace(parameterName) ? null : parameterName.Trim();
     }
 
-    public string FloorTypeName { get; }
+    public string MappingKey { get; }
 
-    public string? ParsedZoneCandidate { get; }
+    public string? ParsedCandidate { get; }
 
     public int UnitCount { get; }
+
+    public string SourceKind { get; }
+
+    public string? ParameterName { get; }
+
+    public string FloorTypeName => MappingKey;
+
+    public string? ParsedZoneCandidate => ParsedCandidate;
 }

@@ -10,16 +10,19 @@ public sealed class ProjectMappingRules
         Array.Empty<MappingRule>(),
         new Dictionary<string, string>(StringComparer.Ordinal),
         new Dictionary<string, string>(StringComparer.Ordinal),
+        new Dictionary<string, string>(StringComparer.Ordinal),
         Array.Empty<string>());
 
     private ProjectMappingRules(
         IReadOnlyList<MappingRule> rules,
         IReadOnlyDictionary<string, string> floorCategoryOverrides,
+        IReadOnlyDictionary<string, string> roomCategoryOverrides,
         IReadOnlyDictionary<string, string> familyCategoryOverrides,
         IReadOnlyList<string> acceptedOpeningFamilies)
     {
         Rules = rules;
         FloorCategoryOverrides = floorCategoryOverrides;
+        RoomCategoryOverrides = roomCategoryOverrides;
         FamilyCategoryOverrides = familyCategoryOverrides;
         AcceptedOpeningFamilies = acceptedOpeningFamilies;
     }
@@ -28,12 +31,15 @@ public sealed class ProjectMappingRules
 
     public IReadOnlyDictionary<string, string> FloorCategoryOverrides { get; }
 
+    public IReadOnlyDictionary<string, string> RoomCategoryOverrides { get; }
+
     public IReadOnlyDictionary<string, string> FamilyCategoryOverrides { get; }
 
     public IReadOnlyList<string> AcceptedOpeningFamilies { get; }
 
     public static ProjectMappingRules Create(
         IReadOnlyDictionary<string, string>? floorCategoryOverrides,
+        IReadOnlyDictionary<string, string>? roomCategoryOverrides,
         IReadOnlyDictionary<string, string>? familyCategoryOverrides,
         IReadOnlyList<string>? acceptedOpeningFamilies)
     {
@@ -43,19 +49,24 @@ public sealed class ProjectMappingRules
             floorCategoryOverrides,
             MappingRuleType.FloorCategory,
             rules);
+        Dictionary<string, string> room = NormalizeMappings(
+            roomCategoryOverrides,
+            MappingRuleType.RoomCategory,
+            rules);
         Dictionary<string, string> family = NormalizeMappings(
             familyCategoryOverrides,
             MappingRuleType.FamilyCategory,
             rules);
         List<string> openings = NormalizeAcceptedOpeningFamilies(acceptedOpeningFamilies, rules);
 
-        return new ProjectMappingRules(rules, floor, family, openings);
+        return new ProjectMappingRules(rules, floor, room, family, openings);
     }
 
     public static ProjectMappingRules FromRules(IEnumerable<MappingRule>? rules)
     {
         List<MappingRule> normalizedRules = new();
         Dictionary<string, string> floor = new(StringComparer.Ordinal);
+        Dictionary<string, string> room = new(StringComparer.Ordinal);
         Dictionary<string, string> family = new(StringComparer.Ordinal);
         HashSet<string> openings = new(StringComparer.Ordinal);
 
@@ -70,39 +81,29 @@ public sealed class ProjectMappingRules
             switch (normalized.RuleType)
             {
                 case MappingRuleType.FloorCategory:
-                    if (string.IsNullOrWhiteSpace(normalized.ResolvedValue))
+                    if (TryAddResolvedRule(normalized, floor, normalizedRules))
                     {
-                        continue;
                     }
 
-                    floor[normalized.MatchValue] = normalized.ResolvedValue!;
-                    normalizedRules.Add(new MappingRule
+                    break;
+                case MappingRuleType.RoomCategory:
+                    if (TryAddResolvedRule(normalized, room, normalizedRules))
                     {
-                        RuleType = normalized.RuleType,
-                        MatchValue = normalized.MatchValue,
-                        ResolvedValue = normalized.ResolvedValue,
-                    });
+                    }
+
                     break;
                 case MappingRuleType.FamilyCategory:
-                    if (string.IsNullOrWhiteSpace(normalized.ResolvedValue))
+                    if (TryAddResolvedRule(normalized, family, normalizedRules))
                     {
-                        continue;
                     }
 
-                    family[normalized.MatchValue] = normalized.ResolvedValue!;
-                    normalizedRules.Add(new MappingRule
-                    {
-                        RuleType = normalized.RuleType,
-                        MatchValue = normalized.MatchValue,
-                        ResolvedValue = normalized.ResolvedValue,
-                    });
                     break;
                 case MappingRuleType.AcceptedOpeningFamily:
                     if (openings.Add(normalized.MatchValue))
                     {
                         normalizedRules.Add(new MappingRule
                         {
-                            RuleType = normalized.RuleType,
+                            RuleType = MappingRuleType.AcceptedOpeningFamily,
                             MatchValue = normalized.MatchValue,
                         });
                     }
@@ -119,24 +120,24 @@ public sealed class ProjectMappingRules
         return new ProjectMappingRules(
             ordered,
             floor,
+            room,
             family,
             openings.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList());
     }
 
     public MappingResolutionResult ResolveFloorCategory(string floorTypeName)
     {
-        string key = MappingRule.NormalizeMatchValue(floorTypeName);
-        return FloorCategoryOverrides.TryGetValue(key, out string value)
-            ? new MappingResolutionResult(MappingRuleType.FloorCategory, key, true, value)
-            : new MappingResolutionResult(MappingRuleType.FloorCategory, key, false, null);
+        return ResolveMapping(MappingRuleType.FloorCategory, floorTypeName, FloorCategoryOverrides);
+    }
+
+    public MappingResolutionResult ResolveRoomCategory(string roomValue)
+    {
+        return ResolveMapping(MappingRuleType.RoomCategory, roomValue, RoomCategoryOverrides);
     }
 
     public MappingResolutionResult ResolveFamilyCategory(string familyName)
     {
-        string key = MappingRule.NormalizeMatchValue(familyName);
-        return FamilyCategoryOverrides.TryGetValue(key, out string value)
-            ? new MappingResolutionResult(MappingRuleType.FamilyCategory, key, true, value)
-            : new MappingResolutionResult(MappingRuleType.FamilyCategory, key, false, null);
+        return ResolveMapping(MappingRuleType.FamilyCategory, familyName, FamilyCategoryOverrides);
     }
 
     public MappingResolutionResult ResolveAcceptedOpeningFamily(string familyName)
@@ -148,6 +149,37 @@ public sealed class ProjectMappingRules
             key,
             matched,
             matched ? key : null);
+    }
+
+    private static bool TryAddResolvedRule(
+        MappingRule normalized,
+        IDictionary<string, string> target,
+        ICollection<MappingRule> normalizedRules)
+    {
+        if (string.IsNullOrWhiteSpace(normalized.ResolvedValue))
+        {
+            return false;
+        }
+
+        target[normalized.MatchValue] = normalized.ResolvedValue!;
+        normalizedRules.Add(new MappingRule
+        {
+            RuleType = normalized.RuleType,
+            MatchValue = normalized.MatchValue,
+            ResolvedValue = normalized.ResolvedValue,
+        });
+        return true;
+    }
+
+    private static MappingResolutionResult ResolveMapping(
+        MappingRuleType ruleType,
+        string value,
+        IReadOnlyDictionary<string, string> mappings)
+    {
+        string key = MappingRule.NormalizeMatchValue(value);
+        return mappings.TryGetValue(key, out string resolved)
+            ? new MappingResolutionResult(ruleType, key, true, resolved)
+            : new MappingResolutionResult(ruleType, key, false, null);
     }
 
     private static Dictionary<string, string> NormalizeMappings(

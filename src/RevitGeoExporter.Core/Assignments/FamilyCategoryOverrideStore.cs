@@ -34,6 +34,7 @@ public sealed class FamilyCategoryOverrideStore
         ProjectMappingRules current = _mappingRuleStore.Load(projectKey);
         ProjectMappingRules updated = ProjectMappingRules.Create(
             current.FloorCategoryOverrides,
+            current.RoomCategoryOverrides,
             NormalizeOverrides(overrides),
             current.AcceptedOpeningFamilies);
         _mappingRuleStore.Save(projectKey, updated);
@@ -59,12 +60,12 @@ public sealed class FamilyCategoryOverrideStore
 
     private static string NormalizeFamilyName(string? familyName)
     {
-        return string.IsNullOrWhiteSpace(familyName) ? string.Empty : familyName!.Trim();
+        return string.IsNullOrWhiteSpace(familyName) ? string.Empty : familyName.Trim();
     }
 
     private static string NormalizeCategory(string? category)
     {
-        return string.IsNullOrWhiteSpace(category) ? string.Empty : category!.Trim();
+        return string.IsNullOrWhiteSpace(category) ? string.Empty : category.Trim();
     }
 
     private static Dictionary<string, string> EmptyOverrides()

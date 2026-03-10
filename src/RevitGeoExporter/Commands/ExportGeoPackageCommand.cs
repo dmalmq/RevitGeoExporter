@@ -83,7 +83,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                    },
                    previewRequest =>
                    {
-                       ExportPreviewService previewService = new(document, previewRequest.GeometryRepairOptions);
+                       ExportPreviewService previewService = new(document, previewRequest.UnitSource, previewRequest.RoomCategoryParameterName, previewRequest.GeometryRepairOptions);
                        using ExportPreviewForm previewForm = new(previewRequest, previewService);
                        previewForm.ShowDialog();
                    }))
@@ -124,7 +124,9 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                         IncludeLegendFile = request.IncludePackageLegend,
                     },
                     request.SelectedProfileName,
-                    BuildBaselineKey(projectKey, request.SelectedProfileName));
+                    BuildBaselineKey(projectKey, request.SelectedProfileName),
+                    request.UnitSource,
+                    request.RoomCategoryParameterName);
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
                 validationResult = validationService.Validate(validationRequest);
@@ -239,7 +241,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             document,
             projectKey,
             resolutionForm.SelectedFloorAssignments,
-            resolutionForm.SelectedElementIdsToRegenerate);
+            resolutionForm.SelectedElementIdsToRegenerate,
+            validationRequest.UnitSource);
         ShowWarningsIfNeeded(warnings, language);
         return true;
     }
@@ -248,14 +251,26 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         Document document,
         string projectKey,
         IReadOnlyDictionary<string, string> floorAssignments,
-        IReadOnlyList<long> elementIdsToRegenerate)
+        IReadOnlyList<long> elementIdsToRegenerate,
+        UnitSource unitSource)
     {
         List<string> warnings = new();
 
-        FloorCategoryOverrideStore floorCategoryOverrideStore = new();
-        foreach (KeyValuePair<string, string> entry in floorAssignments)
+        if (unitSource == UnitSource.Rooms)
         {
-            floorCategoryOverrideStore.SetOverride(projectKey, entry.Key, entry.Value);
+            RoomCategoryOverrideStore roomCategoryOverrideStore = new();
+            foreach (KeyValuePair<string, string> entry in floorAssignments)
+            {
+                roomCategoryOverrideStore.SetOverride(projectKey, entry.Key, entry.Value);
+            }
+        }
+        else
+        {
+            FloorCategoryOverrideStore floorCategoryOverrideStore = new();
+            foreach (KeyValuePair<string, string> entry in floorAssignments)
+            {
+                floorCategoryOverrideStore.SetOverride(projectKey, entry.Key, entry.Value);
+            }
         }
 
         List<long> distinctElementIds = elementIdsToRegenerate

@@ -11,8 +11,10 @@ public sealed class ExportFeatureValidationSnapshot
         long? sourceElementId,
         bool hasGeometry,
         bool geometryValid,
-        bool isUnassignedFloor = false,
-        string? floorTypeName = null,
+        bool isUnassigned = false,
+        string? assignmentMappingKey = null,
+        string? assignmentSourceKind = null,
+        string? assignmentParameterName = null,
         bool isSnappedToOutline = true)
     {
         FeatureType = string.IsNullOrWhiteSpace(featureType)
@@ -23,8 +25,10 @@ public sealed class ExportFeatureValidationSnapshot
         SourceElementId = sourceElementId;
         HasGeometry = hasGeometry;
         GeometryValid = geometryValid;
-        IsUnassignedFloor = isUnassignedFloor;
-        FloorTypeName = Normalize(floorTypeName);
+        IsUnassigned = isUnassigned;
+        AssignmentMappingKey = Normalize(assignmentMappingKey);
+        AssignmentSourceKind = Normalize(assignmentSourceKind);
+        AssignmentParameterName = Normalize(assignmentParameterName);
         IsSnappedToOutline = isSnappedToOutline;
     }
 
@@ -40,9 +44,13 @@ public sealed class ExportFeatureValidationSnapshot
 
     public bool GeometryValid { get; }
 
-    public bool IsUnassignedFloor { get; }
+    public bool IsUnassigned { get; }
 
-    public string? FloorTypeName { get; }
+    public string? AssignmentMappingKey { get; }
+
+    public string? AssignmentSourceKind { get; }
+
+    public string? AssignmentParameterName { get; }
 
     public bool IsSnappedToOutline { get; }
 

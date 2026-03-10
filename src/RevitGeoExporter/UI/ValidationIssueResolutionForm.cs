@@ -356,11 +356,11 @@ public sealed class ValidationIssueResolutionForm : Form
         return request.Views
             .SelectMany(
                 view => view.Features
-                    .Where(feature => feature.IsUnassignedFloor && !string.IsNullOrWhiteSpace(feature.FloorTypeName))
+                    .Where(feature => feature.IsUnassigned && !string.IsNullOrWhiteSpace(feature.AssignmentMappingKey))
                     .Select(feature => new
                     {
-                        FloorTypeName = feature.FloorTypeName!.Trim(),
-                        SuggestedCategory = SuggestCategory(feature.FloorTypeName!, zoneCatalog, supportedCategories),
+                        FloorTypeName = feature.AssignmentMappingKey!.Trim(),
+                        SuggestedCategory = SuggestCategory(feature.AssignmentMappingKey!, zoneCatalog, supportedCategories),
                     }))
             .GroupBy(item => item.FloorTypeName, StringComparer.Ordinal)
             .Select(group => new FloorAssignmentCandidate(
