@@ -96,6 +96,7 @@ Migrate `ExportDialog` next (primary daily workflow window):
 
 **Deliverable:** export setup flow fully WPF with parity behavior.
 
+
 ## Phase 4 - Migrate Preview window (6-10 days)
 
 `ExportPreviewForm` is the most complex screen.
@@ -113,6 +114,7 @@ Recommended approach:
 **Deliverable:** preview workflow in WPF shell with tabs/panels matching modern style.
 
 
+
 ## Phase 5 - Cleanup and WinForms retirement (2-3 days)
 
 - Remove obsolete WinForms dialogs once WPF equivalents are production-stable.
@@ -120,6 +122,7 @@ Recommended approach:
 - Update docs/screenshots/help pages.
 
 **Deliverable:** WPF-first UI architecture with minimized WinForms surface.
+
 
 
 ## Architecture & Coding Guidelines
