@@ -16,6 +16,8 @@ public sealed class App : IExternalApplication
             throw new ArgumentNullException(nameof(application));
         }
 
+        WinFormsVisualStyleBootstrapper.EnsureInitialized();
+
         ExportDialogSettings savedSettings = new ExportDialogSettingsStore().Load();
         UiLanguage language = savedSettings.UiLanguage;
 
