@@ -96,10 +96,7 @@ Migrate `ExportDialog` next (primary daily workflow window):
 
 **Deliverable:** export setup flow fully WPF with parity behavior.
 
-### Current progress
 
-- Added a WPF export dialog implementation (`ExportDialogWpf`) that is now the default command path.
-- Legacy WinForms export dialog remains available only as an emergency fallback via `REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI=1`.
 ## Phase 4 - Migrate Preview window (6-10 days)
 
 `ExportPreviewForm` is the most complex screen.
@@ -122,6 +119,7 @@ Recommended approach:
 - Added command-level routing so WPF preview host is now the default path.
 - Existing WinForms `ExportPreviewForm` remains available only via `REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI=1` while we work toward full native WPF preview parity.
 
+
 ## Phase 5 - Cleanup and WinForms retirement (2-3 days)
 
 - Remove obsolete WinForms dialogs once WPF equivalents are production-stable.
@@ -135,6 +133,7 @@ Recommended approach:
 - Switched command flow to WPF-first defaults for export and preview UI.
 - Consolidated migration toggles to a single emergency fallback flag: `REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI=1`.
 - Kept legacy WinForms dialogs in source temporarily for rollback safety while converging to native WPF parity.
+
 
 ## Architecture & Coding Guidelines
 

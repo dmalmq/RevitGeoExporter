@@ -7,6 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Version>1.4.3</Version>
     <InformationalVersion>1.4.3</InformationalVersion>
+
   </PropertyGroup>
 
   <PropertyGroup>
