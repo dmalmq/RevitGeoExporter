@@ -1,58 +1,83 @@
 using System;
-using System.Drawing;
-using System.Windows.Forms;
+using System.Windows;
+using System.Windows.Controls;
 using RevitGeoExporter.Export;
-using WinFormsForm = System.Windows.Forms.Form;
 
 namespace RevitGeoExporter.UI;
 
-public sealed class ExportProgressForm : WinFormsForm
+public sealed class ExportProgressForm : IDisposable
 {
-    private readonly Label _statusLabel = new();
-    private readonly ProgressBar _progressBar = new();
-    private readonly Label _countLabel = new();
+    private readonly Window _window;
+    private readonly TextBlock _statusLabel;
+    private readonly ProgressBar _progressBar;
+    private readonly TextBlock _countLabel;
 
     public ExportProgressForm()
     {
-        Text = "Exporting GeoPackages";
-        Width = 540;
-        Height = 160;
-        StartPosition = FormStartPosition.CenterScreen;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = false;
-        MinimizeBox = false;
-        ControlBox = false;
-        ShowInTaskbar = false;
-
-        TableLayoutPanel root = new()
+        _statusLabel = new TextBlock
         {
-            Dock = DockStyle.Fill,
-            RowCount = 3,
-            ColumnCount = 1,
-            Padding = new Padding(12),
+            Text = "Preparing export...",
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 13,
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 24f));
 
-        _statusLabel.Dock = DockStyle.Fill;
-        _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.Text = "Preparing export...";
-        root.Controls.Add(_statusLabel, 0, 0);
+        _progressBar = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 1,
+            Height = 18,
+            Value = 0,
+        };
 
-        _progressBar.Dock = DockStyle.Fill;
-        _progressBar.Style = ProgressBarStyle.Continuous;
-        _progressBar.Minimum = 0;
-        _progressBar.Maximum = 1;
-        _progressBar.Value = 0;
-        root.Controls.Add(_progressBar, 0, 1);
+        _countLabel = new TextBlock
+        {
+            Text = "0 / 1",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12,
+        };
 
-        _countLabel.Dock = DockStyle.Fill;
-        _countLabel.TextAlign = ContentAlignment.MiddleRight;
-        _countLabel.Text = "0 / 1";
-        root.Controls.Add(_countLabel, 0, 2);
+        Grid root = new()
+        {
+            Margin = new Thickness(16),
+        };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        Controls.Add(root);
+        root.Children.Add(_statusLabel);
+        Grid.SetRow(_progressBar, 1);
+        _progressBar.Margin = new Thickness(0, 12, 0, 0);
+        root.Children.Add(_progressBar);
+        Grid.SetRow(_countLabel, 2);
+        _countLabel.Margin = new Thickness(0, 8, 0, 0);
+        root.Children.Add(_countLabel);
+
+        _window = new Window
+        {
+            Title = "Exporting GeoPackages",
+            Width = 540,
+            Height = 160,
+            ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            ShowInTaskbar = false,
+            Content = root,
+        };
+    }
+
+    public void Show()
+    {
+        _window.Show();
+    }
+
+    public void Refresh()
+    {
+        _window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+    }
+
+    public void Close()
+    {
+        _window.Close();
     }
 
     public void UpdateProgress(ExportProgressUpdate update)
@@ -71,7 +96,14 @@ public sealed class ExportProgressForm : WinFormsForm
         _progressBar.Maximum = total;
         _progressBar.Value = completed;
         _countLabel.Text = $"{completed} / {total}";
-
         Refresh();
+    }
+
+    public void Dispose()
+    {
+        if (_window.IsVisible)
+        {
+            _window.Close();
+        }
     }
 }

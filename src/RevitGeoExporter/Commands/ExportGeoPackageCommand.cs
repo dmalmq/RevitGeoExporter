@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Windows.Forms;
 using System.Text;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
@@ -56,7 +57,67 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         ExportProfileStore profileStore = new();
 
         ExportDialogResult? request = null;
-        using (ExportDialog dialog = new(
+        bool forceLegacyWinForms = string.Equals(
+            Environment.GetEnvironmentVariable("REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI"),
+            "1",
+            StringComparison.Ordinal);
+
+        bool useWpfDialog = !forceLegacyWinForms;
+        bool useWpfPreviewWindow = !forceLegacyWinForms;
+
+        if (useWpfDialog)
+        {
+            using ExportDialogWpf dialog = new(
+                views,
+                settings,
+                bundleSnapshot.Profiles,
+                saveProfileRequested: (scope, name, profileSettings) =>
+                {
+                    profileStore.SaveProfile(projectKey, ExportProfile.FromSettings(name, scope, profileSettings));
+                },
+                renameProfileRequested: (profile, newName) =>
+                {
+                    profileStore.RenameProfile(projectKey, profile, newName);
+                },
+                deleteProfileRequested: profile =>
+                {
+                    profileStore.DeleteProfile(projectKey, profile);
+                },
+                openMappingsRequested: () =>
+                {
+                    using SettingsHubForm settingsHub = new(
+                        projectKey,
+                        bundle,
+                        bundle.Load(),
+                        ZoneCatalog.CreateDefault());
+                    settingsHub.ShowDialog();
+                },
+                previewRequest =>
+                {
+                    ExportPreviewService previewService = new(document, previewRequest.UnitSource, previewRequest.RoomCategoryParameterName, previewRequest.GeometryRepairOptions);
+                    if (useWpfPreviewWindow)
+                    {
+                        using ExportPreviewWindow previewWindow = new(previewRequest, previewService);
+                        previewWindow.ShowDialog();
+                    }
+                    else
+                    {
+                        using ExportPreviewForm previewForm = new(previewRequest, previewService);
+                        previewForm.ShowDialog();
+                    }
+                });
+
+            if (dialog.ShowDialog() != DialogResult.OK || dialog.Result == null)
+            {
+                return Result.Cancelled;
+            }
+
+            request = dialog.Result;
+            bundle.SaveGlobalSettings(dialog.BuildSettings());
+        }
+        else
+        {
+            using ExportDialog dialog = new(
                    views,
                    settings,
                    bundleSnapshot.Profiles,
@@ -84,11 +145,19 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                    previewRequest =>
                    {
                        ExportPreviewService previewService = new(document, previewRequest.UnitSource, previewRequest.RoomCategoryParameterName, previewRequest.GeometryRepairOptions);
-                       using ExportPreviewForm previewForm = new(previewRequest, previewService);
-                       previewForm.ShowDialog();
-                   }))
-        {
-            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK || dialog.Result == null)
+                       if (useWpfPreviewWindow)
+                       {
+                           using ExportPreviewWindow previewWindow = new(previewRequest, previewService);
+                           previewWindow.ShowDialog();
+                       }
+                       else
+                       {
+                           using ExportPreviewForm previewForm = new(previewRequest, previewService);
+                           previewForm.ShowDialog();
+                       }
+                   });
+
+            if (dialog.ShowDialog() != DialogResult.OK || dialog.Result == null)
             {
                 return Result.Cancelled;
             }
