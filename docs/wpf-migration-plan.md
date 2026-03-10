@@ -113,6 +113,11 @@ Recommended approach:
 
 **Deliverable:** preview workflow in WPF shell with tabs/panels matching modern style.
 
+### Current progress
+
+- Added an experimental WPF preview host window (`ExportPreviewWindow`) that embeds the existing WinForms preview form via `WindowsFormsHost`.
+- Added command-level routing so WPF preview host is now the default path.
+- Existing WinForms `ExportPreviewForm` remains available only via `REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI=1` while we work toward full native WPF preview parity.
 
 
 ## Phase 5 - Cleanup and WinForms retirement (2-3 days)
@@ -123,6 +128,11 @@ Recommended approach:
 
 **Deliverable:** WPF-first UI architecture with minimized WinForms surface.
 
+### Current progress
+
+- Switched command flow to WPF-first defaults for export and preview UI.
+- Consolidated migration toggles to a single emergency fallback flag: `REVIT_GEOEXPORTER_FORCE_LEGACY_WINFORMS_UI=1`.
+- Kept legacy WinForms dialogs in source temporarily for rollback safety while converging to native WPF parity.
 
 
 ## Architecture & Coding Guidelines

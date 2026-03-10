@@ -16,7 +16,7 @@ public sealed class App : IExternalApplication
             throw new ArgumentNullException(nameof(application));
         }
 
-        WinFormsVisualStyleBootstrapper.EnsureInitialized();
+
 
         ExportDialogSettings savedSettings = new ExportDialogSettingsStore().Load();
         UiLanguage language = savedSettings.UiLanguage;
@@ -43,24 +43,6 @@ public sealed class App : IExternalApplication
                 "Select floor or ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.");
             button.LargeImage = RibbonIcons.CreateExportIcon(32);
             button.Image = RibbonIcons.CreateExportIcon(16);
-        }
-
-        PushButtonData settingsButton = new(
-            name: "ExportSettingsButton",
-            text: LocalizedTextProvider.Get(language, "Ribbon.Settings.Text", "Settings"),
-            assemblyName: assemblyPath,
-            className: typeof(OpenSettingsCommand).FullName);
-
-        PushButton? settingsButtonControl = panel.AddItem(settingsButton) as PushButton;
-        if (settingsButtonControl != null)
-        {
-            settingsButtonControl.ToolTip = $"{LocalizedTextProvider.Get(language, "Ribbon.Settings.ToolTip", "Manage global and project export settings.")} ({ProjectInfo.VersionTag})";
-            settingsButtonControl.LongDescription = LocalizedTextProvider.Get(
-                language,
-                "Ribbon.Settings.Description",
-                "Opens the settings hub for defaults, profiles, mappings, and configuration diagnostics.");
-            settingsButtonControl.LargeImage = RibbonIcons.CreateSettingsIcon(32);
-            settingsButtonControl.Image = RibbonIcons.CreateSettingsIcon(16);
         }
 
         PushButtonData helpButton = new(
@@ -101,3 +83,4 @@ public sealed class App : IExternalApplication
         }
     }
 }
+

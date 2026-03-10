@@ -74,7 +74,7 @@ if (-not (Test-Path $addinsRoot)) {
     New-Item -ItemType Directory -Path $addinsRoot -Force | Out-Null
 }
 if (-not (Test-Path $installDir)) {
-    New-Item -ItemType Directory -Path $installDir | Out-Null
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 }
 
 # --- Copy DLLs ---
@@ -101,6 +101,20 @@ if (Test-Path $runtimesSrc) {
     Write-Host "Copied runtimes/ folder (native SQLite binaries)." -ForegroundColor Cyan
 } else {
     Write-Warning "runtimes/ folder not found in source. Native SQLite binaries will be missing."
+}
+
+# --- Copy satellite resource folders (for localized UI strings) ---
+$resourceFolders = Get-ChildItem -Path $sourceDir -Directory | Where-Object {
+    $_.Name -ne 'runtimes' -and
+    (Get-ChildItem -Path $_.FullName -Filter '*.resources.dll' -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+foreach ($folder in $resourceFolders) {
+    $destination = Join-Path $installDir $folder.Name
+    if (Test-Path $destination) {
+        Remove-Item -Recurse -Force $destination
+    }
+    Copy-Item -Recurse $folder.FullName $destination
+    Write-Host "Copied resource folder: $($folder.Name)" -ForegroundColor Cyan
 }
 
 # --- Copy .addin manifest ---

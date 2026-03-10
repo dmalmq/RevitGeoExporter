@@ -85,6 +85,15 @@ if (Test-Path $runtimesSrc) {
     Write-Warning "runtimes/ folder not found in build output. Native SQLite binaries will be missing."
 }
 
+# Copy satellite resource folders (for localized UI strings)
+$resourceFolders = Get-ChildItem -Path $binDir -Directory | Where-Object {
+    $_.Name -ne 'runtimes' -and
+    (Get-ChildItem -Path $_.FullName -Filter '*.resources.dll' -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+foreach ($folder in $resourceFolders) {
+    Copy-Item -Recurse $folder.FullName (Join-Path $distDir $folder.Name)
+}
+
 $count = (Get-ChildItem $distDir -File).Count
 Write-Host ""
 Write-Host "Build complete. $count files copied to:" -ForegroundColor Green
