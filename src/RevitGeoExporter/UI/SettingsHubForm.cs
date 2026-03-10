@@ -27,6 +27,7 @@ public sealed class SettingsHubForm : IDisposable
     private readonly ListBox _statusList = new();
     private readonly TextBlock _profileSummary = new();
     private readonly TextBox _outputDirectoryTextBox = new();
+    private readonly Button _browseOutputDirectoryButton = new();
     private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
     private readonly TextBox _epsgTextBox = new();
@@ -57,7 +58,7 @@ public sealed class SettingsHubForm : IDisposable
             throw new ArgumentException("A project key is required.", nameof(projectKey));
         }
         _bundle = bundle ?? throw new ArgumentNullException(nameof(bundle));
-        _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        _snapshot = NormalizeSnapshot(snapshot ?? throw new ArgumentNullException(nameof(snapshot)));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _categories = _zoneCatalog.GetKnownCategories().ToList();
         _language = _snapshot.GlobalSettings.UiLanguage;
@@ -125,10 +126,17 @@ public sealed class SettingsHubForm : IDisposable
         actions.Children.Add(_saveButton);
         Grid.SetRow(actions, 2);
         root.Children.Add(actions);
+<<<<<<< ours
 
         _packageCheckBox.Checked += (_, _) => _packageLegendCheckBox.IsEnabled = true;
         _packageCheckBox.Unchecked += (_, _) => _packageLegendCheckBox.IsEnabled = false;
 
+=======
+
+        _packageCheckBox.Checked += (_, _) => _packageLegendCheckBox.IsEnabled = true;
+        _packageCheckBox.Unchecked += (_, _) => _packageLegendCheckBox.IsEnabled = false;
+
+>>>>>>> theirs
         ApplyLanguage();
         return root;
     }
@@ -139,6 +147,7 @@ public sealed class SettingsHubForm : IDisposable
         panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+<<<<<<< ours
 
         GroupBox defaultsGroup = new();
         defaultsGroup.Content = BuildGlobalDefaultsPanel();
@@ -148,6 +157,17 @@ public sealed class SettingsHubForm : IDisposable
         Grid.SetRow(_profileSummary, 1);
         panel.Children.Add(_profileSummary);
 
+=======
+
+        GroupBox defaultsGroup = new();
+        defaultsGroup.Content = BuildGlobalDefaultsPanel();
+        panel.Children.Add(defaultsGroup);
+
+        _profileSummary.Margin = new Thickness(0, 8, 0, 8);
+        Grid.SetRow(_profileSummary, 1);
+        panel.Children.Add(_profileSummary);
+
+>>>>>>> theirs
         ScopeButtonSet globalButtons = BuildScopeButtons(SettingsScope.Global);
         Grid.SetRow(globalButtons.Container, 2);
         panel.Children.Add(globalButtons.Container);
@@ -206,10 +226,17 @@ public sealed class SettingsHubForm : IDisposable
         mappingTabs.Items.Add(new TabItem { Content = _roomGrid });
         mappingTabs.Items.Add(new TabItem { Content = _familyGrid });
         mappingTabs.Items.Add(new TabItem { Content = _openingGrid });
+<<<<<<< ours
 
         Grid.SetRow(mappingTabs, 1);
         panel.Children.Add(mappingTabs);
 
+=======
+
+        Grid.SetRow(mappingTabs, 1);
+        panel.Children.Add(mappingTabs);
+
+>>>>>>> theirs
         ScopeButtonSet projectButtons = BuildScopeButtons(SettingsScope.Project);
         Grid.SetRow(projectButtons.Container, 2);
         panel.Children.Add(projectButtons.Container);
@@ -279,8 +306,14 @@ public sealed class SettingsHubForm : IDisposable
         panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         panel.Children.Add(_outputDirectoryTextBox);
 
+<<<<<<< ours
+        _browseOutputDirectoryButton.Width = 100;
+        _browseOutputDirectoryButton.Margin = new Thickness(8, 0, 0, 0);
+        _browseOutputDirectoryButton.Click += (_, _) =>
+=======
         Button browseButton = new() { Width = 100, Margin = new Thickness(8, 0, 0, 0) };
         browseButton.Click += (_, _) =>
+>>>>>>> theirs
         {
             using WinForms.FolderBrowserDialog dialog = new()
             {
@@ -294,9 +327,14 @@ public sealed class SettingsHubForm : IDisposable
             }
         };
 
+<<<<<<< ours
+        Grid.SetColumn(_browseOutputDirectoryButton, 1);
+        panel.Children.Add(_browseOutputDirectoryButton);
+=======
         Grid.SetColumn(browseButton, 1);
         panel.Children.Add(browseButton);
         panel.Tag = browseButton;
+>>>>>>> theirs
         return panel;
     }
 
@@ -355,6 +393,21 @@ public sealed class SettingsHubForm : IDisposable
 
     private void LoadSnapshot(SettingsBundleSnapshot snapshot)
     {
+<<<<<<< ours
+        _snapshot = NormalizeSnapshot(snapshot);
+        SelectLanguage(_snapshot.GlobalSettings.UiLanguage);
+        _outputDirectoryTextBox.Text = _snapshot.GlobalSettings.OutputDirectory ?? string.Empty;
+        _epsgTextBox.Text = _snapshot.GlobalSettings.TargetEpsg.ToString();
+        _diagnosticsCheckBox.IsChecked = _snapshot.GlobalSettings.GenerateDiagnosticsReport;
+        _packageCheckBox.IsChecked = _snapshot.GlobalSettings.GeneratePackageOutput;
+        _packageLegendCheckBox.IsChecked = _snapshot.GlobalSettings.IncludePackageLegend;
+        _packageLegendCheckBox.IsEnabled = _packageCheckBox.IsChecked == true;
+        _repairEnabledCheckBox.IsChecked = _snapshot.GlobalSettings.GeometryRepairOptions?.Enabled ?? false;
+        _language = _snapshot.GlobalSettings.UiLanguage;
+        SelectPreset(_snapshot.GlobalSettings.TargetEpsg);
+        PopulateMappings(_snapshot.ProjectMappings);
+        PopulateStatuses(_snapshot.StatusEntries);
+=======
         _snapshot = snapshot;
         SelectLanguage(snapshot.GlobalSettings.UiLanguage);
         _outputDirectoryTextBox.Text = snapshot.GlobalSettings.OutputDirectory ?? string.Empty;
@@ -367,6 +420,7 @@ public sealed class SettingsHubForm : IDisposable
         SelectPreset(snapshot.GlobalSettings.TargetEpsg);
         PopulateMappings(snapshot.ProjectMappings);
         PopulateStatuses(snapshot.StatusEntries);
+>>>>>>> theirs
         ApplyLanguage();
     }
 
@@ -567,6 +621,56 @@ public sealed class SettingsHubForm : IDisposable
     private void ApplyLanguage()
     {
         _window.Title = L("SettingsHub.Title", "GeoExporter Settings");
+<<<<<<< ours
+
+        TabItem? globalTab = _tabs.Items.Count > 0 ? _tabs.Items[0] as TabItem : null;
+        TabItem? projectTab = _tabs.Items.Count > 1 ? _tabs.Items[1] as TabItem : null;
+        if (globalTab != null)
+        {
+            globalTab.Header = L("SettingsHub.GlobalTab", "Global");
+            if (globalTab.Tag is GroupBox globalGroup)
+            {
+                globalGroup.Header = L("SettingsHub.DefaultsGroup", "Default Export Settings");
+                if (globalGroup.Content is UIElement globalContent)
+                {
+                    UpdateLabelFactories(globalContent);
+                }
+            }
+        }
+
+        if (projectTab != null)
+        {
+            projectTab.Header = L("SettingsHub.ProjectTab", "Project");
+            if (projectTab.Tag is ProjectTabRefs refs)
+            {
+                refs.Intro.Text = L("SettingsHub.ProjectMappingsIntro", "Manage exporter-side floor, room, family, and accepted opening mappings for the current project.");
+                if (refs.MappingTabs.Items.Count > 0 && refs.MappingTabs.Items[0] is TabItem floorTab)
+                {
+                    floorTab.Header = L("SettingsHub.FloorOverridesTab", "Floor Overrides");
+                }
+                if (refs.MappingTabs.Items.Count > 1 && refs.MappingTabs.Items[1] is TabItem roomTab)
+                {
+                    roomTab.Header = "Room Categories";
+                }
+                if (refs.MappingTabs.Items.Count > 2 && refs.MappingTabs.Items[2] is TabItem familyTab)
+                {
+                    familyTab.Header = L("SettingsHub.FamilyCategoriesTab", "Family Categories");
+                }
+                if (refs.MappingTabs.Items.Count > 3 && refs.MappingTabs.Items[3] is TabItem openingTab)
+                {
+                    openingTab.Header = L("SettingsHub.AcceptedOpeningsTab", "Accepted Openings");
+                }
+            }
+        }
+
+        _statusGroup.Header = L("SettingsHub.ScopeStatusGroup", "Configuration Status");
+        _saveButton.Content = L("Common.Save", "Save");
+        _helpButton.Content = L("Common.Help", "Help");
+        _closeButton.Content = L("Common.Close", "Close");
+        _browseOutputDirectoryButton.Content = L("Common.Browse", "Browse...");
+        int globalProfileCount = _snapshot.Profiles?.Count(profile => profile != null && profile.Scope == ExportProfileScope.Global) ?? 0;
+        int projectProfileCount = _snapshot.Profiles?.Count(profile => profile != null && profile.Scope == ExportProfileScope.Project) ?? 0;
+=======
         ((TabItem)_tabs.Items[0]).Header = L("SettingsHub.GlobalTab", "Global");
         ((TabItem)_tabs.Items[1]).Header = L("SettingsHub.ProjectTab", "Project");
 
@@ -581,11 +685,49 @@ public sealed class SettingsHubForm : IDisposable
         _saveButton.Content = L("Common.Save", "Save");
         _helpButton.Content = L("Common.Help", "Help");
         _closeButton.Content = L("Common.Close", "Close");
+>>>>>>> theirs
         _profileSummary.Text = string.Format(
             L("SettingsHub.ProfileSummary", "Global profiles: {0}    Project profiles: {1}"),
-            _snapshot.Profiles.Count(profile => profile.Scope == ExportProfileScope.Global),
-            _snapshot.Profiles.Count(profile => profile.Scope == ExportProfileScope.Project));
+            globalProfileCount,
+            projectProfileCount);
 
+        if (_floorGrid.Columns.Count > 1)
+        {
+            _floorGrid.Columns[0].Header = L("SettingsHub.FloorTypeName", "Floor Type Name");
+            _floorGrid.Columns[1].Header = L("SettingsHub.Category", "Category");
+        }
+        if (_roomGrid.Columns.Count > 1)
+        {
+            _roomGrid.Columns[0].Header = "Room Value";
+            _roomGrid.Columns[1].Header = L("SettingsHub.Category", "Category");
+        }
+        if (_familyGrid.Columns.Count > 1)
+        {
+            _familyGrid.Columns[0].Header = L("SettingsHub.FamilyName", "Family Name");
+            _familyGrid.Columns[1].Header = L("SettingsHub.Category", "Category");
+        }
+        if (_openingGrid.Columns.Count > 0)
+        {
+            _openingGrid.Columns[0].Header = L("SettingsHub.AcceptedOpeningFamilyName", "Accepted Opening Family Name");
+        }
+
+<<<<<<< ours
+        _diagnosticsCheckBox.Content = L("ExportDialog.WriteDiagnostics", "Write diagnostics report");
+        _packageCheckBox.Content = L("ExportDialog.WritePackage", "Write GIS package");
+        _packageLegendCheckBox.Content = L("ExportDialog.IncludeLegend", "Include legend file");
+        _repairEnabledCheckBox.Content = L("ExportDialog.GeometryRepair", "Geometry Repair");
+
+        foreach (ScopeButtonSet set in _scopeButtons.Values)
+        {
+            set.ImportButton.Content = L("Common.Import", "Import...");
+            set.ExportButton.Content = L("Common.Export", "Export...");
+            set.ResetButton.Content = set.Scope == SettingsScope.Global
+                ? L("Common.ResetDefaults", "Reset Defaults")
+                : L("Common.ClearProjectData", "Clear Project Data");
+        }
+
+        _languageComboBox.Items.Refresh();
+=======
         if (((TabItem)_tabs.Items[1]).Tag is ProjectTabRefs refs)
         {
             refs.Intro.Text = L("SettingsHub.ProjectMappingsIntro", "Manage exporter-side floor, room, family, and accepted opening mappings for the current project.");
@@ -621,10 +763,28 @@ public sealed class SettingsHubForm : IDisposable
         {
             browseButton.Content = L("Common.Browse", "Browse...");
         }
+>>>>>>> theirs
     }
 
     private static void UpdateLabelFactories(UIElement container)
     {
+<<<<<<< ours
+        if (container is TextBlock text && text.Tag is Func<string> factory)
+        {
+            text.Text = factory();
+        }
+
+        if (container is ContentControl contentControl && contentControl.Content is UIElement content)
+        {
+            UpdateLabelFactories(content);
+        }
+
+        if (container is Panel panel)
+        {
+            foreach (UIElement child in panel.Children)
+            {
+                UpdateLabelFactories(child);
+=======
         if (container is Panel panel)
         {
             foreach (UIElement child in panel.Children)
@@ -652,6 +812,7 @@ public sealed class SettingsHubForm : IDisposable
             {
                 browseButton = button;
                 return true;
+>>>>>>> theirs
             }
         }
 
@@ -686,8 +847,24 @@ public sealed class SettingsHubForm : IDisposable
         _presetComboBox.SelectedIndex = -1;
     }
 
+<<<<<<< ours
+    private static SettingsBundleSnapshot NormalizeSnapshot(SettingsBundleSnapshot snapshot)
+    {
+        snapshot ??= new SettingsBundleSnapshot();
+        snapshot.GlobalSettings ??= new ExportDialogSettings();
+        snapshot.GlobalSettings.GeometryRepairOptions ??= new RevitGeoExporter.Core.Geometry.GeometryRepairOptions();
+        snapshot.Profiles = (snapshot.Profiles ?? Array.Empty<ExportProfile>())
+            .Where(profile => profile != null)
+            .ToList();
+        snapshot.ProjectMappings ??= ProjectMappingRules.Empty;
+        snapshot.StatusEntries ??= Array.Empty<SettingsStatusEntry>();
+        return snapshot;
+    }
+=======
     private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
+>>>>>>> theirs
 
+    private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
     private sealed class LanguageItem
     {
         public LanguageItem(UiLanguage language)
@@ -762,3 +939,5 @@ public sealed class SettingsHubForm : IDisposable
         public string FamilyName { get; set; } = string.Empty;
     }
 }
+
+

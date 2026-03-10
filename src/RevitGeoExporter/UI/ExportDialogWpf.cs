@@ -10,7 +10,10 @@ using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
+<<<<<<< ours
 using WpfGrid = System.Windows.Controls.Grid;
+=======
+>>>>>>> theirs
 
 namespace RevitGeoExporter.UI;
 
@@ -118,27 +121,47 @@ internal sealed class ExportDialogWpf : IDisposable
 
     private UIElement BuildLayout(Action? openMappingsRequested)
     {
+<<<<<<< ours
         WpfGrid root = new() { Margin = new Thickness(12) };
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         WpfGrid content = new();
+=======
+        Grid root = new() { Margin = new Thickness(12) };
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        Grid content = new();
+>>>>>>> theirs
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.56, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.44, GridUnitType.Star) });
 
         GroupBox viewsGroup = new() { Header = "Plan Views", Margin = new Thickness(0, 0, 10, 0) };
         DockPanel viewPanel = new();
         _viewList.ItemsSource = _views;
+<<<<<<< ours
+        _viewList.ItemTemplate = BuildViewSelectionTemplate();
+        viewPanel.Children.Add(_viewList);
+        UIElement viewActions = BuildViewActions();
+        DockPanel.SetDock(viewActions, Dock.Bottom);
+        viewPanel.Children.Add(viewActions);
+=======
         _viewList.DisplayMemberPath = nameof(ViewSelectionRow.DisplayText);
         viewPanel.Children.Add(_viewList);
         DockPanel.SetDock(BuildViewActions(), Dock.Bottom);
         viewPanel.Children.Add(BuildViewActions());
+>>>>>>> theirs
         viewsGroup.Content = viewPanel;
         content.Children.Add(viewsGroup);
 
         GroupBox optionsGroup = new() { Header = "Export Options" };
         optionsGroup.Content = BuildOptionsPanel(openMappingsRequested);
+<<<<<<< ours
         WpfGrid.SetColumn(optionsGroup, 1);
+=======
+        Grid.SetColumn(optionsGroup, 1);
+>>>>>>> theirs
         content.Children.Add(optionsGroup);
 
         root.Children.Add(content);
@@ -160,12 +183,36 @@ internal sealed class ExportDialogWpf : IDisposable
         actions.Children.Add(cancel);
         actions.Children.Add(preview);
         actions.Children.Add(export);
+<<<<<<< ours
         WpfGrid.SetRow(actions, 1);
+=======
+        Grid.SetRow(actions, 1);
+>>>>>>> theirs
         root.Children.Add(actions);
 
         return root;
     }
 
+<<<<<<< ours
+    private DataTemplate BuildViewSelectionTemplate()
+    {
+        FrameworkElementFactory checkBox = new(typeof(CheckBox));
+        checkBox.SetBinding(CheckBox.ContentProperty, new System.Windows.Data.Binding(nameof(ViewSelectionRow.DisplayText)));
+        checkBox.SetBinding(CheckBox.IsCheckedProperty, new System.Windows.Data.Binding(nameof(ViewSelectionRow.IsSelected))
+        {
+            Mode = System.Windows.Data.BindingMode.TwoWay,
+            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
+        });
+        checkBox.SetValue(FrameworkElement.MarginProperty, new Thickness(2, 1, 2, 1));
+
+        return new DataTemplate
+        {
+            VisualTree = checkBox,
+        };
+    }
+
+=======
+>>>>>>> theirs
     private UIElement BuildViewActions()
     {
         StackPanel actions = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6) };
@@ -432,3 +479,7 @@ internal sealed class ExportDialogWpf : IDisposable
         public override string ToString() => $"EPSG:{Epsg} - {Name}";
     }
 }
+<<<<<<< ours
+
+=======
+>>>>>>> theirs
