@@ -10,6 +10,7 @@ using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
+using WpfGrid = System.Windows.Controls.Grid;
 
 namespace RevitGeoExporter.UI;
 
@@ -117,11 +118,11 @@ internal sealed class ExportDialogWpf : IDisposable
 
     private UIElement BuildLayout(Action? openMappingsRequested)
     {
-        Grid root = new() { Margin = new Thickness(12) };
+        WpfGrid root = new() { Margin = new Thickness(12) };
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        Grid content = new();
+        WpfGrid content = new();
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.56, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.44, GridUnitType.Star) });
 
@@ -137,7 +138,7 @@ internal sealed class ExportDialogWpf : IDisposable
 
         GroupBox optionsGroup = new() { Header = "Export Options" };
         optionsGroup.Content = BuildOptionsPanel(openMappingsRequested);
-        Grid.SetColumn(optionsGroup, 1);
+        WpfGrid.SetColumn(optionsGroup, 1);
         content.Children.Add(optionsGroup);
 
         root.Children.Add(content);
@@ -159,7 +160,7 @@ internal sealed class ExportDialogWpf : IDisposable
         actions.Children.Add(cancel);
         actions.Children.Add(preview);
         actions.Children.Add(export);
-        Grid.SetRow(actions, 1);
+        WpfGrid.SetRow(actions, 1);
         root.Children.Add(actions);
 
         return root;
