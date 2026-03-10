@@ -112,6 +112,7 @@ Recommended approach:
 
 **Deliverable:** preview workflow in WPF shell with tabs/panels matching modern style.
 
+
 ## Phase 5 - Cleanup and WinForms retirement (2-3 days)
 
 - Remove obsolete WinForms dialogs once WPF equivalents are production-stable.
@@ -119,6 +120,7 @@ Recommended approach:
 - Update docs/screenshots/help pages.
 
 **Deliverable:** WPF-first UI architecture with minimized WinForms surface.
+
 
 ## Architecture & Coding Guidelines
 
