@@ -85,20 +85,11 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                 },
                 openMappingsRequested: () =>
                 {
-<<<<<<< ours
                     using ProjectMappingsForm mappingsForm = new(
                         projectKey,
                         ZoneCatalog.CreateDefault(),
                         new MappingRuleStore());
                     mappingsForm.ShowDialog();
-=======
-                    using SettingsHubForm settingsHub = new(
-                        projectKey,
-                        bundle,
-                        bundle.Load(),
-                        ZoneCatalog.CreateDefault());
-                    settingsHub.ShowDialog();
->>>>>>> theirs
                 },
                 previewRequest =>
                 {
@@ -511,8 +502,6 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         TaskDialog.Show(ProjectInfo.Name, message);
     }
 }
-<<<<<<< ours
 
 
-=======
->>>>>>> theirs
+

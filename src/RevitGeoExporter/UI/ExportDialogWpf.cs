@@ -9,11 +9,9 @@ using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.Resources;
 using WinForms = System.Windows.Forms;
-<<<<<<< ours
 using WpfGrid = System.Windows.Controls.Grid;
-=======
->>>>>>> theirs
 
 namespace RevitGeoExporter.UI;
 
@@ -24,6 +22,7 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly Window _window;
     private readonly List<ExportProfile> _profiles;
 
+    private UiLanguage _language = UiLanguage.English;
     private readonly ListBox _viewList = new();
     private readonly TextBox _outputDirectoryTextBox = new();
     private readonly TextBox _targetEpsgTextBox = new();
@@ -38,7 +37,21 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
-    private readonly TextBlock _experimentalLabel = new();
+    private readonly GroupBox _viewsGroup = new();
+    private readonly GroupBox _optionsGroup = new();
+    private readonly Button _cancelButton = new();
+    private readonly Button _previewButton = new();
+    private readonly Button _exportButton = new();
+    private readonly Button _selectAllButton = new();
+    private readonly Button _clearAllButton = new();
+    private readonly Button _mappingsButton = new();
+    private readonly TextBlock _languageLabel = new();
+    private readonly TextBlock _featureTypesLabel = new();
+    private readonly TextBlock _outputDirectoryLabel = new();
+    private readonly TextBlock _crsPresetLabel = new();
+    private readonly TextBlock _targetEpsgLabel = new();
+    private readonly TextBlock _unitSourceLabel = new();
+    private readonly TextBlock _roomCategoryParameterLabel = new();
 
     public ExportDialogWpf(
         IReadOnlyList<ViewPlan> views,
@@ -121,48 +134,28 @@ internal sealed class ExportDialogWpf : IDisposable
 
     private UIElement BuildLayout(Action? openMappingsRequested)
     {
-<<<<<<< ours
         WpfGrid root = new() { Margin = new Thickness(12) };
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         WpfGrid content = new();
-=======
-        Grid root = new() { Margin = new Thickness(12) };
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        Grid content = new();
->>>>>>> theirs
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.56, GridUnitType.Star) });
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.44, GridUnitType.Star) });
 
-        GroupBox viewsGroup = new() { Header = "Plan Views", Margin = new Thickness(0, 0, 10, 0) };
-        DockPanel viewPanel = new();
+        _viewsGroup.Margin = new Thickness(0, 0, 10, 0);
+        DockPanel viewPanel = new() { LastChildFill = true };
         _viewList.ItemsSource = _views;
-<<<<<<< ours
         _viewList.ItemTemplate = BuildViewSelectionTemplate();
-        viewPanel.Children.Add(_viewList);
         UIElement viewActions = BuildViewActions();
         DockPanel.SetDock(viewActions, Dock.Bottom);
         viewPanel.Children.Add(viewActions);
-=======
-        _viewList.DisplayMemberPath = nameof(ViewSelectionRow.DisplayText);
         viewPanel.Children.Add(_viewList);
-        DockPanel.SetDock(BuildViewActions(), Dock.Bottom);
-        viewPanel.Children.Add(BuildViewActions());
->>>>>>> theirs
-        viewsGroup.Content = viewPanel;
-        content.Children.Add(viewsGroup);
+        _viewsGroup.Content = viewPanel;
+        content.Children.Add(_viewsGroup);
 
-        GroupBox optionsGroup = new() { Header = "Export Options" };
-        optionsGroup.Content = BuildOptionsPanel(openMappingsRequested);
-<<<<<<< ours
-        WpfGrid.SetColumn(optionsGroup, 1);
-=======
-        Grid.SetColumn(optionsGroup, 1);
->>>>>>> theirs
-        content.Children.Add(optionsGroup);
+        _optionsGroup.Content = BuildOptionsPanel(openMappingsRequested);
+        WpfGrid.SetColumn(_optionsGroup, 1);
+        content.Children.Add(_optionsGroup);
 
         root.Children.Add(content);
 
@@ -173,27 +166,25 @@ internal sealed class ExportDialogWpf : IDisposable
             Margin = new Thickness(0, 10, 0, 0),
         };
 
-        Button cancel = new() { Content = "Cancel", Width = 96 };
-        cancel.Click += (_, _) => { _window.DialogResult = false; _window.Close(); };
-        Button preview = new() { Content = "Preview...", Width = 110, Margin = new Thickness(8, 0, 0, 0) };
-        preview.Click += (_, _) => ShowPreview();
-        Button export = new() { Content = "Export", Width = 96, Margin = new Thickness(8, 0, 0, 0), IsDefault = true };
-        export.Click += (_, _) => ConfirmExport();
+        _cancelButton.Width = 96;
+        _cancelButton.Click += (_, _) => { _window.DialogResult = false; _window.Close(); };
+        _previewButton.Width = 110;
+        _previewButton.Margin = new Thickness(8, 0, 0, 0);
+        _previewButton.Click += (_, _) => ShowPreview();
+        _exportButton.Width = 96;
+        _exportButton.Margin = new Thickness(8, 0, 0, 0);
+        _exportButton.IsDefault = true;
+        _exportButton.Click += (_, _) => ConfirmExport();
 
-        actions.Children.Add(cancel);
-        actions.Children.Add(preview);
-        actions.Children.Add(export);
-<<<<<<< ours
+        actions.Children.Add(_cancelButton);
+        actions.Children.Add(_previewButton);
+        actions.Children.Add(_exportButton);
         WpfGrid.SetRow(actions, 1);
-=======
-        Grid.SetRow(actions, 1);
->>>>>>> theirs
         root.Children.Add(actions);
 
         return root;
     }
 
-<<<<<<< ours
     private DataTemplate BuildViewSelectionTemplate()
     {
         FrameworkElementFactory checkBox = new(typeof(CheckBox));
@@ -211,13 +202,11 @@ internal sealed class ExportDialogWpf : IDisposable
         };
     }
 
-=======
->>>>>>> theirs
     private UIElement BuildViewActions()
     {
         StackPanel actions = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(6) };
-        Button selectAll = new() { Content = "Select All", Width = 100 };
-        selectAll.Click += (_, _) =>
+        _selectAllButton.Width = 100;
+        _selectAllButton.Click += (_, _) =>
         {
             foreach (ViewSelectionRow row in _views)
             {
@@ -226,8 +215,9 @@ internal sealed class ExportDialogWpf : IDisposable
             _viewList.Items.Refresh();
         };
 
-        Button clearAll = new() { Content = "Clear All", Width = 100, Margin = new Thickness(8, 0, 0, 0) };
-        clearAll.Click += (_, _) =>
+        _clearAllButton.Width = 100;
+        _clearAllButton.Margin = new Thickness(8, 0, 0, 0);
+        _clearAllButton.Click += (_, _) =>
         {
             foreach (ViewSelectionRow row in _views)
             {
@@ -236,8 +226,8 @@ internal sealed class ExportDialogWpf : IDisposable
             _viewList.Items.Refresh();
         };
 
-        actions.Children.Add(selectAll);
-        actions.Children.Add(clearAll);
+        actions.Children.Add(_selectAllButton);
+        actions.Children.Add(_clearAllButton);
         return actions;
     }
 
@@ -245,29 +235,36 @@ internal sealed class ExportDialogWpf : IDisposable
     {
         StackPanel panel = new() { Margin = new Thickness(10) };
 
-        _experimentalLabel.Text = "WPF export dialog (phase 3 in progress). Profiles and advanced geometry repair controls remain in classic dialog.";
-        _experimentalLabel.TextWrapping = TextWrapping.Wrap;
-        _experimentalLabel.Margin = new Thickness(0, 0, 0, 8);
-        panel.Children.Add(_experimentalLabel);
+        _languageComboBox.SelectionChanged += (_, _) =>
+        {
+            if (_languageComboBox.SelectedItem is LanguageItem item)
+            {
+                _language = item.Language;
+                ViewSelectionRow.DisplayLanguage = _language;
+                _viewList.Items.Refresh();
+                _unitSourceComboBox.Items.Refresh();
+                _presetComboBox.Items.Refresh();
+                _languageComboBox.Items.Refresh();
+                ApplyLanguage();
+            }
+        };
 
-        panel.Children.Add(Labeled("Language", _languageComboBox));
-        panel.Children.Add(Labeled("Feature Types", FeaturePanel()));
-        panel.Children.Add(Labeled("Output Directory", _outputDirectoryTextBox));
-        panel.Children.Add(Labeled("CRS Preset", _presetComboBox));
-        panel.Children.Add(Labeled("Target EPSG", _targetEpsgTextBox));
-        panel.Children.Add(Labeled("Unit Source", _unitSourceComboBox));
-        panel.Children.Add(Labeled("Room Category Parameter", _roomCategoryParameterTextBox));
+        panel.Children.Add(Labeled(_languageLabel, _languageComboBox));
+        panel.Children.Add(Labeled(_featureTypesLabel, FeaturePanel()));
+        panel.Children.Add(Labeled(_outputDirectoryLabel, _outputDirectoryTextBox));
+        panel.Children.Add(Labeled(_crsPresetLabel, _presetComboBox));
+        panel.Children.Add(Labeled(_targetEpsgLabel, _targetEpsgTextBox));
+        panel.Children.Add(Labeled(_unitSourceLabel, _unitSourceComboBox));
+        panel.Children.Add(Labeled(_roomCategoryParameterLabel, _roomCategoryParameterTextBox));
 
-        _diagnosticsCheckBox.Content = "Write diagnostics report";
-        _packageCheckBox.Content = "Write GIS package";
-        _packageLegendCheckBox.Content = "Include legend file";
         panel.Children.Add(_diagnosticsCheckBox);
         panel.Children.Add(_packageCheckBox);
         panel.Children.Add(_packageLegendCheckBox);
 
-        Button mappingsButton = new() { Content = "Mappings...", Width = 120, Margin = new Thickness(0, 8, 0, 0) };
-        mappingsButton.Click += (_, _) => openMappingsRequested?.Invoke();
-        panel.Children.Add(mappingsButton);
+        _mappingsButton.Width = 120;
+        _mappingsButton.Margin = new Thickness(0, 8, 0, 0);
+        _mappingsButton.Click += (_, _) => openMappingsRequested?.Invoke();
+        panel.Children.Add(_mappingsButton);
 
         _presetComboBox.SelectionChanged += (_, _) =>
         {
@@ -301,17 +298,22 @@ internal sealed class ExportDialogWpf : IDisposable
         return panel;
     }
 
-    private static UIElement Labeled(string label, UIElement control)
+    private static UIElement Labeled(TextBlock label, UIElement control)
     {
         StackPanel panel = new() { Margin = new Thickness(0, 0, 0, 6) };
-        panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 0, 0, 2) });
+        label.Margin = new Thickness(0, 0, 0, 2);
+        panel.Children.Add(label);
         panel.Children.Add(control);
         return panel;
     }
 
     private void LoadValues(ExportDialogSettings settings)
     {
-        _window.Title = "Export GeoPackage";
+        _language = Enum.IsDefined(typeof(UiLanguage), settings.UiLanguage)
+            ? settings.UiLanguage
+            : UiLanguage.English;
+        ViewSelectionRow.DisplayLanguage = _language;
+
         _outputDirectoryTextBox.Text = settings.OutputDirectory ?? string.Empty;
         _targetEpsgTextBox.Text = settings.TargetEpsg.ToString();
 
@@ -327,7 +329,7 @@ internal sealed class ExportDialogWpf : IDisposable
 
         _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
         _languageComboBox.Items.Add(new LanguageItem(UiLanguage.Japanese));
-        _languageComboBox.SelectedIndex = settings.UiLanguage == UiLanguage.Japanese ? 1 : 0;
+        _languageComboBox.SelectedIndex = _language == UiLanguage.Japanese ? 1 : 0;
 
         foreach (KeyValuePair<int, string> zone in JapanPlaneRectangular.Zones.OrderBy(entry => entry.Key))
         {
@@ -349,6 +351,10 @@ internal sealed class ExportDialogWpf : IDisposable
             row.IsSelected = selectedIds.Contains(row.View.Id.Value);
         }
         _viewList.Items.Refresh();
+        _unitSourceComboBox.Items.Refresh();
+        _presetComboBox.Items.Refresh();
+        _languageComboBox.Items.Refresh();
+        ApplyLanguage();
     }
 
     private void ConfirmExport()
@@ -356,20 +362,32 @@ internal sealed class ExportDialogWpf : IDisposable
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
-            MessageBox.Show("Select at least one view.", _window.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                L("ExportDialog.Message.SelectPlanViewToExport", "Select at least one plan view to export."),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
         ExportFeatureType featureTypes = GetSelectedFeatureTypes();
         if (featureTypes == ExportFeatureType.None)
         {
-            MessageBox.Show("Select at least one feature type.", _window.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                L("ExportDialog.Message.SelectFeatureType", "Select at least one feature type."),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
         if (!int.TryParse(_targetEpsgTextBox.Text, out int epsg) || epsg <= 0)
         {
-            MessageBox.Show("Enter a valid EPSG code.", _window.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                L("ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -404,7 +422,21 @@ internal sealed class ExportDialogWpf : IDisposable
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
-            MessageBox.Show("Select at least one view to preview.", _window.Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(
+                L("ExportDialog.Message.SelectPlanViewToPreview", "Select at least one plan view to preview."),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        if (GetSelectedFeatureTypes() == ExportFeatureType.None)
+        {
+            MessageBox.Show(
+                L("ExportDialog.Message.PreviewRequiresFeatureType", "Preview requires at least one selected feature type."),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
             return;
         }
 
@@ -429,17 +461,55 @@ internal sealed class ExportDialogWpf : IDisposable
         return types;
     }
 
+    private void ApplyLanguage()
+    {
+        _window.Title = L("ExportDialog.Title", "Export GeoPackage");
+        _viewsGroup.Header = L("ExportDialog.PlanViews", "Plan Views");
+        _optionsGroup.Header = L("ExportDialog.Options", "Export Options");
+        _languageLabel.Text = L("Common.Language", "Language");
+        _featureTypesLabel.Text = L("ExportDialog.FeatureTypes", "Feature Types");
+        _outputDirectoryLabel.Text = L("Common.OutputDirectory", "Output Directory");
+        _crsPresetLabel.Text = L("Common.CrsPreset", "CRS Preset");
+        _targetEpsgLabel.Text = L("Common.TargetEpsg", "Target EPSG");
+        _unitSourceLabel.Text = "Unit Source";
+        _roomCategoryParameterLabel.Text = "Room Category Parameter";
+        _unitCheckBox.Content = "unit";
+        _detailCheckBox.Content = "detail";
+        _openingCheckBox.Content = "opening";
+        _levelCheckBox.Content = "level";
+        _diagnosticsCheckBox.Content = L("ExportDialog.WriteDiagnostics", "Write diagnostics report");
+        _packageCheckBox.Content = L("ExportDialog.WritePackage", "Write GIS package");
+        _packageLegendCheckBox.Content = L("ExportDialog.IncludeLegend", "Include legend file");
+        _mappingsButton.Content = $"{LocalizedTextProvider.Get(_language, "Common.ProjectMappings", "Project Mappings")}...";
+        _selectAllButton.Content = L("ExportDialog.SelectAll", "Select All");
+        _clearAllButton.Content = L("ExportDialog.ClearAll", "Clear All");
+        _cancelButton.Content = L("Common.Cancel", "Cancel");
+        _previewButton.Content = L("ExportDialog.Preview", "Preview...");
+        _exportButton.Content = L("ExportDialog.ExportButton", "Export");
+    }
+
+    private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
+
     private sealed class ViewSelectionRow
     {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
         public ViewSelectionRow(ViewPlan view)
         {
             View = view;
-            DisplayText = $"{view.Name} [Level: {view.GenLevel?.Name ?? "(none)"}]";
         }
 
         public ViewPlan View { get; }
 
-        public string DisplayText { get; }
+        public string DisplayText
+        {
+            get
+            {
+                string levelName = View.GenLevel?.Name ?? LocalizedTextProvider.Get(DisplayLanguage, "Common.NoLevel", "<no level>");
+                string levelLabel = LocalizedTextProvider.Get(DisplayLanguage, "Common.Level", "Level");
+                return $"{View.Name} [{levelLabel}: {levelName}]";
+            }
+        }
 
         public bool IsSelected { get; set; }
 
@@ -461,7 +531,9 @@ internal sealed class ExportDialogWpf : IDisposable
 
         public UnitSource Source { get; }
 
-        public override string ToString() => Source == UnitSource.Rooms ? "Rooms" : "Floors";
+        public override string ToString() => Source == UnitSource.Rooms
+            ? "Rooms"
+            : "Floors";
     }
 
     private sealed class CrsPresetItem
@@ -479,7 +551,4 @@ internal sealed class ExportDialogWpf : IDisposable
         public override string ToString() => $"EPSG:{Epsg} - {Name}";
     }
 }
-<<<<<<< ours
 
-=======
->>>>>>> theirs

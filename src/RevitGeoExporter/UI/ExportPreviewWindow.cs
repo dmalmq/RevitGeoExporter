@@ -1,15 +1,9 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-<<<<<<< ours
 using System.Windows.Forms.Integration;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
-=======
-using System.Windows.Forms;
-using System.Windows.Forms.Integration;
-using RevitGeoExporter.Export;
->>>>>>> theirs
 
 namespace RevitGeoExporter.UI;
 
@@ -23,13 +17,8 @@ internal sealed class ExportPreviewWindow : IDisposable
         _embeddedForm = new ExportPreviewForm(request, previewService)
         {
             TopLevel = false,
-<<<<<<< ours
             FormBorderStyle = WinForms.FormBorderStyle.None,
             Dock = WinForms.DockStyle.Fill,
-=======
-            FormBorderStyle = FormBorderStyle.None,
-            Dock = DockStyle.Fill,
->>>>>>> theirs
         };
 
         _embeddedForm.FormClosed += (_, _) =>
@@ -40,15 +29,9 @@ internal sealed class ExportPreviewWindow : IDisposable
             }
         };
 
-<<<<<<< ours
         WinForms.Panel hostPanel = new()
         {
             Dock = WinForms.DockStyle.Fill,
-=======
-        Panel hostPanel = new()
-        {
-            Dock = DockStyle.Fill,
->>>>>>> theirs
         };
         hostPanel.Controls.Add(_embeddedForm);
         _embeddedForm.Show();
@@ -102,3 +85,4 @@ internal sealed class ExportPreviewWindow : IDisposable
         }
     }
 }
+
