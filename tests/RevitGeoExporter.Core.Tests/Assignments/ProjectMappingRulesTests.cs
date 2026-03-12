@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RevitGeoExporter.Core.Assignments;
 using Xunit;
 
@@ -13,12 +13,12 @@ public sealed class ProjectMappingRulesTests
         {
             new MappingRule { RuleType = MappingRuleType.FloorCategory, MatchValue = " Wrong Floor ", ResolvedValue = " walkway " },
             new MappingRule { RuleType = MappingRuleType.FamilyCategory, MatchValue = " Custom Family ", ResolvedValue = " retail " },
-            new MappingRule { RuleType = MappingRuleType.AcceptedOpeningFamily, MatchValue = " EV扉 " },
+            new MappingRule { RuleType = MappingRuleType.AcceptedOpeningFamily, MatchValue = " EV Gate " },
         });
 
         Assert.Equal("walkway", rules.ResolveFloorCategory("Wrong Floor").ResolvedValue);
         Assert.Equal("retail", rules.ResolveFamilyCategory("Custom Family").ResolvedValue);
-        Assert.True(rules.ResolveAcceptedOpeningFamily("EV扉").Matched);
+        Assert.True(rules.ResolveAcceptedOpeningFamily("EV Gate").Matched);
     }
 
     [Fact]
@@ -26,8 +26,9 @@ public sealed class ProjectMappingRulesTests
     {
         ProjectMappingRules rules = ProjectMappingRules.Create(
             new Dictionary<string, string> { ["Floor A"] = "walkway" },
+            null,
             new Dictionary<string, string> { ["Family A"] = "retail" },
-            new[] { "EV扉", "EV扉" });
+            new[] { "EV Gate", "EV Gate" });
 
         Assert.Equal(3, rules.Rules.Count);
         Assert.Single(rules.AcceptedOpeningFamilies);

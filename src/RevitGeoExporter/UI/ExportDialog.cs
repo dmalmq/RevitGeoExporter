@@ -5,7 +5,9 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Help;
+using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
@@ -63,8 +65,11 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action? _openMappingsRequested;
     private readonly List<ExportProfile> _profiles;
+    private readonly PreviewBasemapSettings _previewBasemapSettings;
+    private readonly ModelCoordinateInfo? _coordinateInfo;
     private UiLanguage _language = UiLanguage.English;
     private bool _isApplyingProfile;
+    private CoordinateExportMode _coordinateMode = CoordinateExportMode.SharedCoordinates;
     private UnitSource _unitSource = UnitSource.Floors;
     private string _roomCategoryParameterName = "Name";
 
@@ -76,7 +81,8 @@ public sealed class ExportDialog : WinFormsForm
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
-        Action<ExportPreviewRequest>? previewRequested = null)
+        Action<ExportPreviewRequest>? previewRequested = null,
+        ModelCoordinateInfo? coordinateInfo = null)
     {
         if (views is null)
         {
@@ -92,6 +98,9 @@ public sealed class ExportDialog : WinFormsForm
             .Select(view => new ViewSelectionItem(view))
             .ToList();
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
+        _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
+        _coordinateInfo = coordinateInfo;
+        _coordinateMode = settings.CoordinateMode;
         _saveProfileRequested = saveProfileRequested;
         _renameProfileRequested = renameProfileRequested;
         _deleteProfileRequested = deleteProfileRequested;
@@ -731,6 +740,7 @@ public sealed class ExportDialog : WinFormsForm
             BuildGeometryRepairOptions(),
             (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name,
             _language,
+            _coordinateMode,
             _unitSource,
             _roomCategoryParameterName);
         DialogResult = DialogResult.OK;
@@ -767,7 +777,20 @@ public sealed class ExportDialog : WinFormsForm
             return;
         }
 
-        _previewRequested(new ExportPreviewRequest(selectedViews, previewTypes, BuildGeometryRepairOptions(), _language, _unitSource, _roomCategoryParameterName));
+        _previewRequested(new ExportPreviewRequest(
+            selectedViews,
+            previewTypes,
+            BuildGeometryRepairOptions(),
+            _language,
+            _coordinateMode,
+            ParseTargetEpsgOrDefault(),
+            _coordinateInfo?.ResolvedSourceEpsg,
+            _coordinateInfo?.SiteCoordinateSystemId,
+            _coordinateInfo?.SiteCoordinateSystemDefinition,
+            _unitSource,
+            _roomCategoryParameterName,
+            _previewBasemapSettings.UrlTemplate,
+            _previewBasemapSettings.Attribution));
     }
     private void CheckAllViews()
     {
@@ -815,6 +838,13 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         return types;
+    }
+
+    private int ParseTargetEpsgOrDefault()
+    {
+        return int.TryParse(_targetEpsgTextBox.Text, out int epsg) && epsg > 0
+            ? epsg
+            : ProjectInfo.DefaultTargetEpsg;
     }
 
     private void UpdatePreviewButtonEnabled()
@@ -889,8 +919,11 @@ public sealed class ExportDialog : WinFormsForm
             IncludePackageLegend = _packageLegendCheckBox.Checked,
             GeometryRepairOptions = BuildGeometryRepairOptions(),
             UiLanguage = _language,
+            CoordinateMode = _coordinateMode,
             UnitSource = _unitSource,
             RoomCategoryParameterName = _roomCategoryParameterName,
+            PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
+            PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
         };
     }
 
@@ -938,6 +971,7 @@ public sealed class ExportDialog : WinFormsForm
             ExportDialogSettings settings = item.Profile.ToSettings();
             _outputDirectoryTextBox.Text = settings.OutputDirectory;
             _targetEpsgTextBox.Text = settings.TargetEpsg.ToString();
+            _coordinateMode = settings.CoordinateMode;
             _unitCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Unit);
             _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
@@ -1200,4 +1234,5 @@ public sealed class ExportDialog : WinFormsForm
         }
     }
 }
+
 

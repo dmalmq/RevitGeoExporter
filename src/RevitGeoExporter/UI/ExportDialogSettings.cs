@@ -1,7 +1,8 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using RevitGeoExporter.Core.Geometry;
-using RevitGeoExporter.Export;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.UI;
 
@@ -30,4 +31,8 @@ public sealed class ExportDialogSettings
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;
 
     public string RoomCategoryParameterName { get; set; } = "Name";
+
+    public string PreviewBasemapUrlTemplate { get; set; } = PreviewBasemapSettings.DefaultUrlTemplate;
+
+    public string PreviewBasemapAttribution { get; set; } = PreviewBasemapSettings.DefaultAttribution;
 }

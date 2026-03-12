@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
@@ -19,15 +19,16 @@ public sealed class MappingRuleStoreTests
             MappingRuleStore store = new(tempDirectory);
             ProjectMappingRules rules = ProjectMappingRules.Create(
                 new Dictionary<string, string> { ["Wrong Floor"] = "walkway" },
+                null,
                 new Dictionary<string, string> { ["Custom Family"] = "retail" },
-                new[] { "EV扉" });
+                new[] { "EV Gate" });
 
             store.Save("project-a", rules);
             ProjectMappingRules reloaded = store.Load("project-a");
 
             Assert.Equal("walkway", reloaded.FloorCategoryOverrides["Wrong Floor"]);
             Assert.Equal("retail", reloaded.FamilyCategoryOverrides["Custom Family"]);
-            Assert.Contains("EV扉", reloaded.AcceptedOpeningFamilies);
+            Assert.Contains("EV Gate", reloaded.AcceptedOpeningFamilies);
             Assert.Equal(3, reloaded.Rules.Count);
         }
         finally
@@ -56,7 +57,7 @@ public sealed class MappingRuleStoreTests
                 JsonConvert.SerializeObject(new { projectKey = "project-a", overrides = new Dictionary<string, string> { ["Custom Family"] = "retail" } }));
             File.WriteAllText(
                 Path.Combine(legacyBase, "accepted-opening-families", fileName),
-                JsonConvert.SerializeObject(new { projectKey = "project-a", families = new[] { "EV扉" } }));
+                JsonConvert.SerializeObject(new { projectKey = "project-a", families = new[] { "EV Gate" } }));
 
             MappingRuleStore store = new(Path.Combine(tempDirectory, "combined"), legacyBase);
 
@@ -65,7 +66,7 @@ public sealed class MappingRuleStoreTests
             Assert.Empty(result.Warnings);
             Assert.Equal("walkway", result.Value.FloorCategoryOverrides["Wrong Floor"]);
             Assert.Equal("retail", result.Value.FamilyCategoryOverrides["Custom Family"]);
-            Assert.Contains("EV扉", result.Value.AcceptedOpeningFamilies);
+            Assert.Contains("EV Gate", result.Value.AcceptedOpeningFamilies);
         }
         finally
         {
@@ -82,8 +83,9 @@ public sealed class MappingRuleStoreTests
             MappingRuleStore store = new(tempDirectory);
             ProjectMappingRules rules = ProjectMappingRules.Create(
                 new Dictionary<string, string> { ["Wrong Floor"] = "walkway" },
+                null,
                 new Dictionary<string, string> { ["Custom Family"] = "retail" },
-                new[] { "EV扉" });
+                new[] { "EV Gate" });
             string exportPath = Path.Combine(tempDirectory, "rules.json");
 
             store.ExportToFile("project-a", rules, exportPath);
@@ -92,7 +94,7 @@ public sealed class MappingRuleStoreTests
             Assert.Empty(imported.Warnings);
             Assert.Equal("walkway", imported.Value.ResolveFloorCategory("Wrong Floor").ResolvedValue);
             Assert.Equal("retail", imported.Value.ResolveFamilyCategory("Custom Family").ResolvedValue);
-            Assert.True(imported.Value.ResolveAcceptedOpeningFamily("EV扉").Matched);
+            Assert.True(imported.Value.ResolveAcceptedOpeningFamily("EV Gate").Matched);
         }
         finally
         {

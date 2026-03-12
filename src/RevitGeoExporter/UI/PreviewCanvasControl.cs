@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -25,6 +25,10 @@ public sealed class PreviewCanvasControl : Control
     private bool _isPanning;
     private Point _lastPointerLocation;
     private readonly ToolTip _toolTip = new();
+    private readonly PreviewTileProvider _tileProvider;
+    private PreviewMapContext? _mapContext;
+    private PreviewBasemapSettings _basemapSettings = new(PreviewBasemapSettings.DefaultUrlTemplate, PreviewBasemapSettings.DefaultAttribution);
+    private string _basemapStatusMessage = string.Empty;
 
     public PreviewCanvasControl()
     {
@@ -32,9 +36,13 @@ public sealed class PreviewCanvasControl : Control
         BackColor = Color.White;
         TabStop = true;
         _transform = new ViewTransform2D(1d, 1d, 0d, 0d, 1d);
+        _tileProvider = new PreviewTileProvider(RequestCanvasInvalidate);
+        _tileProvider.StatusMessageChanged += message => UpdateBasemapStatus(message);
     }
 
     public event Action<PreviewFeatureData?>? SelectedFeatureChanged;
+
+    public event Action<string?>? BasemapStatusChanged;
 
     public bool ShowUnits { get; set; } = true;
 
@@ -56,15 +64,45 @@ public sealed class PreviewCanvasControl : Control
 
     public bool ShowUnassignedOnly { get; set; }
 
+    public bool ShowBasemap { get; set; }
+
     public string SearchText { get; set; } = string.Empty;
+
+    public bool BasemapAvailable =>
+        _mapContext?.CanShowBasemap == true &&
+        _basemapSettings.IsConfigured;
+
+    public string BasemapAttribution => _basemapSettings.Attribution;
+
+    public string BasemapUnavailableReason
+    {
+        get
+        {
+            if (!_basemapSettings.IsConfigured)
+            {
+                return "No basemap tile source is configured.";
+            }
+
+            return _mapContext?.UnavailableReason ?? string.Empty;
+        }
+    }
 
     public void SetViewData(IReadOnlyList<PreviewFeatureData> features, Bounds2D bounds)
     {
         _features = features ?? Array.Empty<PreviewFeatureData>();
         _bounds = bounds;
         _selectedFeature = null;
+        ClearBasemapStatus();
         ResetView();
         NotifySelectionChanged();
+    }
+
+    public void ConfigureBasemap(PreviewMapContext? mapContext, PreviewBasemapSettings? basemapSettings)
+    {
+        _mapContext = mapContext;
+        _basemapSettings = basemapSettings ?? new PreviewBasemapSettings(PreviewBasemapSettings.DefaultUrlTemplate, PreviewBasemapSettings.DefaultAttribution);
+        ClearBasemapStatus();
+        Invalidate();
     }
 
     public void FitToFeatures()
@@ -183,7 +221,14 @@ public sealed class PreviewCanvasControl : Control
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.Clear(BackColor);
-        DrawGrid(e.Graphics);
+        if (ShowBasemap && BasemapAvailable)
+        {
+            _tileProvider.DrawTiles(e.Graphics, _transform, _basemapSettings);
+        }
+        else
+        {
+            DrawGrid(e.Graphics);
+        }
 
         List<PreviewFeatureData> visible = GetVisibleFeatures().ToList();
         if (visible.Count == 0)
@@ -288,6 +333,17 @@ public sealed class PreviewCanvasControl : Control
     {
         Bounds2D visibleBounds = FeatureBoundsCalculator.FromFeatures(GetVisibleFeatures().Select(x => x.Feature));
         return visibleBounds.IsEmpty ? _bounds : visibleBounds;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _tileProvider.Dispose();
+            _toolTip.Dispose();
+        }
+
+        base.Dispose(disposing);
     }
 
     private void DrawGrid(Graphics graphics)
@@ -440,6 +496,34 @@ public sealed class PreviewCanvasControl : Control
         SelectedFeatureChanged?.Invoke(_selectedFeature);
     }
 
+    private void RequestCanvasInvalidate()
+    {
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        BeginInvoke(new Action(Invalidate));
+    }
+
+    private void UpdateBasemapStatus(string? message)
+    {
+        string normalized = (message ?? string.Empty).Trim();
+        if (string.Equals(_basemapStatusMessage, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _basemapStatusMessage = normalized;
+        BasemapStatusChanged?.Invoke(_basemapStatusMessage.Length == 0 ? null : _basemapStatusMessage);
+    }
+
+    private void ClearBasemapStatus()
+    {
+        _tileProvider.ClearStatus();
+        UpdateBasemapStatus(string.Empty);
+    }
+
     private static PointF ToPointF(Point2D point)
     {
         return new PointF((float)point.X, (float)point.Y);
@@ -466,3 +550,4 @@ public sealed class PreviewCanvasControl : Control
         }
     }
 }
+
