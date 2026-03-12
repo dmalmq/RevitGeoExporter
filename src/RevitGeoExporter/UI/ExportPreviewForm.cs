@@ -57,6 +57,8 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly Label _assignmentCandidateValueLabel = new();
     private readonly Label _assignmentCurrentValueLabel = new();
     private readonly Label _assignmentHintLabel = new();
+    private SplitContainer? _bodyLayoutSplit;
+    private SplitContainer? _workspaceSplit;
 
     private PreviewViewData? _currentViewData;
     private PreviewDisplayViewState? _currentDisplayState;
@@ -93,6 +95,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.Sizable;
         FormClosing += OnFormClosing;
+        Shown += (_, _) => BeginInvoke(new Action(ApplyPreferredSplitLayout));
 
         TableLayoutPanel root = new()
         {
@@ -143,10 +146,8 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel1,
-            SplitterDistance = 230,
-            Panel1MinSize = 210,
-            Panel2MinSize = 720,
         };
+        _bodyLayoutSplit = layout;
         layout.Panel1.Padding = new Padding(0, 0, 10, 0);
         layout.Panel1.Controls.Add(BuildSidebar());
         layout.Panel2.Controls.Add(BuildWorkspace());
@@ -248,14 +249,58 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel2,
-            SplitterDistance = 790,
-            Panel1MinSize = 420,
-            Panel2MinSize = 260,
         };
+        _workspaceSplit = split;
 
         split.Panel1.Controls.Add(BuildMapWorkspace());
         split.Panel2.Controls.Add(BuildInspectorTabs());
         return split;
+    }
+
+    private void ApplyPreferredSplitLayout()
+    {
+        TryConfigureSplitContainer(_bodyLayoutSplit, panel1MinSize: 210, panel2MinSize: 720, preferredDistance: 230);
+        TryConfigureSplitContainer(_workspaceSplit, panel1MinSize: 420, panel2MinSize: 260, preferredDistance: 790);
+    }
+
+    private static void TryConfigureSplitContainer(
+        SplitContainer? splitContainer,
+        int panel1MinSize,
+        int panel2MinSize,
+        int preferredDistance)
+    {
+        if (splitContainer is null || splitContainer.IsDisposed || !splitContainer.IsHandleCreated)
+        {
+            return;
+        }
+
+        int totalSize = splitContainer.Orientation == Orientation.Horizontal
+            ? splitContainer.ClientSize.Height
+            : splitContainer.ClientSize.Width;
+        if (totalSize <= 0)
+        {
+            return;
+        }
+
+        int maxDistance = totalSize - panel2MinSize - splitContainer.SplitterWidth;
+        if (maxDistance < panel1MinSize)
+        {
+            return;
+        }
+
+        int safeDistance = Math.Max(panel1MinSize, Math.Min(preferredDistance, maxDistance));
+        try
+        {
+            splitContainer.Panel1MinSize = 0;
+            splitContainer.Panel2MinSize = 0;
+            splitContainer.SplitterDistance = safeDistance;
+            splitContainer.Panel1MinSize = panel1MinSize;
+            splitContainer.Panel2MinSize = panel2MinSize;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // If WinForms still reports an intermediate invalid size, leave the default split in place.
+        }
     }
 
     private WinFormsControl BuildMapWorkspace()
