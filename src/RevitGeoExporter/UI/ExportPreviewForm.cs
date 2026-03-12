@@ -144,13 +144,13 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel1,
-            SplitterDistance = 230,
             Panel1MinSize = 210,
             Panel2MinSize = 720,
         };
         layout.Panel1.Padding = new Padding(0, 0, 10, 0);
         layout.Panel1.Controls.Add(BuildSidebar());
         layout.Panel2.Controls.Add(BuildWorkspace());
+        ConfigurePreferredSplitterDistance(layout, 230);
 
         return layout;
     }
@@ -249,14 +249,43 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel2,
-            SplitterDistance = 790,
             Panel1MinSize = 420,
             Panel2MinSize = 260,
         };
 
         split.Panel1.Controls.Add(BuildMapWorkspace());
         split.Panel2.Controls.Add(BuildInspectorTabs());
+        ConfigurePreferredSplitterDistance(split, 790);
         return split;
+    }
+
+    private static void ConfigurePreferredSplitterDistance(SplitContainer splitContainer, int preferredDistance)
+    {
+        void ApplyPreferredDistance()
+        {
+            int totalSize = splitContainer.Orientation == Orientation.Horizontal
+                ? splitContainer.ClientSize.Height
+                : splitContainer.ClientSize.Width;
+            if (totalSize <= 0)
+            {
+                return;
+            }
+
+            int maxDistance = totalSize - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
+            if (maxDistance < splitContainer.Panel1MinSize)
+            {
+                return;
+            }
+
+            int safeDistance = Math.Max(splitContainer.Panel1MinSize, Math.Min(preferredDistance, maxDistance));
+            if (splitContainer.SplitterDistance != safeDistance)
+            {
+                splitContainer.SplitterDistance = safeDistance;
+            }
+        }
+
+        splitContainer.HandleCreated += (_, _) => ApplyPreferredDistance();
+        splitContainer.SizeChanged += (_, _) => ApplyPreferredDistance();
     }
 
     private WinFormsControl BuildMapWorkspace()
