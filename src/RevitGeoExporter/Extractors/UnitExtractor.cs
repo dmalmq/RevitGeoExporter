@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -42,8 +42,7 @@ public sealed class UnitExtractor
         new(new PrecisionModel(1_000_000d));
 
     private readonly Document _document;
-    private readonly Transform _internalToSharedTransform;
-    private readonly CrsTransformer _transformer;
+    private readonly SharedCoordinateProjector _sharedCoordinateProjector;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly FloorCategoryResolver _floorCategoryResolver;
@@ -61,9 +60,7 @@ public sealed class UnitExtractor
         IReadOnlyDictionary<string, string>? familyCategoryOverrides = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _internalToSharedTransform =
-            _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
-        _transformer = new CrsTransformer();
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _floorCategoryResolver =
@@ -1083,13 +1080,7 @@ public sealed class UnitExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        XYZ sharedPoint = _internalToSharedTransform.OfPoint(point);
-        return _transformer.TransformFromRevitFeet(
-            sharedPoint.X,
-            sharedPoint.Y,
-            offsetXMeters: 0d,
-            offsetYMeters: 0d,
-            rotationDegrees: 0d);
+        return _sharedCoordinateProjector.ProjectPoint(point);
     }
 
     private static string BuildSplitId(string baseId, int splitOrdinal)
@@ -1655,8 +1646,7 @@ public sealed class UnitExtractor
 
     private Point2D ProjectVector(XYZ vector)
     {
-        XYZ sharedVector = _internalToSharedTransform.OfVector(vector);
-        return new Point2D(sharedVector.X * FeetToMeters, sharedVector.Y * FeetToMeters);
+        return _sharedCoordinateProjector.ProjectVector(vector);
     }
 
     private static Point2D ToWorldPoint(
@@ -1801,3 +1791,5 @@ public sealed class UnitExtractor
         return Math.Max(0d, area);
     }
 }
+
+

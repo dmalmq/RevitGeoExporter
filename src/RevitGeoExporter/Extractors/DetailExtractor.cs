@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
@@ -18,16 +18,13 @@ public sealed class DetailExtractor
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
-    private readonly Transform _internalToSharedTransform;
-    private readonly CrsTransformer _transformer;
+    private readonly SharedCoordinateProjector _sharedCoordinateProjector;
     private readonly GeometryRepairOptions _geometryRepairOptions;
 
     public DetailExtractor(Document document, GeometryRepairOptions? geometryRepairOptions = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _internalToSharedTransform =
-            _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
-        _transformer = new CrsTransformer();
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
@@ -380,13 +377,7 @@ public sealed class DetailExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        XYZ sharedPoint = _internalToSharedTransform.OfPoint(point);
-        return _transformer.TransformFromRevitFeet(
-            sharedPoint.X,
-            sharedPoint.Y,
-            offsetXMeters: 0d,
-            offsetYMeters: 0d,
-            rotationDegrees: 0d);
+        return _sharedCoordinateProjector.ProjectPoint(point);
     }
 
     private static bool TryInterpolateOnPolyline(
@@ -542,3 +533,4 @@ public sealed class DetailExtractor
                Math.Abs(left.Y - right.Y) <= 1e-8d;
     }
 }
+
