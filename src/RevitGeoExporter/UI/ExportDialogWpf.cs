@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -531,6 +531,7 @@ internal sealed class ExportDialogWpf : IDisposable
             _coordinateInfo?.ResolvedSourceEpsg,
             _coordinateInfo?.SiteCoordinateSystemId,
             _coordinateInfo?.SiteCoordinateSystemDefinition,
+            _coordinateInfo?.SurveyPointSharedCoordinates,
             (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             _previewBasemapSettings.UrlTemplate,

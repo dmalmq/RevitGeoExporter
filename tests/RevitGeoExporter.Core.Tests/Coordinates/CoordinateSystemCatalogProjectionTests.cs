@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using Xunit;
@@ -33,5 +33,17 @@ public sealed class CoordinateSystemCatalogProjectionTests
             Assert.False(double.IsInfinity(point.X));
             Assert.False(double.IsInfinity(point.Y));
         });
+    }
+
+    [Fact]
+    public void ReprojectPoint_ConvertsJgd2011ZoneIxOriginToWebMercator()
+    {
+        Assert.True(CoordinateSystemCatalog.TryCreateFromEpsg(6677, out var source));
+        Assert.True(CoordinateSystemCatalog.TryCreateWebMercator(out var target));
+
+        Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(new Point2D(0d, 0d), source!, target!);
+
+        Assert.InRange(transformed.X, 15500000d, 15650000d);
+        Assert.InRange(transformed.Y, 4200000d, 4400000d);
     }
 }

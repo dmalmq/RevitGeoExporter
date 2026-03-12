@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Help;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Export;
@@ -35,6 +36,7 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly CheckBox _overriddenOnlyCheckBox = new();
     private readonly CheckBox _unassignedOnlyCheckBox = new();
     private readonly CheckBox _basemapCheckBox = new();
+    private readonly CheckBox _surveyPointCheckBox = new();
     private readonly TextBox _searchTextBox = new();
     private readonly Button _fitButton = new();
     private readonly Button _resetButton = new();
@@ -190,6 +192,15 @@ public sealed class ExportPreviewForm : WinFormsForm
         _elevatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
         ConfigureSidebarCheckBox(_basemapCheckBox, L("Preview.ShowBasemap", "Show basemap"));
         _basemapCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_surveyPointCheckBox, L("Preview.ShowSurveyPoint", "Show survey point"));
+        _surveyPointCheckBox.CheckedChanged += (_, _) =>
+        {
+            ApplyCanvasFilters();
+            if (_surveyPointCheckBox.Checked && _surveyPointCheckBox.Enabled)
+            {
+                _canvas.FitToFeatures();
+            }
+        };
         sidebar.Controls.Add(
             BuildSidebarGroup(
                 T("Map Layers", "Map Layers"),
@@ -200,7 +211,8 @@ public sealed class ExportPreviewForm : WinFormsForm
                 _stairsCheckBox,
                 _escalatorsCheckBox,
                 _elevatorsCheckBox,
-                _basemapCheckBox),
+                _basemapCheckBox,
+                _surveyPointCheckBox),
             0,
             1);
 
@@ -610,6 +622,8 @@ public sealed class ExportPreviewForm : WinFormsForm
         _levelsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Level);
         _basemapCheckBox.Checked = false;
         _basemapCheckBox.Enabled = false;
+        _surveyPointCheckBox.Checked = false;
+        _surveyPointCheckBox.Enabled = false;
 
         foreach (ViewPlan view in _request.SelectedViews)
         {
@@ -652,8 +666,10 @@ public sealed class ExportPreviewForm : WinFormsForm
             _canvas.ConfigureBasemap(
                 displayState.MapContext,
                 new PreviewBasemapSettings(_request.PreviewBasemapUrlTemplate, _request.PreviewBasemapAttribution));
-            _canvas.SetViewData(displayState.DisplayFeatures, displayState.DisplayBounds);
+            _canvas.SurveyPointMarkerLabel = "0,0";
+            _canvas.SetViewData(displayState.DisplayFeatures, displayState.DisplayBounds, displayState.DisplaySurveyPoint);
             UpdateBasemapAvailability();
+            UpdateSurveyPointAvailability();
             ApplyCanvasFilters();
             PopulateLegend(displayState.SourceViewData);
             PopulateWarnings(displayState.SourceViewData);
@@ -682,6 +698,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         _canvas.ShowOverriddenOnly = _overriddenOnlyCheckBox.Checked;
         _canvas.ShowUnassignedOnly = _unassignedOnlyCheckBox.Checked;
         _canvas.ShowBasemap = _basemapCheckBox.Enabled && _basemapCheckBox.Checked;
+        _canvas.ShowSurveyPoint = _surveyPointCheckBox.Enabled && _surveyPointCheckBox.Checked;
         _canvas.SearchText = _searchTextBox.Text;
         _canvas.RefreshFilters();
         RefreshStatusText();
@@ -1116,15 +1133,19 @@ public sealed class ExportPreviewForm : WinFormsForm
     private void RefreshStatusText()
     {
         string basemapStatus = BuildBasemapStatusText();
+        string surveyPointStatus = BuildSurveyPointStatusText();
+        string extraStatus = string.Join(
+            " | ",
+            new[] { basemapStatus, surveyPointStatus }.Where(value => !string.IsNullOrWhiteSpace(value)));
         if (string.IsNullOrWhiteSpace(_statusMessage))
         {
-            _statusLabel.Text = basemapStatus;
+            _statusLabel.Text = extraStatus;
             return;
         }
 
-        _statusLabel.Text = string.IsNullOrWhiteSpace(basemapStatus)
+        _statusLabel.Text = string.IsNullOrWhiteSpace(extraStatus)
             ? _statusMessage
-            : $"{_statusMessage} | {basemapStatus}";
+            : $"{_statusMessage} | {extraStatus}";
     }
 
     private void UpdateBasemapAvailability()
@@ -1137,6 +1158,19 @@ public sealed class ExportPreviewForm : WinFormsForm
         }
 
         _canvas.ShowBasemap = available && _basemapCheckBox.Checked;
+        RefreshStatusText();
+    }
+
+    private void UpdateSurveyPointAvailability()
+    {
+        bool available = _currentDisplayState?.DisplaySurveyPoint.HasValue == true && _canvas.SurveyPointAvailable;
+        _surveyPointCheckBox.Enabled = available;
+        if (!available)
+        {
+            _surveyPointCheckBox.Checked = false;
+        }
+
+        _canvas.ShowSurveyPoint = available && _surveyPointCheckBox.Checked;
         RefreshStatusText();
     }
 
@@ -1172,6 +1206,27 @@ public sealed class ExportPreviewForm : WinFormsForm
         return attribution.Length == 0
             ? L("Preview.Basemap", "Basemap")
             : $"{L("Preview.Basemap", "Basemap")}: {attribution}";
+    }
+
+    private string BuildSurveyPointStatusText()
+    {
+        if (_currentDisplayState?.OutputSurveyPoint is not Point2D surveyPoint ||
+            !_surveyPointCheckBox.Enabled ||
+            !_surveyPointCheckBox.Checked)
+        {
+            return string.Empty;
+        }
+
+        string label = L("Preview.SurveyPoint", "Survey point");
+        string coordinates = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{0:0.###}, {1:0.###}",
+            surveyPoint.X,
+            surveyPoint.Y);
+        string crsLabel = _currentDisplayState.MapContext.OutputCrsLabel?.Trim() ?? string.Empty;
+        return crsLabel.Length == 0
+            ? $"{label}: {coordinates}"
+            : $"{label}: {coordinates} ({crsLabel})";
     }
 
     private string LocalizeBasemapMessage(string? message)
