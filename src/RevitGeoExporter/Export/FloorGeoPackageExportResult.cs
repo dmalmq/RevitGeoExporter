@@ -31,6 +31,15 @@ public sealed class FloorGeoPackageExportResult
         _viewResults.Add(result);
     }
 
+    public void AddWarning(string warning)
+    {
+        if (string.IsNullOrWhiteSpace(warning))
+        {
+            return;
+        }
+
+        _warnings.Add(warning.Trim());
+    }
     public void AddWarnings(IEnumerable<string> warnings)
     {
         if (warnings is null)

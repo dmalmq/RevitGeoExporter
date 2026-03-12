@@ -22,6 +22,37 @@ public sealed class ExportDialogResult
         UiLanguage uiLanguage,
         UnitSource unitSource,
         string roomCategoryParameterName)
+        : this(
+            selectedViews,
+            outputDirectory,
+            targetEpsg,
+            featureTypes,
+            generateDiagnosticsReport,
+            generatePackageOutput,
+            includePackageLegend,
+            geometryRepairOptions,
+            selectedProfileName,
+            uiLanguage,
+            CoordinateExportMode.SharedCoordinates,
+            unitSource,
+            roomCategoryParameterName)
+    {
+    }
+
+    public ExportDialogResult(
+        IReadOnlyList<ViewPlan> selectedViews,
+        string outputDirectory,
+        int targetEpsg,
+        ExportFeatureType featureTypes,
+        bool generateDiagnosticsReport,
+        bool generatePackageOutput,
+        bool includePackageLegend,
+        GeometryRepairOptions geometryRepairOptions,
+        string? selectedProfileName,
+        UiLanguage uiLanguage,
+        CoordinateExportMode coordinateMode,
+        UnitSource unitSource,
+        string roomCategoryParameterName)
     {
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
@@ -33,6 +64,7 @@ public sealed class ExportDialogResult
         GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
         SelectedProfileName = string.IsNullOrWhiteSpace(selectedProfileName) ? null : selectedProfileName.Trim();
         UiLanguage = uiLanguage;
+        CoordinateMode = coordinateMode;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
     }
@@ -56,6 +88,8 @@ public sealed class ExportDialogResult
     public string? SelectedProfileName { get; }
 
     public UiLanguage UiLanguage { get; }
+
+    public CoordinateExportMode CoordinateMode { get; }
 
     public UnitSource UnitSource { get; }
 

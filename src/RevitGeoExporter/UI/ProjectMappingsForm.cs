@@ -14,6 +14,7 @@ public sealed class ProjectMappingsForm : Form
     private readonly string _projectKey;
     private readonly MappingRuleStore _mappingRuleStore;
     private readonly IReadOnlyList<string> _categories;
+    private readonly IReadOnlyList<string> _availableFloorTypeNames;
 
     private readonly DataGridView _floorGrid = new();
     private readonly DataGridView _roomGrid = new();
@@ -27,7 +28,8 @@ public sealed class ProjectMappingsForm : Form
     public ProjectMappingsForm(
         string projectKey,
         ZoneCatalog zoneCatalog,
-        MappingRuleStore mappingRuleStore)
+        MappingRuleStore mappingRuleStore,
+        IReadOnlyList<string>? availableFloorTypeNames = null)
     {
         _projectKey = string.IsNullOrWhiteSpace(projectKey)
             ? throw new ArgumentException("A project key is required.", nameof(projectKey))
@@ -35,6 +37,12 @@ public sealed class ProjectMappingsForm : Form
         _mappingRuleStore = mappingRuleStore ?? throw new ArgumentNullException(nameof(mappingRuleStore));
         _categories = (zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog)))
             .GetKnownCategories()
+            .ToList();
+        _availableFloorTypeNames = (availableFloorTypeNames ?? Array.Empty<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         InitializeComponents();
@@ -69,7 +77,7 @@ public sealed class ProjectMappingsForm : Form
         TabPage familyTab = new("Family Categories");
         TabPage openingTab = new("Accepted Openings");
 
-        ConfigureMappingGrid(_floorGrid, "Floor Type Name");
+        ConfigureFloorGrid();
         floorTab.Controls.Add(_floorGrid);
         ConfigureMappingGrid(_roomGrid, "Room Value");
         roomTab.Controls.Add(_roomGrid);
@@ -116,6 +124,33 @@ public sealed class ProjectMappingsForm : Form
         CancelButton = _cancelButton;
     }
 
+    private void ConfigureFloorGrid()
+    {
+        _floorGrid.Dock = DockStyle.Fill;
+        _floorGrid.AutoGenerateColumns = false;
+        _floorGrid.AllowUserToAddRows = false;
+        _floorGrid.AllowUserToDeleteRows = false;
+        _floorGrid.RowHeadersVisible = false;
+        _floorGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+
+        DataGridViewComboBoxColumn floorTypeColumn = new()
+        {
+            Name = "Key",
+            HeaderText = "Floor Type Name",
+            FillWeight = 55f,
+            FlatStyle = FlatStyle.Flat,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            DisplayStyleForCurrentCellOnly = false,
+        };
+        foreach (string floorTypeName in _availableFloorTypeNames)
+        {
+            floorTypeColumn.Items.Add(floorTypeName);
+        }
+
+        _floorGrid.Columns.Add(floorTypeColumn);
+        _floorGrid.Columns.Add(CreateCategoryColumn(includeEmpty: true));
+    }
+
     private void ConfigureMappingGrid(DataGridView grid, string keyHeader)
     {
         grid.Dock = DockStyle.Fill;
@@ -132,19 +167,32 @@ public sealed class ProjectMappingsForm : Form
             FillWeight = 55f,
         });
 
+        grid.Columns.Add(CreateCategoryColumn(includeEmpty: false));
+    }
+
+    private DataGridViewComboBoxColumn CreateCategoryColumn(bool includeEmpty)
+    {
         DataGridViewComboBoxColumn categoryColumn = new()
         {
             Name = "Category",
             HeaderText = "Category",
             FillWeight = 45f,
             FlatStyle = FlatStyle.Flat,
+            DisplayStyle = DataGridViewComboBoxDisplayStyle.DropDownButton,
+            DisplayStyleForCurrentCellOnly = false,
         };
+
+        if (includeEmpty)
+        {
+            categoryColumn.Items.Add(string.Empty);
+        }
+
         foreach (string category in _categories)
         {
             categoryColumn.Items.Add(category);
         }
 
-        grid.Columns.Add(categoryColumn);
+        return categoryColumn;
     }
 
     private void ConfigureOpeningGrid()
@@ -176,6 +224,42 @@ public sealed class ProjectMappingsForm : Form
         foreach (KeyValuePair<string, string> entry in mappings.OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase))
         {
             grid.Rows.Add(entry.Key, entry.Value);
+        }
+    }
+
+    private void PopulateFloorGrid(IReadOnlyDictionary<string, string> mappings)
+    {
+        List<string> floorTypeNames = _availableFloorTypeNames
+            .Concat((mappings ?? new Dictionary<string, string>()).Keys)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        RefreshFloorTypeOptions(floorTypeNames);
+        _floorGrid.Rows.Clear();
+
+        Dictionary<string, string> lookup = (mappings ?? new Dictionary<string, string>())
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        foreach (string floorTypeName in floorTypeNames)
+        {
+            lookup.TryGetValue(floorTypeName, out string? category);
+            _floorGrid.Rows.Add(floorTypeName, category ?? string.Empty);
+        }
+    }
+
+    private void RefreshFloorTypeOptions(IReadOnlyList<string> floorTypeNames)
+    {
+        if (_floorGrid.Columns["Key"] is not DataGridViewComboBoxColumn floorTypeColumn)
+        {
+            return;
+        }
+
+        floorTypeColumn.Items.Clear();
+        foreach (string floorTypeName in floorTypeNames)
+        {
+            floorTypeColumn.Items.Add(floorTypeName);
         }
     }
 
@@ -228,7 +312,7 @@ public sealed class ProjectMappingsForm : Form
 
     private void PopulateRules(ProjectMappingRules rules)
     {
-        PopulateMappingGrid(_floorGrid, rules.FloorCategoryOverrides);
+        PopulateFloorGrid(rules.FloorCategoryOverrides);
         PopulateMappingGrid(_roomGrid, rules.RoomCategoryOverrides);
         PopulateMappingGrid(_familyGrid, rules.FamilyCategoryOverrides);
 
@@ -298,3 +382,4 @@ public sealed class ProjectMappingsForm : Form
             .ToList();
     }
 }
+

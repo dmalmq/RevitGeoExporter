@@ -44,7 +44,7 @@ public sealed class ExportDiagnosticsReportBuilder
         return new ExportDiagnosticsReport
         {
             SourceModelName = session.SourceModelName,
-            TargetEpsg = session.TargetEpsg,
+            TargetEpsg = session.OutputEpsg,
             ProfileName = session.ProfileName,
             ExportedAtUtc = exportedAtUtc,
             DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),

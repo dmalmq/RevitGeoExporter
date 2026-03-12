@@ -4,7 +4,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Autodesk.Revit.DB;
+using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
@@ -21,6 +23,7 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly Action<ExportPreviewRequest>? _previewRequested;
     private readonly Window _window;
     private readonly List<ExportProfile> _profiles;
+    private readonly ModelCoordinateInfo? _coordinateInfo;
 
     private UiLanguage _language = UiLanguage.English;
     private readonly ListBox _viewList = new();
@@ -28,6 +31,7 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly TextBox _targetEpsgTextBox = new();
     private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
+    private readonly ComboBox _coordinateModeComboBox = new();
     private readonly ComboBox _unitSourceComboBox = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly CheckBox _unitCheckBox = new();
@@ -50,8 +54,15 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly TextBlock _outputDirectoryLabel = new();
     private readonly TextBlock _crsPresetLabel = new();
     private readonly TextBlock _targetEpsgLabel = new();
+    private readonly TextBlock _coordinateModeLabel = new();
     private readonly TextBlock _unitSourceLabel = new();
     private readonly TextBlock _roomCategoryParameterLabel = new();
+    private readonly TextBlock _coordinateInfoTitle = new();
+    private readonly TextBlock _displayUnitsInfoText = new();
+    private readonly TextBlock _projectLocationInfoText = new();
+    private readonly TextBlock _siteCrsInfoText = new();
+    private readonly TextBlock _sharedCoordinateInfoText = new();
+    private readonly TextBlock _modeSummaryText = new();
 
     public ExportDialogWpf(
         IReadOnlyList<ViewPlan> views,
@@ -61,7 +72,8 @@ internal sealed class ExportDialogWpf : IDisposable
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
-        Action<ExportPreviewRequest>? previewRequested = null)
+        Action<ExportPreviewRequest>? previewRequested = null,
+        ModelCoordinateInfo? coordinateInfo = null)
     {
         if (views is null)
         {
@@ -80,13 +92,14 @@ internal sealed class ExportDialogWpf : IDisposable
 
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewRequested = previewRequested;
+        _coordinateInfo = coordinateInfo;
 
         _window = new Window
         {
-            Width = 900,
-            Height = 700,
-            MinWidth = 820,
-            MinHeight = 620,
+            Width = 940,
+            Height = 760,
+            MinWidth = 840,
+            MinHeight = 660,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Content = BuildLayout(openMappingsRequested),
         };
@@ -104,9 +117,7 @@ internal sealed class ExportDialogWpf : IDisposable
 
     public ExportDialogSettings BuildSettings()
     {
-        int targetEpsg = int.TryParse(_targetEpsgTextBox.Text, out int epsg)
-            ? epsg
-            : ProjectInfo.DefaultTargetEpsg;
+        int targetEpsg = ParseTargetEpsgOrDefault();
 
         return new ExportDialogSettings
         {
@@ -118,6 +129,7 @@ internal sealed class ExportDialogWpf : IDisposable
             GeneratePackageOutput = _packageCheckBox.IsChecked == true,
             IncludePackageLegend = _packageLegendCheckBox.IsChecked == true,
             UiLanguage = ((_languageComboBox.SelectedItem as LanguageItem)?.Language) ?? UiLanguage.English,
+            CoordinateMode = GetSelectedCoordinateMode(),
             UnitSource = ((_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source) ?? UnitSource.Floors,
             RoomCategoryParameterName = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             GeometryRepairOptions = new GeometryRepairOptions(),
@@ -241,19 +253,27 @@ internal sealed class ExportDialogWpf : IDisposable
             {
                 _language = item.Language;
                 ViewSelectionRow.DisplayLanguage = _language;
+                CoordinateModeItem.DisplayLanguage = _language;
                 _viewList.Items.Refresh();
                 _unitSourceComboBox.Items.Refresh();
                 _presetComboBox.Items.Refresh();
                 _languageComboBox.Items.Refresh();
+                _coordinateModeComboBox.Items.Refresh();
                 ApplyLanguage();
+                UpdateCoordinateModeUi();
             }
         };
+
+        _coordinateModeComboBox.SelectionChanged += (_, _) => UpdateCoordinateModeUi();
+        _targetEpsgTextBox.TextChanged += (_, _) => UpdateCoordinateModeUi();
 
         panel.Children.Add(Labeled(_languageLabel, _languageComboBox));
         panel.Children.Add(Labeled(_featureTypesLabel, FeaturePanel()));
         panel.Children.Add(Labeled(_outputDirectoryLabel, _outputDirectoryTextBox));
+        panel.Children.Add(Labeled(_coordinateModeLabel, _coordinateModeComboBox));
         panel.Children.Add(Labeled(_crsPresetLabel, _presetComboBox));
         panel.Children.Add(Labeled(_targetEpsgLabel, _targetEpsgTextBox));
+        panel.Children.Add(BuildCoordinateInfoPanel());
         panel.Children.Add(Labeled(_unitSourceLabel, _unitSourceComboBox));
         panel.Children.Add(Labeled(_roomCategoryParameterLabel, _roomCategoryParameterTextBox));
 
@@ -261,7 +281,7 @@ internal sealed class ExportDialogWpf : IDisposable
         panel.Children.Add(_packageCheckBox);
         panel.Children.Add(_packageLegendCheckBox);
 
-        _mappingsButton.Width = 120;
+        _mappingsButton.Width = 140;
         _mappingsButton.Margin = new Thickness(0, 8, 0, 0);
         _mappingsButton.Click += (_, _) => openMappingsRequested?.Invoke();
         panel.Children.Add(_mappingsButton);
@@ -282,6 +302,40 @@ internal sealed class ExportDialogWpf : IDisposable
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = panel,
         };
+    }
+
+    private UIElement BuildCoordinateInfoPanel()
+    {
+        Border border = new()
+        {
+            BorderBrush = Brushes.Gainsboro,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(8),
+            Margin = new Thickness(0, 0, 0, 8),
+            Background = Brushes.WhiteSmoke,
+        };
+
+        StackPanel panel = new();
+        _coordinateInfoTitle.FontWeight = FontWeights.SemiBold;
+        _coordinateInfoTitle.Margin = new Thickness(0, 0, 0, 4);
+        panel.Children.Add(_coordinateInfoTitle);
+
+        foreach (TextBlock block in new[]
+                 {
+                     _displayUnitsInfoText,
+                     _projectLocationInfoText,
+                     _siteCrsInfoText,
+                     _sharedCoordinateInfoText,
+                     _modeSummaryText,
+                 })
+        {
+            block.TextWrapping = TextWrapping.Wrap;
+            block.Margin = new Thickness(0, 0, 0, 2);
+            panel.Children.Add(block);
+        }
+
+        border.Child = panel;
+        return border;
     }
 
     private UIElement FeaturePanel()
@@ -313,6 +367,7 @@ internal sealed class ExportDialogWpf : IDisposable
             ? settings.UiLanguage
             : UiLanguage.English;
         ViewSelectionRow.DisplayLanguage = _language;
+        CoordinateModeItem.DisplayLanguage = _language;
 
         _outputDirectoryTextBox.Text = settings.OutputDirectory ?? string.Empty;
         _targetEpsgTextBox.Text = settings.TargetEpsg.ToString();
@@ -330,6 +385,10 @@ internal sealed class ExportDialogWpf : IDisposable
         _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
         _languageComboBox.Items.Add(new LanguageItem(UiLanguage.Japanese));
         _languageComboBox.SelectedIndex = _language == UiLanguage.Japanese ? 1 : 0;
+
+        _coordinateModeComboBox.Items.Add(new CoordinateModeItem(CoordinateExportMode.SharedCoordinates));
+        _coordinateModeComboBox.Items.Add(new CoordinateModeItem(CoordinateExportMode.ConvertToTargetCrs));
+        _coordinateModeComboBox.SelectedIndex = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? 1 : 0;
 
         foreach (KeyValuePair<int, string> zone in JapanPlaneRectangular.Zones.OrderBy(entry => entry.Key))
         {
@@ -354,7 +413,9 @@ internal sealed class ExportDialogWpf : IDisposable
         _unitSourceComboBox.Items.Refresh();
         _presetComboBox.Items.Refresh();
         _languageComboBox.Items.Refresh();
+        _coordinateModeComboBox.Items.Refresh();
         ApplyLanguage();
+        UpdateCoordinateModeUi();
     }
 
     private void ConfirmExport()
@@ -381,14 +442,28 @@ internal sealed class ExportDialogWpf : IDisposable
             return;
         }
 
-        if (!int.TryParse(_targetEpsgTextBox.Text, out int epsg) || epsg <= 0)
+        CoordinateExportMode coordinateMode = GetSelectedCoordinateMode();
+        if (coordinateMode == CoordinateExportMode.ConvertToTargetCrs)
         {
-            MessageBox.Show(
-                L("ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
-                _window.Title,
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            return;
+            if (!int.TryParse(_targetEpsgTextBox.Text, out int convertEpsg) || convertEpsg <= 0)
+            {
+                MessageBox.Show(
+                    L("ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
+                    _window.Title,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_coordinateInfo?.CanConvert != true)
+            {
+                MessageBox.Show(
+                    L("ExportDialog.Message.SharedCrsRequiredForConversion", "Conversion requires a recognizable shared/site coordinate system in the current Revit model."),
+                    _window.Title,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
         }
 
         UiLanguage uiLanguage = (_languageComboBox.SelectedItem as LanguageItem)?.Language ?? UiLanguage.English;
@@ -397,7 +472,7 @@ internal sealed class ExportDialogWpf : IDisposable
         Result = new ExportDialogResult(
             selectedViews,
             (_outputDirectoryTextBox.Text ?? string.Empty).Trim(),
-            epsg,
+            ParseTargetEpsgOrDefault(),
             featureTypes,
             _diagnosticsCheckBox.IsChecked == true,
             _packageCheckBox.IsChecked == true,
@@ -405,6 +480,7 @@ internal sealed class ExportDialogWpf : IDisposable
             new GeometryRepairOptions(),
             selectedProfileName: _profiles.FirstOrDefault()?.Name,
             uiLanguage,
+            coordinateMode,
             unitSource,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim());
 
@@ -461,6 +537,73 @@ internal sealed class ExportDialogWpf : IDisposable
         return types;
     }
 
+    private CoordinateExportMode GetSelectedCoordinateMode()
+    {
+        return (_coordinateModeComboBox.SelectedItem as CoordinateModeItem)?.Mode ?? CoordinateExportMode.SharedCoordinates;
+    }
+
+    private int ParseTargetEpsgOrDefault()
+    {
+        if (int.TryParse(_targetEpsgTextBox.Text, out int epsg) && epsg > 0)
+        {
+            return epsg;
+        }
+
+        return _coordinateInfo?.ResolvedSourceEpsg ?? ProjectInfo.DefaultTargetEpsg;
+    }
+
+    private void UpdateCoordinateModeUi()
+    {
+        bool isConvertMode = GetSelectedCoordinateMode() == CoordinateExportMode.ConvertToTargetCrs;
+        _presetComboBox.IsEnabled = isConvertMode;
+        _targetEpsgTextBox.IsEnabled = isConvertMode;
+        UpdateCoordinateInfoText(isConvertMode);
+    }
+
+    private void UpdateCoordinateInfoText(bool isConvertMode)
+    {
+        string displayUnits = _coordinateInfo?.DisplayLengthUnitLabel ?? "Unknown";
+        string locationName = string.IsNullOrWhiteSpace(_coordinateInfo?.ActiveProjectLocationName)
+            ? "Unavailable"
+            : _coordinateInfo!.ActiveProjectLocationName;
+        string sharedCrs = !string.IsNullOrWhiteSpace(_coordinateInfo?.ResolvedSourceLabel)
+            ? _coordinateInfo!.ResolvedSourceLabel
+            : "Not resolved";
+        string siteId = !string.IsNullOrWhiteSpace(_coordinateInfo?.SiteCoordinateSystemId)
+            ? _coordinateInfo!.SiteCoordinateSystemId
+            : "Not set";
+        string sharedSummary = !string.IsNullOrWhiteSpace(_coordinateInfo?.SharedCoordinateSummary)
+            ? _coordinateInfo!.SharedCoordinateSummary
+            : "Unavailable";
+
+        _displayUnitsInfoText.Text = $"{L("ExportDialog.ModelUnits", "Model display units")}: {displayUnits}";
+        _projectLocationInfoText.Text = $"{L("ExportDialog.ActiveLocation", "Active project location")}: {locationName}";
+        _siteCrsInfoText.Text = $"{L("ExportDialog.SharedCrs", "Shared CRS")}: {sharedCrs}    ({L("ExportDialog.SiteCrsId", "Site CRS Id")}: {siteId})";
+        _sharedCoordinateInfoText.Text = $"{L("ExportDialog.SharedCoordinateSummary", "Shared origin / transform")}: {sharedSummary}";
+
+        if (isConvertMode)
+        {
+            if (_coordinateInfo?.CanConvert == true)
+            {
+                _modeSummaryText.Text = $"{L("ExportDialog.ModeSummary.Convert", "Export will convert from the model shared CRS to the selected target EPSG.")} ({sharedCrs} -> EPSG:{ParseTargetEpsgOrDefault()})";
+                _modeSummaryText.Foreground = Brushes.DarkSlateGray;
+            }
+            else
+            {
+                _modeSummaryText.Text = L("ExportDialog.ModeSummary.ConvertUnavailable", "Conversion is unavailable until the Revit model has a recognizable shared/site CRS.");
+                _modeSummaryText.Foreground = Brushes.DarkRed;
+            }
+        }
+        else
+        {
+            string sharedOutput = _coordinateInfo?.ResolvedSourceEpsg is int sourceEpsg
+                ? JapanPlaneRectangular.DescribeEpsg(sourceEpsg)
+                : $"EPSG:{ParseTargetEpsgOrDefault()}";
+            _modeSummaryText.Text = $"{L("ExportDialog.ModeSummary.Shared", "Export will stay in the model shared coordinate system by default.")} ({sharedOutput})";
+            _modeSummaryText.Foreground = Brushes.DarkSlateGray;
+        }
+    }
+
     private void ApplyLanguage()
     {
         _window.Title = L("ExportDialog.Title", "Export GeoPackage");
@@ -469,8 +612,10 @@ internal sealed class ExportDialogWpf : IDisposable
         _languageLabel.Text = L("Common.Language", "Language");
         _featureTypesLabel.Text = L("ExportDialog.FeatureTypes", "Feature Types");
         _outputDirectoryLabel.Text = L("Common.OutputDirectory", "Output Directory");
+        _coordinateModeLabel.Text = L("ExportDialog.CoordinateMode", "Coordinate Mode");
         _crsPresetLabel.Text = L("Common.CrsPreset", "CRS Preset");
         _targetEpsgLabel.Text = L("Common.TargetEpsg", "Target EPSG");
+        _coordinateInfoTitle.Text = L("ExportDialog.ModelCoordinateInfo", "Model Coordinate Info");
         _unitSourceLabel.Text = "Unit Source";
         _roomCategoryParameterLabel.Text = "Room Category Parameter";
         _unitCheckBox.Content = "unit";
@@ -486,6 +631,7 @@ internal sealed class ExportDialogWpf : IDisposable
         _cancelButton.Content = L("Common.Cancel", "Cancel");
         _previewButton.Content = L("ExportDialog.Preview", "Preview...");
         _exportButton.Content = L("ExportDialog.ExportButton", "Export");
+        UpdateCoordinateInfoText(GetSelectedCoordinateMode() == CoordinateExportMode.ConvertToTargetCrs);
     }
 
     private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
@@ -525,6 +671,25 @@ internal sealed class ExportDialogWpf : IDisposable
         public override string ToString() => UiLanguageText.DisplayName(Language);
     }
 
+    private sealed class CoordinateModeItem
+    {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
+        public CoordinateModeItem(CoordinateExportMode mode)
+        {
+            Mode = mode;
+        }
+
+        public CoordinateExportMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode == CoordinateExportMode.ConvertToTargetCrs
+                ? LocalizedTextProvider.Get(DisplayLanguage, "ExportDialog.CoordinateMode.Convert", "Convert to target CRS")
+                : LocalizedTextProvider.Get(DisplayLanguage, "ExportDialog.CoordinateMode.Shared", "Shared coordinates (default)");
+        }
+    }
+
     private sealed class UnitSourceItem
     {
         public UnitSourceItem(UnitSource source) => Source = source;
@@ -551,4 +716,3 @@ internal sealed class ExportDialogWpf : IDisposable
         public override string ToString() => $"EPSG:{Epsg} - {Name}";
     }
 }
-

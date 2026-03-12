@@ -5,9 +5,11 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
+using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using ProjNet.CoordinateSystems;
 
 namespace RevitGeoExporter.Export;
 
@@ -29,6 +31,10 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
         string? baselineKey = null,
+        CoordinateExportMode coordinateMode = CoordinateExportMode.SharedCoordinates,
+        int? sourceEpsg = null,
+        string? sourceCoordinateSystemId = null,
+        string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
         Action<ExportProgressUpdate>? progressCallback = null)
@@ -42,6 +48,10 @@ public sealed class FloorGeoPackageExporter
             packageOptions,
             profileName,
             baselineKey,
+            coordinateMode,
+            sourceEpsg,
+            sourceCoordinateSystemId,
+            sourceCoordinateSystemDefinition,
             unitSource,
             roomCategoryParameterName);
         return WritePreparedExport(session, progressCallback);
@@ -56,6 +66,10 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
         string? baselineKey = null,
+        CoordinateExportMode coordinateMode = CoordinateExportMode.SharedCoordinates,
+        int? sourceEpsg = null,
+        string? sourceCoordinateSystemId = null,
+        string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name")
     {
@@ -155,6 +169,10 @@ public sealed class FloorGeoPackageExporter
             profileName,
             string.IsNullOrWhiteSpace(baselineKey) ? projectKey : baselineKey!,
             sourceModelName,
+            coordinateMode,
+            sourceEpsg,
+            sourceCoordinateSystemId,
+            sourceCoordinateSystemDefinition,
             unitSource,
             roomCategoryParameterName);
     }
@@ -170,6 +188,32 @@ public sealed class FloorGeoPackageExporter
 
         FloorGeoPackageExportResult result = new();
         result.AddWarnings(session.Prepared.Warnings);
+        if (session.CoordinateMode == CoordinateExportMode.SharedCoordinates && session.SourceEpsg == null)
+        {
+            result.AddWarning("The model shared CRS could not be resolved to a numeric EPSG code. Output geometry remains in shared coordinates and uses the selected EPSG metadata value.");
+        }
+
+        CoordinateSystem? sourceCoordinateSystem = null;
+        CoordinateSystem? targetCoordinateSystem = null;
+        bool shouldTransform = session.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs &&
+                               session.SourceEpsg.GetValueOrDefault() != session.TargetEpsg;
+        if (shouldTransform)
+        {
+            if (!CoordinateSystemCatalog.TryCreateSourceCoordinateSystem(
+                session.SourceCoordinateSystemDefinition,
+                session.SourceCoordinateSystemId,
+                session.SourceEpsg,
+                out sourceCoordinateSystem,
+                out string sourceFailureReason))
+            {
+                throw new InvalidOperationException(sourceFailureReason);
+            }
+
+            if (!CoordinateSystemCatalog.TryCreateFromEpsg(session.TargetEpsg, out targetCoordinateSystem) || targetCoordinateSystem == null)
+            {
+                throw new InvalidOperationException($"Target EPSG:{session.TargetEpsg} is not supported for coordinate conversion.");
+            }
+        }
 
         int totalSteps = Math.Max(1, session.Prepared.Views.Count * CountSelectedFeatureTypes(session.FeatureTypes));
         int completedSteps = 0;
@@ -189,15 +233,16 @@ public sealed class FloorGeoPackageExporter
 
             if (session.FeatureTypes.HasFlag(ExportFeatureType.Unit) && viewData.UnitLayer != null)
             {
+                ExportLayer unitLayer = PrepareLayerForWrite(viewData.UnitLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
                 string unitFile = Path.Combine(session.OutputDirectory, $"{fileStem}_unit.gpkg");
-                writer.Write(unitFile, session.TargetEpsg, new[] { viewData.UnitLayer });
+                writer.Write(unitFile, session.OutputEpsg, new[] { unitLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
                         viewData.Level.Name,
                         "unit",
                         unitFile,
-                        viewData.UnitLayer.Features.Count));
+                        unitLayer.Features.Count));
                 completedSteps++;
                 progressCallback?.Invoke(
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [unit]"));
@@ -205,15 +250,16 @@ public sealed class FloorGeoPackageExporter
 
             if (session.FeatureTypes.HasFlag(ExportFeatureType.Detail) && viewData.DetailLayer != null)
             {
+                ExportLayer detailLayer = PrepareLayerForWrite(viewData.DetailLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
                 string detailFile = Path.Combine(session.OutputDirectory, $"{fileStem}_detail.gpkg");
-                writer.Write(detailFile, session.TargetEpsg, new[] { viewData.DetailLayer });
+                writer.Write(detailFile, session.OutputEpsg, new[] { detailLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
                         viewData.Level.Name,
                         "detail",
                         detailFile,
-                        viewData.DetailLayer.Features.Count));
+                        detailLayer.Features.Count));
                 completedSteps++;
                 progressCallback?.Invoke(
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [detail]"));
@@ -221,15 +267,16 @@ public sealed class FloorGeoPackageExporter
 
             if (session.FeatureTypes.HasFlag(ExportFeatureType.Opening) && viewData.OpeningLayer != null)
             {
+                ExportLayer openingLayer = PrepareLayerForWrite(viewData.OpeningLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
                 string openingFile = Path.Combine(session.OutputDirectory, $"{fileStem}_opening.gpkg");
-                writer.Write(openingFile, session.TargetEpsg, new[] { viewData.OpeningLayer });
+                writer.Write(openingFile, session.OutputEpsg, new[] { openingLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
                         viewData.Level.Name,
                         "opening",
                         openingFile,
-                        viewData.OpeningLayer.Features.Count));
+                        openingLayer.Features.Count));
                 completedSteps++;
                 progressCallback?.Invoke(
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [opening]"));
@@ -237,15 +284,16 @@ public sealed class FloorGeoPackageExporter
 
             if (session.FeatureTypes.HasFlag(ExportFeatureType.Level) && viewData.LevelLayer != null)
             {
+                ExportLayer levelLayer = PrepareLayerForWrite(viewData.LevelLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
                 string levelFile = Path.Combine(session.OutputDirectory, $"{fileStem}_level.gpkg");
-                writer.Write(levelFile, session.TargetEpsg, new[] { viewData.LevelLayer });
+                writer.Write(levelFile, session.OutputEpsg, new[] { levelLayer });
                 result.AddViewResult(
                     new ViewExportResult(
                         viewData.View.Name,
                         viewData.Level.Name,
                         "level",
                         levelFile,
-                        viewData.LevelLayer.Features.Count));
+                        levelLayer.Features.Count));
                 completedSteps++;
                 progressCallback?.Invoke(
                     new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [level]"));
@@ -253,6 +301,25 @@ public sealed class FloorGeoPackageExporter
         }
 
         return result;
+    }
+
+    private static ExportLayer PrepareLayerForWrite(
+        ExportLayer layer,
+        bool shouldTransform,
+        CoordinateSystem? sourceCoordinateSystem,
+        CoordinateSystem? targetCoordinateSystem)
+    {
+        if (!shouldTransform)
+        {
+            return layer;
+        }
+
+        if (sourceCoordinateSystem == null || targetCoordinateSystem == null)
+        {
+            throw new InvalidOperationException("Coordinate conversion was requested, but the required CRS definitions were not available.");
+        }
+
+        return CoordinateSystemCatalog.ReprojectLayer(layer, sourceCoordinateSystem, targetCoordinateSystem);
     }
 
     private static int CountSelectedFeatureTypes(ExportFeatureType featureTypes)
