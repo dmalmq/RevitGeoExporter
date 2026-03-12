@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Autodesk.Revit.DB;
@@ -164,6 +165,8 @@ internal sealed class ExportDialogWpf : IDisposable
         DockPanel viewPanel = new() { LastChildFill = true };
         _viewList.ItemsSource = _views;
         _viewList.ItemTemplate = BuildViewSelectionTemplate();
+        _viewList.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(OnPreviewInputsChanged));
+        _viewList.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(OnPreviewInputsChanged));
         UIElement viewActions = BuildViewActions();
         DockPanel.SetDock(viewActions, Dock.Bottom);
         viewPanel.Children.Add(viewActions);
@@ -231,6 +234,7 @@ internal sealed class ExportDialogWpf : IDisposable
                 row.IsSelected = true;
             }
             _viewList.Items.Refresh();
+            UpdatePreviewButtonEnabled();
         };
 
         _clearAllButton.Width = 100;
@@ -242,6 +246,7 @@ internal sealed class ExportDialogWpf : IDisposable
                 row.IsSelected = false;
             }
             _viewList.Items.Refresh();
+            UpdatePreviewButtonEnabled();
         };
 
         actions.Children.Add(_selectAllButton);
@@ -351,6 +356,14 @@ internal sealed class ExportDialogWpf : IDisposable
         _detailCheckBox.Content = "detail";
         _openingCheckBox.Content = "opening";
         _levelCheckBox.Content = "level";
+        _unitCheckBox.Checked += OnPreviewInputsChanged;
+        _unitCheckBox.Unchecked += OnPreviewInputsChanged;
+        _detailCheckBox.Checked += OnPreviewInputsChanged;
+        _detailCheckBox.Unchecked += OnPreviewInputsChanged;
+        _openingCheckBox.Checked += OnPreviewInputsChanged;
+        _openingCheckBox.Unchecked += OnPreviewInputsChanged;
+        _levelCheckBox.Checked += OnPreviewInputsChanged;
+        _levelCheckBox.Unchecked += OnPreviewInputsChanged;
         panel.Children.Add(_unitCheckBox);
         panel.Children.Add(_detailCheckBox);
         panel.Children.Add(_openingCheckBox);
@@ -422,6 +435,7 @@ internal sealed class ExportDialogWpf : IDisposable
         _coordinateModeComboBox.Items.Refresh();
         ApplyLanguage();
         UpdateCoordinateModeUi();
+        UpdatePreviewButtonEnabled();
     }
 
     private void ConfirmExport()
@@ -430,6 +444,7 @@ internal sealed class ExportDialogWpf : IDisposable
         if (selectedViews.Count == 0)
         {
             MessageBox.Show(
+                _window,
                 L("ExportDialog.Message.SelectPlanViewToExport", "Select at least one plan view to export."),
                 _window.Title,
                 MessageBoxButton.OK,
@@ -441,6 +456,7 @@ internal sealed class ExportDialogWpf : IDisposable
         if (featureTypes == ExportFeatureType.None)
         {
             MessageBox.Show(
+                _window,
                 L("ExportDialog.Message.SelectFeatureType", "Select at least one feature type."),
                 _window.Title,
                 MessageBoxButton.OK,
@@ -454,6 +470,7 @@ internal sealed class ExportDialogWpf : IDisposable
             if (!int.TryParse(_targetEpsgTextBox.Text, out int convertEpsg) || convertEpsg <= 0)
             {
                 MessageBox.Show(
+                    _window,
                     L("ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
                     _window.Title,
                     MessageBoxButton.OK,
@@ -464,6 +481,7 @@ internal sealed class ExportDialogWpf : IDisposable
             if (_coordinateInfo?.CanConvert != true)
             {
                 MessageBox.Show(
+                    _window,
                     L("ExportDialog.Message.SharedCrsRequiredForConversion", "Conversion requires a recognizable shared/site coordinate system in the current Revit model."),
                     _window.Title,
                     MessageBoxButton.OK,
@@ -505,6 +523,7 @@ internal sealed class ExportDialogWpf : IDisposable
         if (selectedViews.Count == 0)
         {
             MessageBox.Show(
+                _window,
                 L("ExportDialog.Message.SelectPlanViewToPreview", "Select at least one plan view to preview."),
                 _window.Title,
                 MessageBoxButton.OK,
@@ -515,6 +534,7 @@ internal sealed class ExportDialogWpf : IDisposable
         if (GetSelectedFeatureTypes() == ExportFeatureType.None)
         {
             MessageBox.Show(
+                _window,
                 L("ExportDialog.Message.PreviewRequiresFeatureType", "Preview requires at least one selected feature type."),
                 _window.Title,
                 MessageBoxButton.OK,
@@ -543,8 +563,33 @@ internal sealed class ExportDialogWpf : IDisposable
             ? null
             : new Win32WindowOwner(handle);
 
-        _previewRequested(previewRequest, owner);
+        try
+        {
+            _previewRequested(previewRequest, owner);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                _window,
+                $"{L("ExportDialog.Message.PreviewOpenFailed", "Preview could not be opened.")}\n\n{ex.Message}",
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+
         _window.Activate();
+    }
+
+    private void UpdatePreviewButtonEnabled()
+    {
+        _previewButton.IsEnabled = _previewRequested != null &&
+                                   GetSelectedFeatureTypes() != ExportFeatureType.None &&
+                                   GetSelectedViews().Count > 0;
+    }
+
+    private void OnPreviewInputsChanged(object? sender, RoutedEventArgs e)
+    {
+        UpdatePreviewButtonEnabled();
     }
 
     private List<ViewPlan> GetSelectedViews() => _views.Where(x => x.IsSelected).Select(x => x.View).ToList();
