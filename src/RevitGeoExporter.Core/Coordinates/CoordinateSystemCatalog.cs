@@ -94,21 +94,6 @@ public static class CoordinateSystemCatalog
         out CoordinateSystem? coordinateSystem,
         out string failureReason)
     {
-        string trimmedDefinition = siteCoordinateSystemDefinition?.Trim() ?? string.Empty;
-        if (trimmedDefinition.Length > 0)
-        {
-            try
-            {
-                coordinateSystem = Factory.CreateFromWkt(trimmedDefinition);
-                failureReason = string.Empty;
-                return coordinateSystem != null;
-            }
-            catch
-            {
-                // Fall back to the resolved EPSG path below.
-            }
-        }
-
         if (resolvedSourceEpsg.HasValue && TryCreateFromEpsg(resolvedSourceEpsg.Value, out coordinateSystem))
         {
             failureReason = string.Empty;
@@ -120,6 +105,21 @@ public static class CoordinateSystemCatalog
         {
             failureReason = string.Empty;
             return true;
+        }
+
+        string trimmedDefinition = siteCoordinateSystemDefinition?.Trim() ?? string.Empty;
+        if (trimmedDefinition.Length > 0)
+        {
+            try
+            {
+                coordinateSystem = Factory.CreateFromWkt(trimmedDefinition);
+                failureReason = string.Empty;
+                return coordinateSystem != null;
+            }
+            catch
+            {
+                // Fall back to the generic failure message below.
+            }
         }
 
         coordinateSystem = null;
