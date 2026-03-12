@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -29,6 +29,7 @@ public sealed class PreviewCanvasControl : Control
     private PreviewMapContext? _mapContext;
     private PreviewBasemapSettings _basemapSettings = new(PreviewBasemapSettings.DefaultUrlTemplate, PreviewBasemapSettings.DefaultAttribution);
     private string _basemapStatusMessage = string.Empty;
+    private Point2D? _surveyPoint;
 
     public PreviewCanvasControl()
     {
@@ -66,6 +67,8 @@ public sealed class PreviewCanvasControl : Control
 
     public bool ShowBasemap { get; set; }
 
+    public bool ShowSurveyPoint { get; set; }
+
     public string SearchText { get; set; } = string.Empty;
 
     public bool BasemapAvailable =>
@@ -87,10 +90,15 @@ public sealed class PreviewCanvasControl : Control
         }
     }
 
-    public void SetViewData(IReadOnlyList<PreviewFeatureData> features, Bounds2D bounds)
+    public bool SurveyPointAvailable => _surveyPoint.HasValue;
+
+    public string SurveyPointMarkerLabel { get; set; } = "0,0";
+
+    public void SetViewData(IReadOnlyList<PreviewFeatureData> features, Bounds2D bounds, Point2D? surveyPoint = null)
     {
         _features = features ?? Array.Empty<PreviewFeatureData>();
         _bounds = bounds;
+        _surveyPoint = surveyPoint;
         _selectedFeature = null;
         ClearBasemapStatus();
         ResetView();
@@ -114,7 +122,7 @@ public sealed class PreviewCanvasControl : Control
 
     public void ResetView()
     {
-        _transform = ViewTransform2D.Fit(_bounds, ClientSize.Width, ClientSize.Height, 24d);
+        _transform = ViewTransform2D.Fit(IncludeSurveyPointInBounds(_bounds), ClientSize.Width, ClientSize.Height, 24d);
         _selectedFeature = null;
         NotifySelectionChanged();
         Invalidate();
@@ -230,8 +238,9 @@ public sealed class PreviewCanvasControl : Control
             DrawGrid(e.Graphics);
         }
 
-        List<PreviewFeatureData> visible = GetVisibleFeatures().ToList();
-        if (visible.Count == 0)
+                List<PreviewFeatureData> visible = GetVisibleFeatures().ToList();
+        bool hasVisibleSurveyPoint = ShowSurveyPoint && SurveyPointAvailable;
+        if (visible.Count == 0 && !hasVisibleSurveyPoint)
         {
             DrawCenteredMessage(e.Graphics, "No preview features.");
             return;
@@ -248,6 +257,11 @@ public sealed class PreviewCanvasControl : Control
         if (_selectedFeature != null && visible.Contains(_selectedFeature))
         {
             DrawFeature(e.Graphics, _selectedFeature, selected: true);
+        }
+
+        if (hasVisibleSurveyPoint)
+        {
+            DrawSurveyPoint(e.Graphics, _surveyPoint!.Value);
         }
     }
 
@@ -329,10 +343,23 @@ public sealed class PreviewCanvasControl : Control
         return true;
     }
 
-    private Bounds2D GetVisibleBounds()
+        private Bounds2D GetVisibleBounds()
     {
         Bounds2D visibleBounds = FeatureBoundsCalculator.FromFeatures(GetVisibleFeatures().Select(x => x.Feature));
-        return visibleBounds.IsEmpty ? _bounds : visibleBounds;
+        Bounds2D fallbackBounds = _bounds.IsEmpty ? visibleBounds : _bounds;
+        Bounds2D bounds = visibleBounds.IsEmpty ? fallbackBounds : visibleBounds;
+        return IncludeSurveyPointInBounds(bounds);
+    }
+
+    private Bounds2D IncludeSurveyPointInBounds(Bounds2D bounds)
+    {
+        if (!ShowSurveyPoint || !_surveyPoint.HasValue)
+        {
+            return bounds;
+        }
+
+        Bounds2D surveyBounds = CreatePointBounds(_surveyPoint.Value);
+        return bounds.IsEmpty ? surveyBounds : bounds.Union(surveyBounds);
     }
 
     protected override void Dispose(bool disposing)
@@ -402,7 +429,7 @@ public sealed class PreviewCanvasControl : Control
         graphics.DrawPath(outlinePen, path);
     }
 
-    private void DrawLineFeature(Graphics graphics, ExportLineString lineString, PreviewFeatureData feature, bool selected)
+        private void DrawLineFeature(Graphics graphics, ExportLineString lineString, PreviewFeatureData feature, bool selected)
     {
         PointF[] points = lineString.LineString.Points
             .Select(point => ToPointF(_transform.WorldToScreen(point)))
@@ -421,6 +448,47 @@ public sealed class PreviewCanvasControl : Control
             LineJoin = LineJoin.Round,
         };
         graphics.DrawLines(pen, points);
+    }
+
+    private void DrawSurveyPoint(Graphics graphics, Point2D surveyPoint)
+    {
+        PointF center = ToPointF(_transform.WorldToScreen(surveyPoint));
+        const float outerRadius = 8f;
+        const float innerRadius = 5f;
+        const float armLength = 14f;
+
+        using Pen haloPen = new(Color.FromArgb(235, Color.White), 4f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        using Pen markerPen = new(Color.FromArgb(212, 38, 38), 2f)
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+        };
+        using SolidBrush fillBrush = new(Color.FromArgb(230, 255, 250, 250));
+        using SolidBrush textBrush = new(Color.FromArgb(212, 38, 38));
+        using SolidBrush textBackground = new(Color.FromArgb(220, 255, 255, 255));
+
+        graphics.DrawLine(haloPen, center.X - armLength, center.Y, center.X + armLength, center.Y);
+        graphics.DrawLine(haloPen, center.X, center.Y - armLength, center.X, center.Y + armLength);
+        graphics.DrawEllipse(haloPen, center.X - outerRadius, center.Y - outerRadius, outerRadius * 2f, outerRadius * 2f);
+
+        graphics.DrawLine(markerPen, center.X - armLength, center.Y, center.X + armLength, center.Y);
+        graphics.DrawLine(markerPen, center.X, center.Y - armLength, center.X, center.Y + armLength);
+        graphics.FillEllipse(fillBrush, center.X - innerRadius, center.Y - innerRadius, innerRadius * 2f, innerRadius * 2f);
+        graphics.DrawEllipse(markerPen, center.X - outerRadius, center.Y - outerRadius, outerRadius * 2f, outerRadius * 2f);
+
+        string label = string.IsNullOrWhiteSpace(SurveyPointMarkerLabel) ? "0,0" : SurveyPointMarkerLabel.Trim();
+        SizeF labelSize = graphics.MeasureString(label, Font);
+        RectangleF labelBounds = new(
+            center.X + outerRadius + 6f,
+            center.Y - labelSize.Height - 6f,
+            labelSize.Width + 8f,
+            labelSize.Height + 4f);
+        graphics.FillRectangle(textBackground, labelBounds);
+        graphics.DrawString(label, Font, textBrush, labelBounds.Left + 4f, labelBounds.Top + 2f);
     }
 
     private GraphicsPath CreatePolygonPath(ExportPolygon polygonFeature)
@@ -527,6 +595,11 @@ public sealed class PreviewCanvasControl : Control
     private static PointF ToPointF(Point2D point)
     {
         return new PointF((float)point.X, (float)point.Y);
+    }
+
+    private static Bounds2D CreatePointBounds(Point2D point)
+    {
+        return new Bounds2D(point.X, point.Y, point.X, point.Y);
     }
 
     private static Color ParseColor(string hex, Color fallback)

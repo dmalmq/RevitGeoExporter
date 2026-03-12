@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -787,6 +787,7 @@ public sealed class ExportDialog : WinFormsForm
             _coordinateInfo?.ResolvedSourceEpsg,
             _coordinateInfo?.SiteCoordinateSystemId,
             _coordinateInfo?.SiteCoordinateSystemDefinition,
+            _coordinateInfo?.SurveyPointSharedCoordinates,
             _unitSource,
             _roomCategoryParameterName,
             _previewBasemapSettings.UrlTemplate,

@@ -1,6 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Forms.Integration;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
@@ -21,14 +20,6 @@ internal sealed class ExportPreviewWindow : IDisposable
             Dock = WinForms.DockStyle.Fill,
         };
 
-        _embeddedForm.FormClosed += (_, _) =>
-        {
-            if (_window.IsVisible)
-            {
-                _window.Close();
-            }
-        };
-
         WinForms.Panel hostPanel = new()
         {
             Dock = WinForms.DockStyle.Fill,
@@ -41,20 +32,6 @@ internal sealed class ExportPreviewWindow : IDisposable
             Child = hostPanel,
         };
 
-        Grid layout = new();
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        TextBlock banner = new()
-        {
-            Text = "WPF preview shell enabled (phase 4 in progress).",
-            Margin = new Thickness(12, 8, 12, 8),
-        };
-        layout.Children.Add(banner);
-
-        Grid.SetRow(host, 1);
-        layout.Children.Add(host);
-
         _window = new Window
         {
             Title = "Export Preview",
@@ -63,7 +40,15 @@ internal sealed class ExportPreviewWindow : IDisposable
             MinWidth = 980,
             MinHeight = 680,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Content = layout,
+            Content = host,
+        };
+
+        _embeddedForm.FormClosed += (_, _) =>
+        {
+            if (_window.IsVisible)
+            {
+                _window.Close();
+            }
         };
     }
 
