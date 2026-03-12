@@ -1,4 +1,4 @@
-﻿using ProjNet.CoordinateSystems;
+using ProjNet.CoordinateSystems;
 using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Core.Preview;
@@ -7,6 +7,7 @@ public sealed class PreviewMapContext
 {
     public PreviewMapContext(
         CoordinateExportMode coordinateMode,
+        CoordinateSystem? sourceCoordinateSystem,
         int? outputEpsg,
         string outputCrsLabel,
         CoordinateSystem? outputCoordinateSystem,
@@ -14,6 +15,7 @@ public sealed class PreviewMapContext
         string? unavailableReason)
     {
         CoordinateMode = coordinateMode;
+        SourceCoordinateSystem = sourceCoordinateSystem;
         OutputEpsg = outputEpsg;
         OutputCrsLabel = outputCrsLabel ?? string.Empty;
         OutputCoordinateSystem = outputCoordinateSystem;
@@ -22,6 +24,8 @@ public sealed class PreviewMapContext
     }
 
     public CoordinateExportMode CoordinateMode { get; }
+
+    public CoordinateSystem? SourceCoordinateSystem { get; }
 
     public int? OutputEpsg { get; }
 

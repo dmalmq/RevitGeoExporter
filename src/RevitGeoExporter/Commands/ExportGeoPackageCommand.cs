@@ -65,7 +65,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             StringComparison.Ordinal);
 
         bool useWpfDialog = !forceLegacyWinForms;
-        bool useWpfPreviewWindow = !forceLegacyWinForms;
+        bool useWpfPreviewWindow = false;
 
         if (useWpfDialog)
         {
@@ -94,7 +94,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                         availableFloorTypeNames);
                     mappingsForm.ShowDialog();
                 },
-                previewRequest =>
+                (previewRequest, previewOwner) =>
                 {
                     ExportPreviewService previewService = new(document, previewRequest.UnitSource, previewRequest.RoomCategoryParameterName, previewRequest.GeometryRepairOptions);
                     if (useWpfPreviewWindow)
@@ -105,7 +105,14 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     else
                     {
                         using ExportPreviewForm previewForm = new(previewRequest, previewService);
-                        previewForm.ShowDialog();
+                        if (previewOwner != null)
+                        {
+                            previewForm.ShowDialog(previewOwner);
+                        }
+                        else
+                        {
+                            previewForm.ShowDialog();
+                        }
                     }
                 },
                 coordinateInfo);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
@@ -20,6 +20,7 @@ public sealed class ExportPreviewRequest
         int? sourceEpsg,
         string? sourceCoordinateSystemId,
         string? sourceCoordinateSystemDefinition,
+        Point2D? surveyPointSharedCoordinates,
         UnitSource unitSource,
         string roomCategoryParameterName,
         string? previewBasemapUrlTemplate,
@@ -34,6 +35,7 @@ public sealed class ExportPreviewRequest
         SourceEpsg = sourceEpsg;
         SourceCoordinateSystemId = string.IsNullOrWhiteSpace(sourceCoordinateSystemId) ? string.Empty : sourceCoordinateSystemId.Trim();
         SourceCoordinateSystemDefinition = string.IsNullOrWhiteSpace(sourceCoordinateSystemDefinition) ? string.Empty : sourceCoordinateSystemDefinition.Trim();
+        SurveyPointSharedCoordinates = surveyPointSharedCoordinates;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         PreviewBasemapUrlTemplate = string.IsNullOrWhiteSpace(previewBasemapUrlTemplate)
@@ -61,6 +63,8 @@ public sealed class ExportPreviewRequest
     public string SourceCoordinateSystemId { get; }
 
     public string SourceCoordinateSystemDefinition { get; }
+
+    public Point2D? SurveyPointSharedCoordinates { get; }
 
     public UnitSource UnitSource { get; }
 

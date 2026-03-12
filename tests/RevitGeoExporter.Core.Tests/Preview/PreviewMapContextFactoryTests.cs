@@ -1,4 +1,3 @@
-using System.Linq;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
@@ -25,6 +24,7 @@ public sealed class PreviewMapContextFactoryTests
         Assert.True(context.CanShowBasemap);
         Assert.Equal(6677, context.OutputEpsg);
         Assert.Contains("6677", context.OutputCrsLabel);
+        Assert.NotNull(context.SourceCoordinateSystem);
         Assert.NotNull(context.OutputCoordinateSystem);
         Assert.NotNull(context.DisplayCoordinateSystem);
         Assert.Equal(string.Empty, context.UnavailableReason);
@@ -43,6 +43,7 @@ public sealed class PreviewMapContextFactoryTests
         Assert.True(context.CanShowBasemap);
         Assert.Equal(3857, context.OutputEpsg);
         Assert.Contains("3857", context.OutputCrsLabel);
+        Assert.NotNull(context.SourceCoordinateSystem);
     }
 
     [Fact]
@@ -57,6 +58,7 @@ public sealed class PreviewMapContextFactoryTests
 
         Assert.False(context.CanShowBasemap);
         Assert.NotEmpty(context.UnavailableReason);
+        Assert.Null(context.SourceCoordinateSystem);
         Assert.Null(context.OutputCoordinateSystem);
     }
 
@@ -71,24 +73,32 @@ public sealed class PreviewMapContextFactoryTests
             sourceCoordinateSystemDefinition: Wgs84Wkt);
 
         Assert.True(context.CanShowBasemap);
+        Assert.NotNull(context.SourceCoordinateSystem);
         Assert.NotNull(context.OutputCoordinateSystem);
         Assert.NotNull(context.DisplayCoordinateSystem);
 
-        ExportLineString feature = new(
-            new LineString2D(new[]
-            {
-                new Point2D(0d, 0d),
-                new Point2D(100d, 100d),
-            }));
+        Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(
+            new Point2D(0d, 0d),
+            context.OutputCoordinateSystem!,
+            context.DisplayCoordinateSystem!);
 
-        ExportLineString transformed = Assert.IsType<ExportLineString>(
-            CoordinateSystemCatalog.ReprojectFeature(
-                feature,
-                context.OutputCoordinateSystem!,
-                context.DisplayCoordinateSystem!));
+        Assert.InRange(transformed.X, 15500000d, 15650000d);
+        Assert.InRange(transformed.Y, 4200000d, 4400000d);
+    }
 
-        Point2D first = transformed.LineString.Points.First();
-        Assert.InRange(first.X, 15500000d, 15650000d);
-        Assert.InRange(first.Y, 4200000d, 4400000d);
+    [Fact]
+    public void Create_ConvertModeWithoutResolvableSource_DisablesBasemap()
+    {
+        PreviewMapContext context = PreviewMapContextFactory.Create(
+            CoordinateExportMode.ConvertToTargetCrs,
+            targetEpsg: 6677,
+            sourceEpsg: null,
+            sourceCoordinateSystemId: string.Empty,
+            sourceCoordinateSystemDefinition: string.Empty);
+
+        Assert.False(context.CanShowBasemap);
+        Assert.Equal(6677, context.OutputEpsg);
+        Assert.Null(context.SourceCoordinateSystem);
+        Assert.NotEmpty(context.UnavailableReason);
     }
 }

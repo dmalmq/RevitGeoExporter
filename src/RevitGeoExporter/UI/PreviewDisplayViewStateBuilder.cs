@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using ProjNet.CoordinateSystems;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Export;
 
@@ -28,37 +30,88 @@ internal static class PreviewDisplayViewStateBuilder
             request.SourceCoordinateSystemId,
             request.SourceCoordinateSystemDefinition);
 
-        if (!mapContext.CanShowBasemap)
-        {
-            return new PreviewDisplayViewState(viewData, viewData.Features, viewData.Bounds, mapContext);
-        }
-
         try
         {
-            List<PreviewFeatureData> displayFeatures = viewData.Features
-                .Select(feature => feature.WithFeature(
-                    CoordinateSystemCatalog.ReprojectFeature(
-                        feature.Feature,
-                        mapContext.OutputCoordinateSystem!,
-                        mapContext.DisplayCoordinateSystem!)))
-                .ToList();
+            IReadOnlyList<PreviewFeatureData> outputFeatures = viewData.Features;
+            Bounds2D outputBounds = viewData.Bounds;
+            Point2D? outputSurveyPoint = request.SurveyPointSharedCoordinates;
+
+            if (request.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs &&
+                mapContext.SourceCoordinateSystem != null &&
+                mapContext.OutputCoordinateSystem != null)
+            {
+                outputFeatures = ReprojectFeatures(
+                    viewData.Features,
+                    mapContext.SourceCoordinateSystem,
+                    mapContext.OutputCoordinateSystem);
+                Bounds2D convertedBounds = FeatureBoundsCalculator.FromFeatures(outputFeatures.Select(feature => feature.Feature));
+                outputBounds = convertedBounds.IsEmpty ? viewData.Bounds : convertedBounds;
+                if (outputSurveyPoint.HasValue)
+                {
+                    outputSurveyPoint = CoordinateSystemCatalog.ReprojectPoint(
+                        outputSurveyPoint.Value,
+                        mapContext.SourceCoordinateSystem,
+                        mapContext.OutputCoordinateSystem);
+                }
+            }
+
+            if (!mapContext.CanShowBasemap)
+            {
+                return new PreviewDisplayViewState(
+                    viewData,
+                    outputFeatures,
+                    outputBounds,
+                    mapContext,
+                    outputSurveyPoint,
+                    outputSurveyPoint);
+            }
+
+            List<PreviewFeatureData> displayFeatures = ReprojectFeatures(
+                outputFeatures,
+                mapContext.OutputCoordinateSystem!,
+                mapContext.DisplayCoordinateSystem!);
             Bounds2D displayBounds = FeatureBoundsCalculator.FromFeatures(displayFeatures.Select(feature => feature.Feature));
+            Point2D? displaySurveyPoint = outputSurveyPoint.HasValue
+                ? CoordinateSystemCatalog.ReprojectPoint(
+                    outputSurveyPoint.Value,
+                    mapContext.OutputCoordinateSystem!,
+                    mapContext.DisplayCoordinateSystem!)
+                : null;
             return new PreviewDisplayViewState(
                 viewData,
                 displayFeatures,
-                displayBounds.IsEmpty ? viewData.Bounds : displayBounds,
-                mapContext);
+                displayBounds.IsEmpty ? outputBounds : displayBounds,
+                mapContext,
+                outputSurveyPoint,
+                displaySurveyPoint);
         }
         catch
         {
             PreviewMapContext failedContext = new(
                 mapContext.CoordinateMode,
+                mapContext.SourceCoordinateSystem,
                 mapContext.OutputEpsg,
                 mapContext.OutputCrsLabel,
                 mapContext.OutputCoordinateSystem,
                 mapContext.DisplayCoordinateSystem,
                 "Map preview projection failed.");
-            return new PreviewDisplayViewState(viewData, viewData.Features, viewData.Bounds, failedContext);
+            return new PreviewDisplayViewState(
+                viewData,
+                viewData.Features,
+                viewData.Bounds,
+                failedContext,
+                request.SurveyPointSharedCoordinates,
+                request.SurveyPointSharedCoordinates);
         }
+    }
+
+    private static List<PreviewFeatureData> ReprojectFeatures(
+        IReadOnlyList<PreviewFeatureData> features,
+        CoordinateSystem source,
+        CoordinateSystem target)
+    {
+        return features
+            .Select(feature => feature.WithFeature(CoordinateSystemCatalog.ReprojectFeature(feature.Feature, source, target)))
+            .ToList();
     }
 }

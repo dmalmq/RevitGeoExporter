@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -362,6 +362,13 @@
   </data>
   <data name="Preview.ShowBasemap" xml:space="preserve">
     <value>背景地図を表示</value>
+  </data>
+  
+  <data name="Preview.ShowSurveyPoint" xml:space="preserve">
+    <value>測量点を表示</value>
+  </data>
+  <data name="Preview.SurveyPoint" xml:space="preserve">
+    <value>測量点</value>
   </data>
   <data name="Preview.BasemapSourceMissing" xml:space="preserve">
     <value>背景地図のタイルソースが設定されていません。</value>

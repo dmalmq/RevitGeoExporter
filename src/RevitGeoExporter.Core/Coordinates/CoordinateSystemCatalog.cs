@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -186,6 +186,27 @@ public static class CoordinateSystemCatalog
         }
 
         return ReprojectFeature(feature, transformation.MathTransform);
+    }
+
+    public static Point2D ReprojectPoint(Point2D point, CoordinateSystem source, CoordinateSystem target)
+    {
+        if (source is null)
+        {
+            throw new ArgumentNullException(nameof(source));
+        }
+
+        if (target is null)
+        {
+            throw new ArgumentNullException(nameof(target));
+        }
+
+        var transformation = TransformationFactory.CreateFromCoordinateSystems(source, target);
+        if (transformation == null)
+        {
+            throw new InvalidOperationException("A coordinate transformation could not be created for the requested CRS conversion.");
+        }
+
+        return TransformPoint(point, transformation.MathTransform);
     }
 
     private static IExportFeature ReprojectFeature(IExportFeature feature, MathTransform mathTransform)
