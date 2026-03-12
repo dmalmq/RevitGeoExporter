@@ -1,3 +1,4 @@
+using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using Xunit;
@@ -6,6 +7,10 @@ namespace RevitGeoExporter.Core.Tests.Preview;
 
 public sealed class PreviewMapContextFactoryTests
 {
+    private const string Wgs84Wkt =
+        "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
+        "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433],AUTHORITY[\"EPSG\",\"4326\"]]";
+
     [Fact]
     public void Create_SharedCoordinates_UsesResolvedSourceCrs()
     {
@@ -55,6 +60,30 @@ public sealed class PreviewMapContextFactoryTests
         Assert.NotEmpty(context.UnavailableReason);
         Assert.Null(context.SourceCoordinateSystem);
         Assert.Null(context.OutputCoordinateSystem);
+    }
+
+    [Fact]
+    public void Create_SharedCoordinates_PrefersCoordinateSystemIdOverConflictingWktForPreviewProjection()
+    {
+        PreviewMapContext context = PreviewMapContextFactory.Create(
+            CoordinateExportMode.SharedCoordinates,
+            targetEpsg: 3857,
+            sourceEpsg: null,
+            sourceCoordinateSystemId: "EPSG:6677",
+            sourceCoordinateSystemDefinition: Wgs84Wkt);
+
+        Assert.True(context.CanShowBasemap);
+        Assert.NotNull(context.SourceCoordinateSystem);
+        Assert.NotNull(context.OutputCoordinateSystem);
+        Assert.NotNull(context.DisplayCoordinateSystem);
+
+        Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(
+            new Point2D(0d, 0d),
+            context.OutputCoordinateSystem!,
+            context.DisplayCoordinateSystem!);
+
+        Assert.InRange(transformed.X, 15500000d, 15650000d);
+        Assert.InRange(transformed.Y, 4200000d, 4400000d);
     }
 
     [Fact]

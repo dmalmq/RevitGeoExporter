@@ -94,21 +94,8 @@ public static class CoordinateSystemCatalog
         out CoordinateSystem? coordinateSystem,
         out string failureReason)
     {
-        string trimmedDefinition = siteCoordinateSystemDefinition?.Trim() ?? string.Empty;
-        if (trimmedDefinition.Length > 0)
-        {
-            try
-            {
-                coordinateSystem = Factory.CreateFromWkt(trimmedDefinition);
-                failureReason = string.Empty;
-                return coordinateSystem != null;
-            }
-            catch
-            {
-                // Fall back to the resolved EPSG path below.
-            }
-        }
-
+        // Prefer numeric CRS identifiers over raw Revit WKT because the site WKT can parse
+        // successfully while still drifting from the model's resolved shared-coordinate CRS.
         if (resolvedSourceEpsg.HasValue && TryCreateFromEpsg(resolvedSourceEpsg.Value, out coordinateSystem))
         {
             failureReason = string.Empty;
@@ -120,6 +107,21 @@ public static class CoordinateSystemCatalog
         {
             failureReason = string.Empty;
             return true;
+        }
+
+        string trimmedDefinition = siteCoordinateSystemDefinition?.Trim() ?? string.Empty;
+        if (trimmedDefinition.Length > 0)
+        {
+            try
+            {
+                coordinateSystem = Factory.CreateFromWkt(trimmedDefinition);
+                failureReason = string.Empty;
+                return coordinateSystem != null;
+            }
+            catch
+            {
+                // Fall through to the shared failure reason below.
+            }
         }
 
         coordinateSystem = null;

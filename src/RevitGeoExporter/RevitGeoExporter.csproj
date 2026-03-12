@@ -5,8 +5,10 @@
     <AssemblyName>RevitGeoExporter</AssemblyName>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <Version>1.4.11</Version>
-    <InformationalVersion>1.4.11</InformationalVersion>
+    <Version>1.4.12</Version>
+    <InformationalVersion>1.4.12</InformationalVersion>
+    <AssemblyVersion>1.4.12.0</AssemblyVersion>
+    <FileVersion>1.4.12.0</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup>
