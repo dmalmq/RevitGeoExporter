@@ -134,7 +134,6 @@ public sealed class ExportPreviewForm : WinFormsForm
         _viewComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _viewComboBox.SelectedIndexChanged += (_, _) => LoadSelectedView();
         toolbar.Controls.Add(_viewComboBox, 1, 0);
-
         return toolbar;
     }
 
