@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -10,6 +10,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Resources;
 using WinForms = System.Windows.Forms;
@@ -24,6 +25,7 @@ internal sealed class ExportDialogWpf : IDisposable
     private readonly Window _window;
     private readonly List<ExportProfile> _profiles;
     private readonly ModelCoordinateInfo? _coordinateInfo;
+    private readonly PreviewBasemapSettings _previewBasemapSettings;
 
     private UiLanguage _language = UiLanguage.English;
     private readonly ListBox _viewList = new();
@@ -93,6 +95,7 @@ internal sealed class ExportDialogWpf : IDisposable
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewRequested = previewRequested;
         _coordinateInfo = coordinateInfo;
+        _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
 
         _window = new Window
         {
@@ -132,6 +135,8 @@ internal sealed class ExportDialogWpf : IDisposable
             CoordinateMode = GetSelectedCoordinateMode(),
             UnitSource = ((_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source) ?? UnitSource.Floors,
             RoomCategoryParameterName = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
+            PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
         };
     }
@@ -521,8 +526,15 @@ internal sealed class ExportDialogWpf : IDisposable
             GetSelectedFeatureTypes(),
             new GeometryRepairOptions(),
             (_languageComboBox.SelectedItem as LanguageItem)?.Language ?? UiLanguage.English,
+            GetSelectedCoordinateMode(),
+            ParseTargetEpsgOrDefault(),
+            _coordinateInfo?.ResolvedSourceEpsg,
+            _coordinateInfo?.SiteCoordinateSystemId,
+            _coordinateInfo?.SiteCoordinateSystemDefinition,
             (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
-            (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim()));
+            (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            _previewBasemapSettings.UrlTemplate,
+            _previewBasemapSettings.Attribution));
     }
 
     private List<ViewPlan> GetSelectedViews() => _views.Where(x => x.IsSelected).Select(x => x.View).ToList();
@@ -716,3 +728,8 @@ internal sealed class ExportDialogWpf : IDisposable
         public override string ToString() => $"EPSG:{Epsg} - {Name}";
     }
 }
+
+
+
+
+

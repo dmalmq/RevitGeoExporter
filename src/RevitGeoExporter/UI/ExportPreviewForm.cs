@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -6,7 +6,9 @@ using System.Windows.Forms;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Help;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Export;
+using RevitGeoExporter.Resources;
 using DrawingColor = System.Drawing.Color;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -17,7 +19,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 {
     private readonly ExportPreviewRequest _request;
     private readonly ExportPreviewService _previewService;
-    private readonly Dictionary<long, PreviewViewData> _cache = new();
+    private readonly Dictionary<long, PreviewDisplayViewState> _cache = new();
     private readonly UiLanguage _language;
     private readonly IReadOnlyList<string> _supportedFloorCategories;
 
@@ -32,6 +34,7 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly CheckBox _warningsOnlyCheckBox = new();
     private readonly CheckBox _overriddenOnlyCheckBox = new();
     private readonly CheckBox _unassignedOnlyCheckBox = new();
+    private readonly CheckBox _basemapCheckBox = new();
     private readonly TextBox _searchTextBox = new();
     private readonly Button _fitButton = new();
     private readonly Button _resetButton = new();
@@ -54,7 +57,10 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly Label _assignmentHintLabel = new();
 
     private PreviewViewData? _currentViewData;
+    private PreviewDisplayViewState? _currentDisplayState;
     private FloorAssignmentTarget? _assignmentTarget;
+    private string _statusMessage = string.Empty;
+    private string _basemapProviderStatus = string.Empty;
     private string? _pendingAssignmentFloorTypeName;
     private bool _isLoadingView;
     private bool _suppressUnassignedSelectionChanged;
@@ -65,6 +71,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         _previewService = previewService ?? throw new ArgumentNullException(nameof(previewService));
         _language = request.UiLanguage;
         _supportedFloorCategories = _previewService.GetSupportedFloorCategories().ToList();
+        _canvas.BasemapStatusChanged += message =>
+        {
+            _basemapProviderStatus = message ?? string.Empty;
+            RefreshStatusText();
+        };
 
         InitializeComponents();
         PopulateAssignmentCategories();
@@ -96,6 +107,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         root.Controls.Add(BuildToolbar(), 0, 0);
         root.Controls.Add(BuildBody(), 0, 1);
         root.Controls.Add(BuildFooter(), 0, 2);
+        SetStatusMessage(T("Mouse wheel zooms. Drag to pan. Click a feature to inspect it.", "Mouse wheel zooms. Drag to pan. Click a feature to inspect it."));
     }
 
     private WinFormsControl BuildToolbar()
@@ -103,7 +115,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         TableLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 15,
+            ColumnCount = 16,
         };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260f));
@@ -117,6 +129,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 122f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
@@ -187,10 +200,15 @@ public sealed class ExportPreviewForm : WinFormsForm
         _unassignedOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
         toolbar.Controls.Add(_unassignedOnlyCheckBox, 11, 0);
 
+        _basemapCheckBox.Dock = DockStyle.Fill;
+        _basemapCheckBox.Text = L("Preview.ShowBasemap", "Show basemap");
+        _basemapCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        toolbar.Controls.Add(_basemapCheckBox, 12, 0);
+
         _searchTextBox.Dock = DockStyle.Fill;
         _searchTextBox.Text = string.Empty;
         _searchTextBox.TextChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_searchTextBox, 12, 0);
+        toolbar.Controls.Add(_searchTextBox, 13, 0);
 
         FlowLayoutPanel buttons = new()
         {
@@ -210,10 +228,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         _resetButton.Click += (_, _) => _canvas.ResetView();
         buttons.Controls.Add(_resetButton);
 
-        toolbar.Controls.Add(buttons, 13, 0);
+        toolbar.Controls.Add(buttons, 14, 0);
         return toolbar;
     }
-
     private WinFormsControl BuildBody()
     {
         SplitContainer split = new()
@@ -401,9 +418,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _statusLabel.Text = T(
-            "Mouse wheel zooms. Drag to pan. Click a feature to inspect it.",
-            "Mouse wheel zooms. Drag to pan. Click a feature to inspect it.");
+        _statusLabel.Text = string.Empty;
         footer.Controls.Add(_statusLabel, 0, 0);
 
         FlowLayoutPanel actions = new()
@@ -419,7 +434,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         _closeButton.DialogResult = DialogResult.OK;
         actions.Controls.Add(_closeButton);
 
-        _helpButton.Text = T("Help", "ヘルプ");
+        _helpButton.Text = L("Common.Help", "Help");
         _helpButton.Width = 88;
         _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.PreviewAndAssignments, _language, Text);
         actions.Controls.Add(_helpButton);
@@ -430,7 +445,6 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         return footer;
     }
-
     private void ConfigureLegendGrid()
     {
         _legendGrid.Dock = DockStyle.Fill;
@@ -489,6 +503,8 @@ public sealed class ExportPreviewForm : WinFormsForm
         _openingsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Opening);
         _detailsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Detail);
         _levelsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Level);
+        _basemapCheckBox.Checked = false;
+        _basemapCheckBox.Enabled = false;
 
         foreach (ViewPlan view in _request.SelectedViews)
         {
@@ -500,7 +516,6 @@ public sealed class ExportPreviewForm : WinFormsForm
             _viewComboBox.SelectedIndex = 0;
         }
     }
-
     private void LoadSelectedView()
     {
         if (_viewComboBox.SelectedItem is not ViewItem viewItem)
@@ -508,41 +523,47 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        PreviewViewData preview;
-        bool loadedFromCache = _cache.TryGetValue(viewItem.View.Id.Value, out preview!);
+        PreviewDisplayViewState displayState;
+        bool loadedFromCache = _cache.TryGetValue(viewItem.View.Id.Value, out displayState!);
         if (!loadedFromCache)
         {
             UseWaitCursor = true;
             Cursor.Current = Cursors.WaitCursor;
-            _statusLabel.Text = T(
+            SetStatusMessage(T(
                 $"Loading preview for {viewItem.View.Name}...",
-                $"Loading preview for {viewItem.View.Name}...");
+                $"Loading preview for {viewItem.View.Name}..."));
             Refresh();
 
-            preview = _previewService.PrepareView(viewItem.View, _request.FeatureTypes);
-            _cache[viewItem.View.Id.Value] = preview;
+            PreviewViewData preview = _previewService.PrepareView(viewItem.View, _request.FeatureTypes);
+            displayState = PreviewDisplayViewStateBuilder.Build(preview, _request);
+            _cache[viewItem.View.Id.Value] = displayState;
         }
 
         _isLoadingView = true;
         try
         {
-            _currentViewData = preview;
-            _canvas.SetViewData(preview.Features, preview.Bounds);
+            _currentViewData = displayState.SourceViewData;
+            _currentDisplayState = displayState;
+            _canvas.ConfigureBasemap(
+                displayState.MapContext,
+                new PreviewBasemapSettings(_request.PreviewBasemapUrlTemplate, _request.PreviewBasemapAttribution));
+            _canvas.SetViewData(displayState.DisplayFeatures, displayState.DisplayBounds);
+            UpdateBasemapAvailability();
             ApplyCanvasFilters();
-            PopulateLegend(preview);
-            PopulateWarnings(preview);
-            PopulateUnassignedFloors(preview);
+            PopulateLegend(displayState.SourceViewData);
+            PopulateWarnings(displayState.SourceViewData);
+            PopulateUnassignedFloors(displayState.SourceViewData);
             UpdateDetails(null);
             RestoreAssignmentTargetAfterReload();
-            UpdateStatus(preview);
+            UpdateStatus(displayState.SourceViewData);
         }
         finally
         {
             _isLoadingView = false;
             UseWaitCursor = false;
+            Cursor.Current = Cursors.Default;
         }
     }
-
     private void ApplyCanvasFilters()
     {
         _canvas.ShowUnits = _unitsCheckBox.Checked;
@@ -555,10 +576,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         _canvas.ShowWarningsOnly = _warningsOnlyCheckBox.Checked;
         _canvas.ShowOverriddenOnly = _overriddenOnlyCheckBox.Checked;
         _canvas.ShowUnassignedOnly = _unassignedOnlyCheckBox.Checked;
+        _canvas.ShowBasemap = _basemapCheckBox.Enabled && _basemapCheckBox.Checked;
         _canvas.SearchText = _searchTextBox.Text;
         _canvas.RefreshFilters();
+        RefreshStatusText();
     }
-
     private void PopulateLegend(PreviewViewData viewData)
     {
         _legendGrid.Rows.Clear();
@@ -737,9 +759,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
         _cache.Clear();
         LoadSelectedView();
-        _statusLabel.Text = T(
+        SetStatusMessage(T(
             $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.",
-            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.");
+            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it."));
     }
 
     private void ClearSelectedFloorCategoryOverride()
@@ -758,9 +780,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         _pendingAssignmentFloorTypeName = floorTypeNames[0];
         _cache.Clear();
         LoadSelectedView();
-        _statusLabel.Text = T(
+        SetStatusMessage(T(
             $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.",
-            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.");
+            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it."));
     }
 
     private void SavePendingAssignments()
@@ -773,9 +795,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         _previewService.ApplyPendingFloorCategoryOverrides();
         _cache.Clear();
         LoadSelectedView();
-        _statusLabel.Text = T(
+        SetStatusMessage(T(
             "Saved preview floor assignments.",
-            "Saved preview floor assignments.");
+            "Saved preview floor assignments."));
     }
 
     private void DiscardPendingAssignments()
@@ -788,9 +810,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         _previewService.DiscardPendingFloorCategoryOverrides();
         _cache.Clear();
         LoadSelectedView();
-        _statusLabel.Text = T(
+        SetStatusMessage(T(
             "Discarded pending preview floor assignments.",
-            "Discarded pending preview floor assignments.");
+            "Discarded pending preview floor assignments."));
     }
 
     private void RestoreAssignmentTargetAfterReload()
@@ -957,10 +979,101 @@ public sealed class ExportPreviewForm : WinFormsForm
         string suffix = _previewService.HasPendingFloorCategoryChanges
             ? T(" | unsaved assignment changes", " | unsaved assignment changes")
             : string.Empty;
-        _statusLabel.Text = T(
-            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels",
-            $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels") + suffix;
+        SetStatusMessage(
+            T(
+                $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels",
+                $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels") + suffix);
     }
+
+    private void SetStatusMessage(string message)
+    {
+        _statusMessage = message ?? string.Empty;
+        RefreshStatusText();
+    }
+
+    private void RefreshStatusText()
+    {
+        string basemapStatus = BuildBasemapStatusText();
+        if (string.IsNullOrWhiteSpace(_statusMessage))
+        {
+            _statusLabel.Text = basemapStatus;
+            return;
+        }
+
+        _statusLabel.Text = string.IsNullOrWhiteSpace(basemapStatus)
+            ? _statusMessage
+            : $"{_statusMessage} | {basemapStatus}";
+    }
+
+    private void UpdateBasemapAvailability()
+    {
+        bool available = _currentDisplayState?.MapContext.CanShowBasemap == true && _canvas.BasemapAvailable;
+        _basemapCheckBox.Enabled = available;
+        if (!available)
+        {
+            _basemapCheckBox.Checked = false;
+        }
+
+        _canvas.ShowBasemap = available && _basemapCheckBox.Checked;
+        RefreshStatusText();
+    }
+
+    private string BuildBasemapStatusText()
+    {
+        if (_currentDisplayState == null)
+        {
+            return string.Empty;
+        }
+
+        if (!_canvas.BasemapAvailable)
+        {
+            string reason = LocalizeBasemapMessage(_canvas.BasemapUnavailableReason);
+            return reason.Length == 0
+                ? L("Preview.BasemapUnavailable", "Basemap unavailable")
+                : $"{L("Preview.BasemapUnavailable", "Basemap unavailable")}: {reason}";
+        }
+
+        if (!_canvas.ShowBasemap)
+        {
+            return string.Empty;
+        }
+
+        string attribution = _canvas.BasemapAttribution?.Trim() ?? string.Empty;
+        string providerStatus = LocalizeBasemapMessage(_basemapProviderStatus);
+        if (providerStatus.Length > 0)
+        {
+            return attribution.Length > 0
+                ? $"{L("Preview.Basemap", "Basemap")}: {attribution} ({providerStatus})"
+                : $"{L("Preview.Basemap", "Basemap")}: {providerStatus}";
+        }
+
+        return attribution.Length == 0
+            ? L("Preview.Basemap", "Basemap")
+            : $"{L("Preview.Basemap", "Basemap")}: {attribution}";
+    }
+
+    private string LocalizeBasemapMessage(string? message)
+    {
+        string normalized = (message ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return normalized switch
+        {
+            "No basemap tile source is configured." => L("Preview.BasemapSourceMissing", "No basemap tile source is configured."),
+            "Target EPSG could not be resolved for map preview." => L("Preview.BasemapTargetUnavailable", "Target CRS could not be resolved for map preview."),
+            "Model CRS could not be resolved for map preview." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
+            "The model's shared/site coordinate system could not be resolved to a supported CRS definition." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
+            "Web Mercator could not be resolved for map preview." => L("Preview.MapProjectionFailed", "Map preview projection failed."),
+            "Map preview projection failed." => L("Preview.MapProjectionFailed", "Map preview projection failed."),
+            "Basemap loading failed; showing model only." => L("Preview.BasemapLoadFailed", "Basemap loading failed; showing model only."),
+            _ => normalized,
+        };
+    }
+
+    private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
@@ -1096,3 +1209,6 @@ public sealed class ExportPreviewForm : WinFormsForm
         public bool IsUnassigned { get; }
     }
 }
+
+
+

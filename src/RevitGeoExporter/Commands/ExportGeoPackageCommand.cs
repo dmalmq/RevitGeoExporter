@@ -158,7 +158,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                            using ExportPreviewForm previewForm = new(previewRequest, previewService);
                            previewForm.ShowDialog();
                        }
-                   });
+                   },
+                   coordinateInfo);
 
             if (dialog.ShowDialog() != DialogResult.OK || dialog.Result == null)
             {

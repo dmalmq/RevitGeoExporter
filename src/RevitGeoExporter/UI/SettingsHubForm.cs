@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Help;
 using RevitGeoExporter.Resources;
 using WinForms = System.Windows.Forms;
@@ -27,6 +28,8 @@ public sealed class SettingsHubForm : IDisposable
     private readonly ListBox _statusList = new();
     private readonly TextBlock _profileSummary = new();
     private readonly TextBox _outputDirectoryTextBox = new();
+    private readonly TextBox _basemapUrlTemplateTextBox = new();
+    private readonly TextBox _basemapAttributionTextBox = new();
     private readonly Button _browseOutputDirectoryButton = new();
     private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
@@ -167,26 +170,27 @@ public sealed class SettingsHubForm : IDisposable
         Grid form = new() { Margin = new Thickness(8) };
         form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
         form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < 7; i++)
         {
-            form.RowDefinitions.Add(new RowDefinition { Height = i == 4 ? new GridLength(120) : GridLength.Auto });
+            form.RowDefinitions.Add(new RowDefinition { Height = i == 6 ? new GridLength(120) : GridLength.Auto });
         }
 
         AddFormRow(form, 0, () => L("Common.Language", "Language"), BuildLanguagePicker());
         AddFormRow(form, 1, () => L("Common.OutputDirectory", "Output Directory"), BuildOutputDirectoryPanel());
-        AddFormRow(form, 2, () => L("Common.CrsPreset", "CRS Preset"), BuildPresetPicker());
-        AddFormRow(form, 3, () => L("Common.TargetEpsg", "Target EPSG"), _epsgTextBox);
+        AddFormRow(form, 2, () => L("SettingsHub.BasemapSource", "Basemap source"), _basemapUrlTemplateTextBox);
+        AddFormRow(form, 3, () => L("SettingsHub.BasemapAttribution", "Basemap attribution"), _basemapAttributionTextBox);
+        AddFormRow(form, 4, () => L("Common.CrsPreset", "CRS Preset"), BuildPresetPicker());
+        AddFormRow(form, 5, () => L("Common.TargetEpsg", "Target EPSG"), _epsgTextBox);
 
         StackPanel toggles = new() { Orientation = Orientation.Vertical };
         toggles.Children.Add(_diagnosticsCheckBox);
         toggles.Children.Add(_packageCheckBox);
         toggles.Children.Add(_packageLegendCheckBox);
         toggles.Children.Add(_repairEnabledCheckBox);
-        AddFormRow(form, 4, () => L("ExportDialog.Options", "Export Options"), toggles);
+        AddFormRow(form, 6, () => L("ExportDialog.Options", "Export Options"), toggles);
 
         return form;
     }
-
     private TabItem BuildProjectTab()
     {
         Grid panel = new() { Margin = new Thickness(6) };
@@ -359,6 +363,8 @@ public sealed class SettingsHubForm : IDisposable
         _snapshot = NormalizeSnapshot(snapshot);
         SelectLanguage(_snapshot.GlobalSettings.UiLanguage);
         _outputDirectoryTextBox.Text = _snapshot.GlobalSettings.OutputDirectory ?? string.Empty;
+        _basemapUrlTemplateTextBox.Text = _snapshot.GlobalSettings.PreviewBasemapUrlTemplate ?? string.Empty;
+        _basemapAttributionTextBox.Text = _snapshot.GlobalSettings.PreviewBasemapAttribution ?? string.Empty;
         _epsgTextBox.Text = _snapshot.GlobalSettings.TargetEpsg.ToString();
         _diagnosticsCheckBox.IsChecked = _snapshot.GlobalSettings.GenerateDiagnosticsReport;
         _packageCheckBox.IsChecked = _snapshot.GlobalSettings.GeneratePackageOutput;
@@ -523,6 +529,8 @@ public sealed class SettingsHubForm : IDisposable
         int targetEpsg = int.TryParse(_epsgTextBox.Text, out int epsg) ? epsg : ProjectInfo.DefaultTargetEpsg;
         ExportDialogSettings settings = _snapshot.GlobalSettings;
         settings.OutputDirectory = (_outputDirectoryTextBox.Text ?? string.Empty).Trim();
+        settings.PreviewBasemapUrlTemplate = (_basemapUrlTemplateTextBox.Text ?? string.Empty).Trim();
+        settings.PreviewBasemapAttribution = (_basemapAttributionTextBox.Text ?? string.Empty).Trim();
         settings.TargetEpsg = targetEpsg;
         settings.GenerateDiagnosticsReport = _diagnosticsCheckBox.IsChecked == true;
         settings.GeneratePackageOutput = _packageCheckBox.IsChecked == true;
@@ -531,7 +539,6 @@ public sealed class SettingsHubForm : IDisposable
         settings.GeometryRepairOptions.Enabled = _repairEnabledCheckBox.IsChecked == true;
         return settings;
     }
-
     private ProjectMappingRules BuildProjectMappings()
     {
         return ProjectMappingRules.Create(
@@ -714,6 +721,8 @@ public sealed class SettingsHubForm : IDisposable
         snapshot ??= new SettingsBundleSnapshot();
         snapshot.GlobalSettings ??= new ExportDialogSettings();
         snapshot.GlobalSettings.GeometryRepairOptions ??= new RevitGeoExporter.Core.Geometry.GeometryRepairOptions();
+        snapshot.GlobalSettings.PreviewBasemapUrlTemplate ??= PreviewBasemapSettings.DefaultUrlTemplate;
+        snapshot.GlobalSettings.PreviewBasemapAttribution ??= PreviewBasemapSettings.DefaultAttribution;
         snapshot.Profiles = (snapshot.Profiles ?? Array.Empty<ExportProfile>())
             .Where(profile => profile != null)
             .ToList();
@@ -721,7 +730,6 @@ public sealed class SettingsHubForm : IDisposable
         snapshot.StatusEntries ??= Array.Empty<SettingsStatusEntry>();
         return snapshot;
     }
-
     private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
     private sealed class LanguageItem
     {

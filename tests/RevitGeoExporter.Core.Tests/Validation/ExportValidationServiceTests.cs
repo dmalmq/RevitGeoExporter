@@ -1,6 +1,5 @@
-using System;
-using System.IO;
-using System.Linq;
+﻿using System;
+using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Validation;
 using Xunit;
 
@@ -13,7 +12,7 @@ public sealed class ExportValidationServiceTests
     {
         ExportValidationService service = new();
         ExportValidationResult result = service.Validate(
-            new ExportValidationRequest(
+            CreateRequest(
                 6677,
                 includeUnits: true,
                 includeDetails: false,
@@ -34,8 +33,8 @@ public sealed class ExportValidationServiceTests
                                 101,
                                 hasGeometry: true,
                                 geometryValid: true,
-                                isUnassignedFloor: true,
-                                floorTypeName: "Wrong Floor Name"),
+                                isUnassigned: true,
+                                assignmentMappingKey: "Wrong Floor Name"),
                         }),
                 }));
 
@@ -49,7 +48,7 @@ public sealed class ExportValidationServiceTests
     {
         ExportValidationService service = new();
         ExportValidationResult result = service.Validate(
-            new ExportValidationRequest(
+            CreateRequest(
                 6677,
                 includeUnits: true,
                 includeDetails: false,
@@ -86,7 +85,7 @@ public sealed class ExportValidationServiceTests
     {
         ExportValidationService service = new();
         ExportValidationResult result = service.Validate(
-            new ExportValidationRequest(
+            CreateRequest(
                 6677,
                 includeUnits: true,
                 includeDetails: false,
@@ -119,7 +118,7 @@ public sealed class ExportValidationServiceTests
     {
         ExportValidationService service = new();
         ExportValidationResult result = service.Validate(
-            new ExportValidationRequest(
+            CreateRequest(
                 6677,
                 includeUnits: true,
                 includeDetails: true,
@@ -154,7 +153,7 @@ public sealed class ExportValidationServiceTests
     {
         ExportValidationService service = new();
         ExportValidationResult result = service.Validate(
-            new ExportValidationRequest(
+            CreateRequest(
                 0,
                 includeUnits: false,
                 includeDetails: false,
@@ -165,5 +164,24 @@ public sealed class ExportValidationServiceTests
         ValidationIssue issue = Assert.Single(result.Issues);
         Assert.Equal(ValidationCode.InvalidTargetEpsg, issue.Code);
         Assert.True(result.HasErrors);
+    }
+
+    private static ExportValidationRequest CreateRequest(
+        int targetEpsg,
+        bool includeUnits,
+        bool includeDetails,
+        bool includeOpenings,
+        bool includeLevels,
+        ValidationViewSnapshot[] views)
+    {
+        return new ExportValidationRequest(
+            targetEpsg,
+            includeUnits,
+            includeDetails,
+            includeOpenings,
+            includeLevels,
+            views,
+            UnitSource.Floors,
+            "Name");
     }
 }
