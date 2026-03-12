@@ -147,8 +147,6 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel1,
-            Panel1MinSize = 210,
-            Panel2MinSize = 720,
         };
         _bodyLayoutSplit = layout;
         layout.Panel1.Padding = new Padding(0, 0, 10, 0);
@@ -252,8 +250,6 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             Dock = DockStyle.Fill,
             FixedPanel = FixedPanel.Panel2,
-            Panel1MinSize = 420,
-            Panel2MinSize = 260,
         };
         _workspaceSplit = split;
 
@@ -264,11 +260,15 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private void ApplyPreferredSplitLayout()
     {
-        TrySetPreferredSplitterDistance(_bodyLayoutSplit, 230);
-        TrySetPreferredSplitterDistance(_workspaceSplit, 790);
+        TryConfigureSplitContainer(_bodyLayoutSplit, panel1MinSize: 210, panel2MinSize: 720, preferredDistance: 230);
+        TryConfigureSplitContainer(_workspaceSplit, panel1MinSize: 420, panel2MinSize: 260, preferredDistance: 790);
     }
 
-    private static void TrySetPreferredSplitterDistance(SplitContainer? splitContainer, int preferredDistance)
+    private static void TryConfigureSplitContainer(
+        SplitContainer? splitContainer,
+        int panel1MinSize,
+        int panel2MinSize,
+        int preferredDistance)
     {
         if (splitContainer is null || splitContainer.IsDisposed || !splitContainer.IsHandleCreated)
         {
@@ -283,16 +283,20 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        int maxDistance = totalSize - splitContainer.Panel2MinSize - splitContainer.SplitterWidth;
-        if (maxDistance < splitContainer.Panel1MinSize)
+        int maxDistance = totalSize - panel2MinSize - splitContainer.SplitterWidth;
+        if (maxDistance < panel1MinSize)
         {
             return;
         }
 
-        int safeDistance = Math.Max(splitContainer.Panel1MinSize, Math.Min(preferredDistance, maxDistance));
+        int safeDistance = Math.Max(panel1MinSize, Math.Min(preferredDistance, maxDistance));
         try
         {
+            splitContainer.Panel1MinSize = 0;
+            splitContainer.Panel2MinSize = 0;
             splitContainer.SplitterDistance = safeDistance;
+            splitContainer.Panel1MinSize = panel1MinSize;
+            splitContainer.Panel2MinSize = panel2MinSize;
         }
         catch (ArgumentOutOfRangeException)
         {
