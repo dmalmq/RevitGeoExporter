@@ -42,7 +42,7 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly Button _helpButton = new();
     private readonly Label _statusLabel = new();
     private readonly PreviewCanvasControl _canvas = new();
-    private readonly DataGridView _legendGrid = new();
+    private readonly FlowLayoutPanel _legendPanel = new();
     private readonly ListBox _warningsList = new();
     private readonly TextBox _detailsTextBox = new();
     private readonly ListBox _unassignedFloorsListBox = new();
@@ -115,23 +115,9 @@ public sealed class ExportPreviewForm : WinFormsForm
         TableLayoutPanel toolbar = new()
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 16,
+            ColumnCount = 2,
         };
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 82f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 72f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 74f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 102f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 108f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 122f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
 
         Label viewLabel = new()
@@ -146,103 +132,141 @@ public sealed class ExportPreviewForm : WinFormsForm
         _viewComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _viewComboBox.SelectedIndexChanged += (_, _) => LoadSelectedView();
         toolbar.Controls.Add(_viewComboBox, 1, 0);
-
-        _unitsCheckBox.Dock = DockStyle.Fill;
-        _unitsCheckBox.Text = T("Units", "Units");
-        _unitsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_unitsCheckBox, 2, 0);
-
-        _openingsCheckBox.Dock = DockStyle.Fill;
-        _openingsCheckBox.Text = T("Openings", "Openings");
-        _openingsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_openingsCheckBox, 3, 0);
-
-        _detailsCheckBox.Dock = DockStyle.Fill;
-        _detailsCheckBox.Text = T("Details", "Details");
-        _detailsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_detailsCheckBox, 4, 0);
-
-        _levelsCheckBox.Dock = DockStyle.Fill;
-        _levelsCheckBox.Text = T("Levels", "Levels");
-        _levelsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_levelsCheckBox, 5, 0);
-
-        _stairsCheckBox.Dock = DockStyle.Fill;
-        _stairsCheckBox.Text = T("Stairs", "Stairs");
-        _stairsCheckBox.Checked = true;
-        _stairsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_stairsCheckBox, 6, 0);
-
-        _escalatorsCheckBox.Dock = DockStyle.Fill;
-        _escalatorsCheckBox.Text = T("Escalators", "Escalators");
-        _escalatorsCheckBox.Checked = true;
-        _escalatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_escalatorsCheckBox, 7, 0);
-
-        _elevatorsCheckBox.Dock = DockStyle.Fill;
-        _elevatorsCheckBox.Text = T("Elevators", "Elevators");
-        _elevatorsCheckBox.Checked = true;
-        _elevatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_elevatorsCheckBox, 8, 0);
-
-        _warningsOnlyCheckBox.Dock = DockStyle.Fill;
-        _warningsOnlyCheckBox.Text = T("Warnings", "Warnings");
-        _warningsOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_warningsOnlyCheckBox, 9, 0);
-
-        _overriddenOnlyCheckBox.Dock = DockStyle.Fill;
-        _overriddenOnlyCheckBox.Text = T("Overrides", "Overrides");
-        _overriddenOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_overriddenOnlyCheckBox, 10, 0);
-
-        _unassignedOnlyCheckBox.Dock = DockStyle.Fill;
-        _unassignedOnlyCheckBox.Text = T("Unassigned", "Unassigned");
-        _unassignedOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_unassignedOnlyCheckBox, 11, 0);
-
-        _basemapCheckBox.Dock = DockStyle.Fill;
-        _basemapCheckBox.Text = L("Preview.ShowBasemap", "Show basemap");
-        _basemapCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_basemapCheckBox, 12, 0);
-
-        _searchTextBox.Dock = DockStyle.Fill;
-        _searchTextBox.Text = string.Empty;
-        _searchTextBox.TextChanged += (_, _) => ApplyCanvasFilters();
-        toolbar.Controls.Add(_searchTextBox, 13, 0);
-
-        FlowLayoutPanel buttons = new()
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            AutoSize = true,
-        };
-
-        _fitButton.Text = T("Fit", "Fit");
-        _fitButton.Width = 72;
-        _fitButton.Click += (_, _) => _canvas.FitToFeatures();
-        buttons.Controls.Add(_fitButton);
-
-        _resetButton.Text = T("Reset", "Reset");
-        _resetButton.Width = 72;
-        _resetButton.Click += (_, _) => _canvas.ResetView();
-        buttons.Controls.Add(_resetButton);
-
-        toolbar.Controls.Add(buttons, 14, 0);
         return toolbar;
     }
+
     private WinFormsControl BuildBody()
+    {
+        SplitContainer layout = new()
+        {
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            SplitterDistance = 230,
+            Panel1MinSize = 210,
+            Panel2MinSize = 720,
+        };
+        layout.Panel1.Padding = new Padding(0, 0, 10, 0);
+        layout.Panel1.Controls.Add(BuildSidebar());
+        layout.Panel2.Controls.Add(BuildWorkspace());
+
+        return layout;
+    }
+
+    private WinFormsControl BuildSidebar()
+    {
+        TableLayoutPanel sidebar = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            AutoScroll = true,
+        };
+        sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sidebar.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        _searchTextBox.Width = 178;
+        _searchTextBox.Text = string.Empty;
+        _searchTextBox.TextChanged += (_, _) => ApplyCanvasFilters();
+        sidebar.Controls.Add(BuildSearchGroup(), 0, 0);
+
+        ConfigureSidebarCheckBox(_unitsCheckBox, T("Units", "Units"));
+        _unitsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_openingsCheckBox, T("Openings", "Openings"));
+        _openingsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_detailsCheckBox, T("Details", "Details"));
+        _detailsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_levelsCheckBox, T("Levels", "Levels"));
+        _levelsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_stairsCheckBox, T("Stairs", "Stairs"));
+        _stairsCheckBox.Checked = true;
+        _stairsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_escalatorsCheckBox, T("Escalators", "Escalators"));
+        _escalatorsCheckBox.Checked = true;
+        _escalatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_elevatorsCheckBox, T("Elevators", "Elevators"));
+        _elevatorsCheckBox.Checked = true;
+        _elevatorsCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_basemapCheckBox, L("Preview.ShowBasemap", "Show basemap"));
+        _basemapCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        sidebar.Controls.Add(
+            BuildSidebarGroup(
+                T("Map Layers", "Map Layers"),
+                _unitsCheckBox,
+                _openingsCheckBox,
+                _detailsCheckBox,
+                _levelsCheckBox,
+                _stairsCheckBox,
+                _escalatorsCheckBox,
+                _elevatorsCheckBox,
+                _basemapCheckBox),
+            0,
+            1);
+
+        ConfigureSidebarCheckBox(_warningsOnlyCheckBox, T("Warnings only", "Warnings only"));
+        _warningsOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_overriddenOnlyCheckBox, T("Overrides only", "Overrides only"));
+        _overriddenOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        ConfigureSidebarCheckBox(_unassignedOnlyCheckBox, T("Unassigned only", "Unassigned only"));
+        _unassignedOnlyCheckBox.CheckedChanged += (_, _) => ApplyCanvasFilters();
+        sidebar.Controls.Add(
+            BuildSidebarGroup(
+                T("Filters", "Filters"),
+                _warningsOnlyCheckBox,
+                _overriddenOnlyCheckBox,
+                _unassignedOnlyCheckBox),
+            0,
+            2);
+
+        _fitButton.Text = T("Fit", "Fit");
+        _fitButton.Width = 78;
+        _fitButton.Click += (_, _) => _canvas.FitToFeatures();
+        _resetButton.Text = T("Reset", "Reset");
+        _resetButton.Width = 78;
+        _resetButton.Click += (_, _) => _canvas.ResetView();
+        sidebar.Controls.Add(BuildViewToolsGroup(), 0, 3);
+
+        return sidebar;
+    }
+
+    private WinFormsControl BuildWorkspace()
     {
         SplitContainer split = new()
         {
             Dock = DockStyle.Fill,
-            SplitterDistance = 930,
+            FixedPanel = FixedPanel.Panel2,
+            SplitterDistance = 790,
+            Panel1MinSize = 420,
+            Panel2MinSize = 260,
         };
 
+        split.Panel1.Controls.Add(BuildMapWorkspace());
+        split.Panel2.Controls.Add(BuildInspectorTabs());
+        return split;
+    }
+
+    private WinFormsControl BuildMapWorkspace()
+    {
+        TableLayoutPanel workspace = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        workspace.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
+        workspace.Controls.Add(BuildLegendStrip(), 0, 0);
         _canvas.Dock = DockStyle.Fill;
         _canvas.SelectedFeatureChanged += OnSelectedFeatureChanged;
-        split.Panel1.Controls.Add(_canvas);
+        workspace.Controls.Add(_canvas, 0, 1);
 
+        return workspace;
+    }
+
+    private WinFormsControl BuildInspectorTabs()
+    {
         TabControl tabs = new()
         {
             Dock = DockStyle.Fill,
@@ -250,7 +274,6 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         TabPage detailsTab = new(T("Details", "Details"));
         TabPage assignmentsTab = new(T("Assignments", "Assignments"));
-        TabPage legendTab = new(T("Legend", "Legend"));
         TabPage warningsTab = new(T("Warnings", "Warnings"));
 
         _detailsTextBox.Dock = DockStyle.Fill;
@@ -261,20 +284,14 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         assignmentsTab.Controls.Add(BuildAssignmentsPanel());
 
-        ConfigureLegendGrid();
-        legendTab.Controls.Add(_legendGrid);
-
         _warningsList.Dock = DockStyle.Fill;
         _warningsList.HorizontalScrollbar = true;
         warningsTab.Controls.Add(_warningsList);
 
         tabs.TabPages.Add(detailsTab);
         tabs.TabPages.Add(assignmentsTab);
-        tabs.TabPages.Add(legendTab);
         tabs.TabPages.Add(warningsTab);
-        split.Panel2.Controls.Add(tabs);
-
-        return split;
+        return tabs;
     }
 
     private WinFormsControl BuildAssignmentsPanel()
@@ -431,7 +448,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         _closeButton.Text = T("Close", "Close");
         _closeButton.Width = 88;
-        _closeButton.DialogResult = DialogResult.OK;
+        _closeButton.Click += (_, _) => Close();
         actions.Controls.Add(_closeButton);
 
         _helpButton.Text = L("Common.Help", "Help");
@@ -440,47 +457,135 @@ public sealed class ExportPreviewForm : WinFormsForm
         actions.Controls.Add(_helpButton);
 
         footer.Controls.Add(actions, 1, 0);
-        AcceptButton = _closeButton;
         CancelButton = _closeButton;
 
         return footer;
     }
-    private void ConfigureLegendGrid()
-    {
-        _legendGrid.Dock = DockStyle.Fill;
-        _legendGrid.ReadOnly = true;
-        _legendGrid.MultiSelect = false;
-        _legendGrid.RowHeadersVisible = false;
-        _legendGrid.AllowUserToAddRows = false;
-        _legendGrid.AllowUserToDeleteRows = false;
-        _legendGrid.AllowUserToResizeRows = false;
-        _legendGrid.AllowUserToResizeColumns = false;
-        _legendGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        _legendGrid.AutoGenerateColumns = false;
-        _legendGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
-        _legendGrid.Columns.Add(new DataGridViewTextBoxColumn
+    private WinFormsControl BuildSearchGroup()
+    {
+        GroupBox group = CreateSidebarGroup(T("Search", "Search"));
+
+        TableLayoutPanel panel = new()
         {
-            Name = "Color",
-            HeaderText = string.Empty,
-            FillWeight = 12f,
-        });
-        _legendGrid.Columns.Add(new DataGridViewTextBoxColumn
+            Dock = DockStyle.Top,
+            ColumnCount = 1,
+            AutoSize = true,
+        };
+        panel.Controls.Add(new Label
         {
-            Name = "Category",
-            HeaderText = T("Category", "Category"),
-            FillWeight = 58f,
-        });
-        _legendGrid.Columns.Add(new DataGridViewTextBoxColumn
+            AutoSize = true,
+            Text = T("Name, category, or export ID", "Name, category, or export ID"),
+            Margin = new Padding(0, 0, 0, 4),
+        }, 0, 0);
+        panel.Controls.Add(_searchTextBox, 0, 1);
+
+        group.Controls.Add(panel);
+        return group;
+    }
+
+    private WinFormsControl BuildViewToolsGroup()
+    {
+        GroupBox group = CreateSidebarGroup(T("View Tools", "View Tools"));
+
+        FlowLayoutPanel panel = new()
         {
-            Name = "Count",
-            HeaderText = T("Count", "Count"),
-            FillWeight = 30f,
-            DefaultCellStyle = new DataGridViewCellStyle
-            {
-                Alignment = DataGridViewContentAlignment.MiddleRight,
-            },
-        });
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = new Padding(0, 4, 0, 0),
+        };
+        panel.Controls.Add(_fitButton);
+        panel.Controls.Add(_resetButton);
+
+        group.Controls.Add(panel);
+        return group;
+    }
+
+    private WinFormsControl BuildSidebarGroup(string title, params WinFormsControl[] controls)
+    {
+        GroupBox group = CreateSidebarGroup(title);
+
+        FlowLayoutPanel panel = new()
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            Margin = Padding.Empty,
+            Padding = new Padding(0, 4, 0, 0),
+        };
+
+        foreach (WinFormsControl control in controls)
+        {
+            panel.Controls.Add(control);
+        }
+
+        group.Controls.Add(panel);
+        return group;
+    }
+
+    private WinFormsControl BuildLegendStrip()
+    {
+        System.Windows.Forms.Panel container = new()
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 8),
+            Padding = new Padding(10, 8, 10, 6),
+            BackColor = DrawingColor.FromArgb(245, 245, 245),
+        };
+
+        TableLayoutPanel layout = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            AutoSize = true,
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(new Label
+        {
+            AutoSize = true,
+            Text = T("Legend", "Legend"),
+            Font = new Font(Font, FontStyle.Bold),
+            Margin = Padding.Empty,
+        }, 0, 0);
+
+        _legendPanel.Dock = DockStyle.Top;
+        _legendPanel.AutoSize = true;
+        _legendPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        _legendPanel.FlowDirection = FlowDirection.LeftToRight;
+        _legendPanel.WrapContents = true;
+        _legendPanel.Margin = Padding.Empty;
+        _legendPanel.Padding = new Padding(0, 6, 0, 0);
+        layout.Controls.Add(_legendPanel, 0, 1);
+
+        container.Controls.Add(layout);
+        return container;
+    }
+
+    private static GroupBox CreateSidebarGroup(string title)
+    {
+        return new GroupBox
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Text = title,
+            Margin = new Padding(0, 0, 0, 10),
+            Padding = new Padding(10, 6, 10, 10),
+        };
+    }
+
+    private static void ConfigureSidebarCheckBox(CheckBox checkBox, string text)
+    {
+        checkBox.AutoSize = true;
+        checkBox.Text = text;
+        checkBox.Margin = new Padding(0, 0, 0, 6);
     }
 
     private void PopulateAssignmentCategories()
@@ -583,11 +688,24 @@ public sealed class ExportPreviewForm : WinFormsForm
     }
     private void PopulateLegend(PreviewViewData viewData)
     {
-        _legendGrid.Rows.Clear();
+        _legendPanel.SuspendLayout();
+        _legendPanel.Controls.Clear();
 
         List<PreviewFeatureData> legendFeatures = viewData.Features
             .Where(feature => feature.FeatureType == ExportFeatureType.Unit)
             .ToList();
+
+        if (legendFeatures.Count == 0)
+        {
+            _legendPanel.Controls.Add(new Label
+            {
+                AutoSize = true,
+                Text = T("No unit categories in this view.", "No unit categories in this view."),
+                Margin = new Padding(0, 0, 0, 2),
+            });
+            _legendPanel.ResumeLayout();
+            return;
+        }
 
         var grouped = legendFeatures
             .GroupBy(
@@ -598,10 +716,14 @@ public sealed class ExportPreviewForm : WinFormsForm
         foreach (IGrouping<string, PreviewFeatureData> group in grouped)
         {
             PreviewFeatureData first = group.First();
-            int rowIndex = _legendGrid.Rows.Add(string.Empty, GetLegendLabel(group.Key), group.Count());
-            _legendGrid.Rows[rowIndex].Cells[0].Style.BackColor =
-                ParseColor(first.FillColorHex, DrawingColor.LightGray);
+            _legendPanel.Controls.Add(
+                BuildLegendItem(
+                    GetLegendLabel(group.Key),
+                    group.Count(),
+                    ParseColor(first.FillColorHex, DrawingColor.LightGray)));
         }
+
+        _legendPanel.ResumeLayout();
     }
 
     private void PopulateWarnings(PreviewViewData viewData)
@@ -1108,6 +1230,35 @@ public sealed class ExportPreviewForm : WinFormsForm
     private static string GetLegendLabel(string category)
     {
         return string.IsNullOrWhiteSpace(category) ? "(uncategorized)" : category;
+    }
+
+    private static WinFormsControl BuildLegendItem(string label, int count, DrawingColor color)
+    {
+        FlowLayoutPanel item = new()
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Margin = new Padding(0, 0, 12, 6),
+            Padding = Padding.Empty,
+        };
+
+        System.Windows.Forms.Panel swatch = new()
+        {
+            Size = new Size(14, 14),
+            BackColor = color,
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(0, 3, 6, 0),
+        };
+        item.Controls.Add(swatch);
+        item.Controls.Add(new Label
+        {
+            AutoSize = true,
+            Text = $"{label} ({count})",
+            Margin = Padding.Empty,
+        });
+
+        return item;
     }
 
     private static string NullToPlaceholder(string? value)
