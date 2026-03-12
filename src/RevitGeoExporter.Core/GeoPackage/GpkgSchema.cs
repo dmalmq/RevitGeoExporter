@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Data.Sqlite;
+using RevitGeoExporter.Core.Coordinates;
 
 namespace RevitGeoExporter.Core.GeoPackage;
 
@@ -106,6 +107,9 @@ public static class GpkgSchema
 
         if (srsId != -1 && srsId != 0 && srsId != 4326)
         {
+            string definition = CoordinateSystemCatalog.TryGetDefinitionWkt(srsId, out string knownDefinition)
+                ? knownDefinition
+                : "undefined";
             InsertSpatialReference(
                 connection,
                 transaction,
@@ -113,7 +117,7 @@ public static class GpkgSchema
                 srsId: srsId,
                 organization: "EPSG",
                 organizationCoordsysId: srsId,
-                definition: "undefined",
+                definition: definition,
                 description: "custom coordinate reference system");
         }
     }

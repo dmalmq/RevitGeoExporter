@@ -25,6 +25,8 @@ public sealed class ExportDialogSettings
 
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
 
+    public CoordinateExportMode CoordinateMode { get; set; } = CoordinateExportMode.SharedCoordinates;
+
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;
 
     public string RoomCategoryParameterName { get; set; } = "Name";

@@ -93,7 +93,7 @@ public sealed class ExportPackageService
         {
             SourceModelName = session.SourceModelName,
             PackageDirectory = packageDirectory,
-            TargetEpsg = session.TargetEpsg,
+            TargetEpsg = session.OutputEpsg,
             ExportedAtUtc = exportedAtUtc,
         };
 

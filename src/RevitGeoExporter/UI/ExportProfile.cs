@@ -27,6 +27,8 @@ public sealed class ExportProfile
 
     public UiLanguage UiLanguage { get; set; } = UiLanguage.English;
 
+    public CoordinateExportMode CoordinateMode { get; set; } = CoordinateExportMode.SharedCoordinates;
+
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;
 
     public string RoomCategoryParameterName { get; set; } = "Name";
@@ -43,6 +45,7 @@ public sealed class ExportProfile
             IncludePackageLegend = IncludePackageLegend,
             GeometryRepairOptions = GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = UiLanguage,
+            CoordinateMode = CoordinateMode,
             UnitSource = UnitSource,
             RoomCategoryParameterName = RoomCategoryParameterName,
         };
@@ -67,6 +70,7 @@ public sealed class ExportProfile
             IncludePackageLegend = settings.IncludePackageLegend,
             GeometryRepairOptions = settings.GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = settings.UiLanguage,
+            CoordinateMode = settings.CoordinateMode,
             UnitSource = settings.UnitSource,
             RoomCategoryParameterName = settings.RoomCategoryParameterName?.Trim() ?? "Name",
         };

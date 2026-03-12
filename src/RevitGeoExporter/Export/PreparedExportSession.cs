@@ -22,6 +22,10 @@ public sealed class PreparedExportSession
         string? profileName,
         string baselineKey,
         string sourceModelName,
+        CoordinateExportMode coordinateMode,
+        int? sourceEpsg,
+        string? sourceCoordinateSystemId,
+        string? sourceCoordinateSystemDefinition,
         UnitSource unitSource,
         string roomCategoryParameterName)
     {
@@ -40,6 +44,13 @@ public sealed class PreparedExportSession
         ProfileName = string.IsNullOrWhiteSpace(profileName) ? null : profileName.Trim();
         BaselineKey = string.IsNullOrWhiteSpace(baselineKey) ? throw new ArgumentException("A baseline key is required.", nameof(baselineKey)) : baselineKey.Trim();
         SourceModelName = string.IsNullOrWhiteSpace(sourceModelName) ? "Model" : sourceModelName.Trim();
+        CoordinateMode = coordinateMode;
+        SourceEpsg = sourceEpsg;
+        SourceCoordinateSystemId = string.IsNullOrWhiteSpace(sourceCoordinateSystemId) ? null : sourceCoordinateSystemId.Trim();
+        SourceCoordinateSystemDefinition = string.IsNullOrWhiteSpace(sourceCoordinateSystemDefinition) ? null : sourceCoordinateSystemDefinition.Trim();
+        OutputEpsg = coordinateMode == CoordinateExportMode.SharedCoordinates
+            ? sourceEpsg ?? targetEpsg
+            : targetEpsg;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
     }
@@ -69,6 +80,16 @@ public sealed class PreparedExportSession
     public string BaselineKey { get; }
 
     public string SourceModelName { get; }
+
+    public CoordinateExportMode CoordinateMode { get; }
+
+    public int? SourceEpsg { get; }
+
+    public string? SourceCoordinateSystemId { get; }
+
+    public string? SourceCoordinateSystemDefinition { get; }
+
+    public int OutputEpsg { get; }
 
     public UnitSource UnitSource { get; }
 

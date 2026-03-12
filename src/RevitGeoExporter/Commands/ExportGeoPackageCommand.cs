@@ -55,6 +55,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         SettingsBundleSnapshot bundleSnapshot = bundle.Load();
         ExportDialogSettings settings = bundleSnapshot.GlobalSettings;
         ExportProfileStore profileStore = new();
+        IReadOnlyList<string> availableFloorTypeNames = GetAvailableFloorTypeNames(document);
+        ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
 
         ExportDialogResult? request = null;
         bool forceLegacyWinForms = string.Equals(
@@ -88,7 +90,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     using ProjectMappingsForm mappingsForm = new(
                         projectKey,
                         ZoneCatalog.CreateDefault(),
-                        new MappingRuleStore());
+                        new MappingRuleStore(),
+                        availableFloorTypeNames);
                     mappingsForm.ShowDialog();
                 },
                 previewRequest =>
@@ -104,7 +107,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                         using ExportPreviewForm previewForm = new(previewRequest, previewService);
                         previewForm.ShowDialog();
                     }
-                });
+                },
+                coordinateInfo);
 
             if (dialog.ShowDialog() != DialogResult.OK || dialog.Result == null)
             {
@@ -137,7 +141,8 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                        using ProjectMappingsForm mappingsForm = new(
                            projectKey,
                            ZoneCatalog.CreateDefault(),
-                           new MappingRuleStore());
+                           new MappingRuleStore(),
+                           availableFloorTypeNames);
                        mappingsForm.ShowDialog();
                    },
                    previewRequest =>
@@ -192,6 +197,10 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
                     },
                     request.SelectedProfileName,
                     BuildBaselineKey(projectKey, request.SelectedProfileName),
+                    request.CoordinateMode,
+                    coordinateInfo.ResolvedSourceEpsg,
+                    coordinateInfo.SiteCoordinateSystemId,
+                    coordinateInfo.SiteCoordinateSystemDefinition,
                     request.UnitSource,
                     request.RoomCategoryParameterName);
 
@@ -485,6 +494,18 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         return string.IsNullOrWhiteSpace(profileName)
             ? projectKey
             : $"{projectKey}__{profileName!.Trim()}";
+    }
+
+    private static IReadOnlyList<string> GetAvailableFloorTypeNames(Document document)
+    {
+        return new FilteredElementCollector(document)
+            .OfClass(typeof(FloorType))
+            .Cast<FloorType>()
+            .Select(type => type.Name?.Trim() ?? string.Empty)
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static void ShowWarningsIfNeeded(IReadOnlyList<string> warnings, UiLanguage language)
