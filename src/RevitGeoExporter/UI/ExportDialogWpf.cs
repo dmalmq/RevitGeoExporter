@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core;
@@ -21,7 +22,7 @@ namespace RevitGeoExporter.UI;
 internal sealed class ExportDialogWpf : IDisposable
 {
     private readonly ObservableCollection<ViewSelectionRow> _views = new();
-    private readonly Action<ExportPreviewRequest>? _previewRequested;
+    private readonly Action<ExportPreviewRequest, WinForms.IWin32Window?>? _previewRequested;
     private readonly Window _window;
     private readonly List<ExportProfile> _profiles;
     private readonly ModelCoordinateInfo? _coordinateInfo;
@@ -74,7 +75,7 @@ internal sealed class ExportDialogWpf : IDisposable
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
-        Action<ExportPreviewRequest>? previewRequested = null,
+        Action<ExportPreviewRequest, WinForms.IWin32Window?>? previewRequested = null,
         ModelCoordinateInfo? coordinateInfo = null)
     {
         if (views is null)
@@ -521,7 +522,7 @@ internal sealed class ExportDialogWpf : IDisposable
             return;
         }
 
-        _previewRequested(new ExportPreviewRequest(
+        ExportPreviewRequest previewRequest = new(
             selectedViews,
             GetSelectedFeatureTypes(),
             new GeometryRepairOptions(),
@@ -535,7 +536,15 @@ internal sealed class ExportDialogWpf : IDisposable
             (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             _previewBasemapSettings.UrlTemplate,
-            _previewBasemapSettings.Attribution));
+            _previewBasemapSettings.Attribution);
+
+        IntPtr handle = new WindowInteropHelper(_window).EnsureHandle();
+        WinForms.IWin32Window? owner = handle == IntPtr.Zero
+            ? null
+            : new Win32WindowOwner(handle);
+
+        _previewRequested(previewRequest, owner);
+        _window.Activate();
     }
 
     private List<ViewPlan> GetSelectedViews() => _views.Where(x => x.IsSelected).Select(x => x.View).ToList();
@@ -648,6 +657,16 @@ internal sealed class ExportDialogWpf : IDisposable
     }
 
     private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
+
+    private sealed class Win32WindowOwner : WinForms.IWin32Window
+    {
+        public Win32WindowOwner(IntPtr handle)
+        {
+            Handle = handle;
+        }
+
+        public IntPtr Handle { get; }
+    }
 
     private sealed class ViewSelectionRow
     {
