@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
@@ -18,8 +18,7 @@ public sealed class OpeningExtractor
     private const double StairLevelElevationToleranceFeet = 0.75d;
 
     private readonly Document _document;
-    private readonly Transform _internalToSharedTransform;
-    private readonly CrsTransformer _transformer;
+    private readonly SharedCoordinateProjector _sharedCoordinateProjector;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly GeometryRepairOptions _geometryRepairOptions;
@@ -33,9 +32,7 @@ public sealed class OpeningExtractor
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
-        _internalToSharedTransform =
-            _document.ActiveProjectLocation?.GetTotalTransform() ?? Transform.Identity;
-        _transformer = new CrsTransformer();
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
@@ -634,13 +631,7 @@ public sealed class OpeningExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        XYZ sharedPoint = _internalToSharedTransform.OfPoint(point);
-        return _transformer.TransformFromRevitFeet(
-            sharedPoint.X,
-            sharedPoint.Y,
-            offsetXMeters: 0d,
-            offsetYMeters: 0d,
-            rotationDegrees: 0d);
+        return _sharedCoordinateProjector.ProjectPoint(point);
     }
 
     private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
@@ -865,3 +856,4 @@ public sealed class OpeningExtractor
         public bool WasSnapped { get; }
     }
 }
+
