@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Models;
@@ -100,6 +100,28 @@ public sealed class PreviewFeatureData
 
     public bool SupportsFloorCategoryAssignment => SupportsCategoryAssignment;
 
+    public PreviewFeatureData WithFeature(IExportFeature feature)
+    {
+        return new PreviewFeatureData(
+            FeatureType,
+            feature,
+            SourceElementId,
+            ExportId,
+            Category,
+            Restriction,
+            Name,
+            SourceLabel,
+            FillColorHex,
+            StrokeColorHex,
+            AssignmentSourceKind,
+            AssignmentMappingKey,
+            AssignmentParsedCandidate,
+            AssignmentParameterName,
+            IsUnassigned,
+            CategoryResolutionSource,
+            HasWarning);
+    }
+
     public string SearchText =>
         string.Join(
             " ",
@@ -116,3 +138,4 @@ public sealed class PreviewFeatureData
                 ExportId,
             }.Where(value => !string.IsNullOrWhiteSpace(value)));
 }
+

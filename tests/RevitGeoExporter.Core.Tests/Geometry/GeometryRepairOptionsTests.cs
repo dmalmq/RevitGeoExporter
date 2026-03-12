@@ -1,4 +1,4 @@
-using RevitGeoExporter.Core.Geometry;
+﻿using RevitGeoExporter.Core.Geometry;
 using Xunit;
 
 namespace RevitGeoExporter.Core.Tests.Geometry;
@@ -24,8 +24,8 @@ public sealed class GeometryRepairOptionsTests
         Assert.Equal(0.01d, effective.MinimumPolygonAreaSquareMeters);
         Assert.Equal(0.10d, effective.MinimumOpeningLengthMeters);
         Assert.Equal(0d, effective.SimplifyToleranceMeters);
-        Assert.Equal(5.0d, effective.OpeningSnapDistanceMeters);
-        Assert.Equal(5.0d, effective.ElevatorOpeningSnapDistanceMeters);
+        Assert.Equal(0.20d, effective.OpeningSnapDistanceMeters);
+        Assert.Equal(0.20d, effective.ElevatorOpeningSnapDistanceMeters);
         Assert.Equal(0.15d, effective.MergeNearbyBoundaryThresholdMeters);
     }
 }

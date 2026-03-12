@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -14,6 +14,19 @@ public static class CoordinateSystemCatalog
     private const string Wgs84Wkt =
         "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
         "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433],AUTHORITY[\"EPSG\",\"4326\"]]";
+    private const string WebMercatorWkt =
+        "PROJCS[\"WGS 84 / Pseudo-Mercator\"," +
+        "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
+        "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]," +
+        "PROJECTION[\"Mercator_1SP\"]," +
+        "PARAMETER[\"central_meridian\",0]," +
+        "PARAMETER[\"scale_factor\",1]," +
+        "PARAMETER[\"false_easting\",0]," +
+        "PARAMETER[\"false_northing\",0]," +
+        "UNIT[\"metre\",1]," +
+        "AXIS[\"X\",EAST]," +
+        "AXIS[\"Y\",NORTH]," +
+        "AUTHORITY[\"EPSG\",\"3857\"]]";
 
     private static readonly CoordinateSystemFactory Factory = new();
     private static readonly CoordinateTransformationFactory TransformationFactory = new();
@@ -24,6 +37,12 @@ public static class CoordinateSystemCatalog
         if (epsg == 4326)
         {
             wkt = Wgs84Wkt;
+            return true;
+        }
+
+        if (epsg == 3857)
+        {
+            wkt = WebMercatorWkt;
             return true;
         }
 
@@ -49,6 +68,23 @@ public static class CoordinateSystemCatalog
             coordinateSystem = null;
             return false;
         }
+    }
+
+    public static bool TryCreateWebMercator(out CoordinateSystem? coordinateSystem)
+    {
+        return TryCreateFromEpsg(3857, out coordinateSystem);
+    }
+
+    public static string DescribeEpsg(int epsg)
+    {
+        return epsg switch
+        {
+            3857 => "EPSG:3857 - WGS 84 / Pseudo-Mercator",
+            4326 => "EPSG:4326 - WGS 84",
+            _ when JapanPlaneRectangular.TryGetZone(epsg, out JapanPlaneRectangularZoneDefinition? zone)
+                => $"EPSG:{epsg} - {zone!.DisplayName}",
+            _ => $"EPSG:{epsg}",
+        };
     }
 
     public static bool TryCreateSourceCoordinateSystem(
@@ -118,13 +154,39 @@ public static class CoordinateSystemCatalog
         ExportLayer transformed = new(layer.Name, layer.GeometryType, layer.Attributes);
         foreach (IExportFeature feature in layer.Features)
         {
-            transformed.AddFeature(TransformFeature(feature, mathTransform));
+            transformed.AddFeature(ReprojectFeature(feature, mathTransform));
         }
 
         return transformed;
     }
 
-    private static IExportFeature TransformFeature(IExportFeature feature, MathTransform mathTransform)
+    public static IExportFeature ReprojectFeature(IExportFeature feature, CoordinateSystem source, CoordinateSystem target)
+    {
+        if (feature is null)
+        {
+            throw new ArgumentNullException(nameof(feature));
+        }
+
+        if (source is null)
+        {
+            throw new ArgumentNullException(nameof(source));
+        }
+
+        if (target is null)
+        {
+            throw new ArgumentNullException(nameof(target));
+        }
+
+        var transformation = TransformationFactory.CreateFromCoordinateSystems(source, target);
+        if (transformation == null)
+        {
+            throw new InvalidOperationException("A coordinate transformation could not be created for the requested CRS conversion.");
+        }
+
+        return ReprojectFeature(feature, transformation.MathTransform);
+    }
+
+    private static IExportFeature ReprojectFeature(IExportFeature feature, MathTransform mathTransform)
     {
         return feature switch
         {
@@ -165,6 +227,7 @@ public static class CoordinateSystemCatalog
         List<KeyValuePair<int, string>> definitions = new()
         {
             new KeyValuePair<int, string>(4326, Wgs84Wkt),
+            new KeyValuePair<int, string>(3857, WebMercatorWkt),
         };
         definitions.AddRange(
             JapanPlaneRectangular.AllZones.Select(zone =>
