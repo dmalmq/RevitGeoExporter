@@ -65,7 +65,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             StringComparison.Ordinal);
 
         bool useWpfDialog = !forceLegacyWinForms;
-        bool useWpfPreviewWindow = !forceLegacyWinForms;
+        bool useWpfPreviewWindow = false;
 
         if (useWpfDialog)
         {
