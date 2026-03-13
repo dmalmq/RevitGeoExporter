@@ -6,6 +6,9 @@ namespace RevitGeoExporter.Core.Preview;
 
 public static class PreviewMapContextFactory
 {
+    public const string ConvertModeMissingSourceReason =
+        "Model source CRS could not be resolved for preview conversion.";
+
     public static PreviewMapContext Create(
         CoordinateExportMode coordinateMode,
         int targetEpsg,
@@ -13,14 +16,12 @@ public static class PreviewMapContextFactory
         string? sourceCoordinateSystemId,
         string? sourceCoordinateSystemDefinition)
     {
-        CoordinateSystem? sourceCoordinateSystem;
-        string sourceFailureReason;
-        bool hasSourceCoordinateSystem = CoordinateSystemCatalog.TryCreateSourceCoordinateSystem(
+        CoordinateSystemCatalog.TryCreateSourceCoordinateSystem(
             sourceCoordinateSystemDefinition,
             sourceCoordinateSystemId,
             sourceEpsg,
-            out sourceCoordinateSystem,
-            out sourceFailureReason);
+            out CoordinateSystem? sourceCoordinateSystem,
+            out string sourceFailureReason);
 
         CoordinateSystem? outputCoordinateSystem;
         int? outputEpsg;
@@ -33,8 +34,19 @@ public static class PreviewMapContextFactory
                 ? CoordinateSystemCatalog.DescribeEpsg(outputEpsg.Value)
                 : "Target CRS";
 
-            if (!outputEpsg.HasValue ||
-                !CoordinateSystemCatalog.TryCreateFromEpsg(outputEpsg.Value, out outputCoordinateSystem))
+            if (sourceCoordinateSystem == null)
+            {
+                return new PreviewMapContext(
+                    coordinateMode,
+                    null,
+                    outputEpsg,
+                    outputCrsLabel,
+                    null,
+                    null,
+                    ConvertModeMissingSourceReason);
+            }
+
+            if (!outputEpsg.HasValue)
             {
                 return new PreviewMapContext(
                     coordinateMode,
@@ -46,18 +58,20 @@ public static class PreviewMapContextFactory
                     "Target EPSG could not be resolved for map preview.");
             }
 
-            if (!hasSourceCoordinateSystem)
+            if (sourceEpsg.HasValue && sourceEpsg.Value == outputEpsg.Value)
+            {
+                outputCoordinateSystem = sourceCoordinateSystem;
+            }
+            else if (!CoordinateSystemCatalog.TryCreateFromEpsg(outputEpsg.Value, out outputCoordinateSystem))
             {
                 return new PreviewMapContext(
                     coordinateMode,
-                    null,
+                    sourceCoordinateSystem,
                     outputEpsg,
                     outputCrsLabel,
-                    outputCoordinateSystem,
                     null,
-                    sourceFailureReason.Length == 0
-                        ? "Model CRS could not be resolved for map preview."
-                        : sourceFailureReason);
+                    null,
+                    "Target EPSG could not be resolved for map preview.");
             }
         }
         else
@@ -65,7 +79,7 @@ public static class PreviewMapContextFactory
             outputEpsg = sourceEpsg;
             outputCrsLabel = BuildSharedOutputLabel(sourceEpsg, sourceCoordinateSystemId);
 
-            if (!hasSourceCoordinateSystem)
+            if (sourceCoordinateSystem == null)
             {
                 return new PreviewMapContext(
                     coordinateMode,
@@ -113,7 +127,7 @@ public static class PreviewMapContextFactory
 
         if (!string.IsNullOrWhiteSpace(sourceCoordinateSystemId))
         {
-            return sourceCoordinateSystemId.Trim();
+            return sourceCoordinateSystemId?.Trim() ?? string.Empty;
         }
 
         return "Shared coordinates";
