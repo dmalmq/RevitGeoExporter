@@ -8,13 +8,7 @@ public static class HelpLauncher
     public static void Show(IWin32Window? owner, HelpTopic topic, UiLanguage language, string? contextLabel = null)
     {
         HelpContentProvider provider = new();
-        using HelpViewerForm viewer = new(provider, topic, HelpContentProvider.FromUiLanguage(language), contextLabel);
-        if (owner == null)
-        {
-            viewer.ShowDialog();
-            return;
-        }
-
-        viewer.ShowDialog(owner);
+        using HelpViewerWindow viewer = new(provider, topic, HelpContentProvider.FromUiLanguage(language), contextLabel, owner);
+        _ = viewer.ShowDialog();
     }
 }

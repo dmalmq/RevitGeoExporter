@@ -1,35 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
   <meta charset="utf-8" />
   <title>はじめに</title>
   <style>
-    body { font-family: "Segoe UI", sans-serif; margin: 24px; line-height: 1.55; color: #2a2a2a; }
-    h1, h2 { color: #16324f; }
-    code { background: #f3f5f7; padding: 1px 4px; border-radius: 3px; }
-    a { color: #145da0; }
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.7; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ol, ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    .badge { display: inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border-radius: 999px; background: #eef3f9; border: 1px solid #d7e2ef; color: #27486a; font-size: 12px; font-weight: 600; }
+    .note { color: #617182; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #eef2f6; border-radius: 4px; padding: 1px 5px; }
   </style>
 </head>
 <body>
-  <h1>はじめに</h1>
-  <p>RevitGeoExporter は、選択した平面ビューを IMDF 形式に近い GeoPackage へ書き出し、書き出し前に結果を確認できる Revit 2024 用アドインです。</p>
-  <h2>書き出し前の確認</h2>
-  <ul>
-    <li>書き出し対象となる平面ビューを含む Revit プロジェクトを開きます。</li>
-    <li>リボンの <strong>設定</strong> から既定の出力フォルダーと CRS を確認します。</li>
-    <li>エクスポートダイアログでビューとフィーチャレイヤーを選択します。</li>
-  </ul>
-  <h2>基本的な流れ</h2>
-  <ol>
-    <li><strong>GeoPackageを書き出し</strong> を開くか、<a href="help:ExportWorkflow">エクスポートの流れ</a> を参照します。</li>
-    <li>必要に応じてプレビューで units、openings、details、levels を確認します。</li>
-    <li>書き出し前に検証結果と診断警告を確認します。</li>
-  </ol>
-  <h2>関連トピック</h2>
-  <ul>
-    <li><a href="help:SettingsAndProfiles">設定とプロファイル</a></li>
-    <li><a href="help:ValidationAndDiagnostics">検証と診断</a></li>
-    <li><a href="help:TroubleshootingFaq">トラブルシューティング / FAQ</a></li>
-  </ul>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Quick Start</p>
+      <h1>はじめに</h1>
+      <p>RevitGeoExporter は、まず標準的な流れを分かりやすく見せるようになりました。プランビューを選び、出力先を決め、含める内容を選び、必要に応じてプレビューしてからエクスポートします。</p>
+      <div>
+        <span class="badge">プランビュー</span>
+        <span class="badge">出力フォルダー</span>
+        <span class="badge">プレビュー</span>
+        <span class="badge">検証</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>エクスポート前に確認すること</h2>
+      <ul>
+        <li>出力したい平面図または天井伏図を含む Revit モデルを開きます。</li>
+        <li>独自の命名や例外的な開口ファミリがある場合は、<a href="help:SettingsAndProfiles">設定とプロファイル</a>でプロジェクト側のマッピングを確認します。</li>
+        <li>出力フォルダーと座標の前提が、受け渡し先の GIS ワークフローに合っていることを確認します。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>基本の流れ</h2>
+      <ol>
+        <li><strong>Plan views</strong> で、エクスポートするビューを 1 つ以上選択します。</li>
+        <li><strong>Export to</strong> で出力フォルダーを確認し、必要なら <strong>Browse...</strong> で変更します。</li>
+        <li><strong>Include in export</strong> で、<code>unit</code>、<code>detail</code>、<code>opening</code>、<code>level</code> の各レイヤーを選びます。</li>
+        <li><strong>Coordinate system</strong> では通常は共有座標のままで進め、必要なときだけ設定を展開して CRS や EPSG 変換を指定します。</li>
+        <li>ファイルを書き出す前に、<strong>Preview</strong> でジオメトリ、警告、カテゴリ割り当てを確認できます。</li>
+        <li><strong>Export</strong> を実行し、検証で止まった項目を解決したあと、結果画面で出力内容を確認します。</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <h2>次に見るトピック</h2>
+      <p class="note">各ステップの詳しい説明は、次のヘルプを参照してください。</p>
+      <ul>
+        <li><a href="help:ExportWorkflow">エクスポートの流れ</a></li>
+        <li><a href="help:PreviewAndAssignments">プレビューと割り当て</a></li>
+        <li><a href="help:ValidationAndDiagnostics">検証と診断</a></li>
+      </ul>
+    </div>
+  </div>
 </body>
 </html>

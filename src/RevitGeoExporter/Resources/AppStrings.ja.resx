@@ -327,6 +327,27 @@
   <data name="Help.Viewer.LanguageLabel" xml:space="preserve">
     <value>言語</value>
   </data>
+  <data name="Help.Viewer.HeaderDescription" xml:space="preserve">
+    <value>エクスポート、プレビュー、設定、トラブルシューティングのオフラインガイドです。</value>
+  </data>
+  <data name="Help.Viewer.NavigationTitle" xml:space="preserve">
+    <value>トピック</value>
+  </data>
+  <data name="Help.Viewer.NavigationDescription" xml:space="preserve">
+    <value>現在のワークフローや関連情報を確認したいトピックを選択します。</value>
+  </data>
+  <data name="Help.Viewer.ArticleDescription" xml:space="preserve">
+    <value>関連するヘルプトピックへのリンクも、このビューアー内で開きます。</value>
+  </data>
+  <data name="Help.Viewer.FooterSummary" xml:space="preserve">
+    <value>オフラインの日本語 / 英語ヘルプ</value>
+  </data>
+  <data name="Help.Viewer.ContextLabel" xml:space="preserve">
+    <value>開いた元: {0}</value>
+  </data>
+  <data name="Help.Viewer.FallbackNotice" xml:space="preserve">
+    <value>選択した言語の内容がないため、代替のヘルプを表示しています。</value>
+  </data>
   <data name="Help.Viewer.TopicUnavailableTitle" xml:space="preserve">
     <value>ヘルプトピックを表示できません</value>
   </data>

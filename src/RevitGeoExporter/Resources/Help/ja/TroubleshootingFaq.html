@@ -1,10 +1,58 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>トラブルシューティング / FAQ</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}</style></head><body>
-<h1>トラブルシューティング / FAQ</h1>
-<h2>QGIS に何かが出てこない</h2>
-<p>まずプレビューと検証ダイアログを確認してください。欠落した垂直ユニット、スナップできなかった開口、未対応ファミリは通常ここに警告として表示されます。</p>
-<h2>床が unspecified になった</h2>
-<p>床タイプ名が既知のカテゴリに解決されていません。プレビューの割り当て機能またはプロジェクトマッピングで上書きを追加してください。</p>
-<h2>設定の保存場所</h2>
-<p>グローバル設定とプロジェクトマッピングは RevitGeoExporter のアプリケーションデータ領域に保存されます。設定ハブから各スコープの読み込み、書き出し、リセットができます。</p>
-</body></html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>トラブルシューティング / FAQ</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.7; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Support</p>
+      <h1>トラブルシューティング / FAQ</h1>
+      <p>動作としては正しいはずなのに、プロジェクトや受け渡し先の期待と違って見えるときは、このページを参照してください。</p>
+    </div>
+
+    <div class="section">
+      <h2>QGIS で一部が見えません</h2>
+      <p>まず <a href="help:PreviewAndAssignments">プレビューと割り当て</a> と検証ダイアログを確認してください。縦動線の不足、未スナップ開口、未対応ファミリ、フィルターで外れたレイヤーは、通常ここで確認できます。</p>
+    </div>
+
+    <div class="section">
+      <h2>床が unspecified のような扱いになりました</h2>
+      <p>床タイプ名から既知のカテゴリへ解決できなかった可能性があります。プレビューの Assignments か、<a href="help:SettingsAndProfiles">設定とプロファイル</a> のプロジェクトマッピングでエクスポーター側の上書きを追加してください。</p>
+    </div>
+
+    <div class="section">
+      <h2>設定はどこに保存されますか</h2>
+      <p>グローバル既定値とプロジェクトマッピングは RevitGeoExporter のアプリケーションデータ領域に保存されます。設定ハブから各スコープを読み込み、書き出し、リセットできます。</p>
+    </div>
+
+    <div class="section">
+      <h2>このアドインが Revit モデルを書き換えることはありますか</h2>
+      <p>ありません。プレビューの割り当て、マッピング、診断、ヘルプ内容はいずれもエクスポーター側の情報であり、Revit 要素名やカテゴリをモデルへ書き戻すことはありません。</p>
+    </div>
+
+    <div class="callout">
+      <h2>まだ解決しない場合</h2>
+      <ul>
+        <li><a href="help:ValidationAndDiagnostics">検証と診断</a> で、エクスポートを止めている項目を確認します。</li>
+        <li><a href="help:ExportWorkflow">エクスポートの流れ</a> で、レイヤー、出力先、座標モードの選択を見直します。</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

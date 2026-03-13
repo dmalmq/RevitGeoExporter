@@ -327,6 +327,27 @@
   <data name="Help.Viewer.LanguageLabel" xml:space="preserve">
     <value>Language</value>
   </data>
+  <data name="Help.Viewer.HeaderDescription" xml:space="preserve">
+    <value>Offline guidance for export, preview, settings, and troubleshooting.</value>
+  </data>
+  <data name="Help.Viewer.NavigationTitle" xml:space="preserve">
+    <value>Topics</value>
+  </data>
+  <data name="Help.Viewer.NavigationDescription" xml:space="preserve">
+    <value>Choose a topic to review the current workflow and related guidance.</value>
+  </data>
+  <data name="Help.Viewer.ArticleDescription" xml:space="preserve">
+    <value>Articles open inside this viewer, including links to related help topics.</value>
+  </data>
+  <data name="Help.Viewer.FooterSummary" xml:space="preserve">
+    <value>Offline bilingual help</value>
+  </data>
+  <data name="Help.Viewer.ContextLabel" xml:space="preserve">
+    <value>Opened from: {0}</value>
+  </data>
+  <data name="Help.Viewer.FallbackNotice" xml:space="preserve">
+    <value>Showing fallback content because this topic is not available in the selected language.</value>
+  </data>
   <data name="Help.Viewer.TopicUnavailableTitle" xml:space="preserve">
     <value>Help topic unavailable</value>
   </data>
