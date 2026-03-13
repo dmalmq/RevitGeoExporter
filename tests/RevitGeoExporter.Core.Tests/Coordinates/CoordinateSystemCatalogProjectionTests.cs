@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using Xunit;
@@ -7,6 +7,10 @@ namespace RevitGeoExporter.Core.Tests.Coordinates;
 
 public sealed class CoordinateSystemCatalogProjectionTests
 {
+    private const string Wgs84Wkt =
+        "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
+        "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433],AUTHORITY[\"EPSG\",\"4326\"]]";
+
     [Fact]
     public void ReprojectFeature_ConvertsJgd2011ZoneIxToWebMercator()
     {
@@ -36,25 +40,23 @@ public sealed class CoordinateSystemCatalogProjectionTests
     }
 
     [Fact]
-    public void TryCreateSourceCoordinateSystem_PrefersSupportedResolvedEpsgOverWkt()
+    public void TryCreateSourceCoordinateSystem_PrefersResolvedEpsgOverConflictingWkt()
     {
-        Assert.True(CoordinateSystemCatalog.TryGetDefinitionWkt(4326, out string wgs84Wkt));
         Assert.True(
             CoordinateSystemCatalog.TryCreateSourceCoordinateSystem(
-                wgs84Wkt,
-                "EPSG:6677",
-                6677,
+                siteCoordinateSystemDefinition: Wgs84Wkt,
+                siteCoordinateSystemId: string.Empty,
+                resolvedSourceEpsg: 6677,
                 out var source,
-                out string failureReason));
+                out var failureReason));
         Assert.Equal(string.Empty, failureReason);
-        Assert.NotNull(source);
         Assert.True(CoordinateSystemCatalog.TryCreateWebMercator(out var target));
 
         ExportLineString feature = new(
             new LineString2D(new[]
             {
                 new Point2D(0d, 0d),
-                new Point2D(1d, 1d),
+                new Point2D(100d, 100d),
             }));
 
         ExportLineString transformed = Assert.IsType<ExportLineString>(
@@ -63,5 +65,17 @@ public sealed class CoordinateSystemCatalogProjectionTests
         Point2D first = transformed.LineString.Points.First();
         Assert.InRange(first.X, 15500000d, 15650000d);
         Assert.InRange(first.Y, 4200000d, 4400000d);
+    }
+
+    [Fact]
+    public void ReprojectPoint_ConvertsJgd2011ZoneIxOriginToWebMercator()
+    {
+        Assert.True(CoordinateSystemCatalog.TryCreateFromEpsg(6677, out var source));
+        Assert.True(CoordinateSystemCatalog.TryCreateWebMercator(out var target));
+
+        Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(new Point2D(0d, 0d), source!, target!);
+
+        Assert.InRange(transformed.X, 15500000d, 15650000d);
+        Assert.InRange(transformed.Y, 4200000d, 4400000d);
     }
 }
