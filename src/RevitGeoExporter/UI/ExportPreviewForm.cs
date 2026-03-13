@@ -20,6 +20,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 {
     private readonly ExportPreviewRequest _request;
     private readonly ExportPreviewService _previewService;
+    private readonly ExportPreviewController _controller;
     private readonly Dictionary<long, PreviewDisplayViewState> _cache = new();
     private readonly UiLanguage _language;
     private readonly IReadOnlyList<string> _supportedFloorCategories;
@@ -62,10 +63,8 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private PreviewViewData? _currentViewData;
     private PreviewDisplayViewState? _currentDisplayState;
-    private FloorAssignmentTarget? _assignmentTarget;
     private string _statusMessage = string.Empty;
     private string _basemapProviderStatus = string.Empty;
-    private string? _pendingAssignmentFloorTypeName;
     private bool _isLoadingView;
     private bool _suppressUnassignedSelectionChanged;
 
@@ -73,11 +72,12 @@ public sealed class ExportPreviewForm : WinFormsForm
     {
         _request = request ?? throw new ArgumentNullException(nameof(request));
         _previewService = previewService ?? throw new ArgumentNullException(nameof(previewService));
+        _controller = new ExportPreviewController(request, previewService);
         _language = request.UiLanguage;
-        _supportedFloorCategories = _previewService.GetSupportedFloorCategories().ToList();
+        _supportedFloorCategories = _controller.SupportedFloorCategories.ToList();
         _canvas.BasemapStatusChanged += message =>
         {
-            _basemapProviderStatus = message ?? string.Empty;
+            _controller.UpdateBasemapProviderStatus(message);
             RefreshStatusText();
         };
 
@@ -687,22 +687,15 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        PreviewDisplayViewState displayState;
-        bool loadedFromCache = _cache.TryGetValue(viewItem.View.Id.Value, out displayState!);
-        if (!loadedFromCache)
+        if (!_controller.IsViewCached(viewItem.View))
         {
             UseWaitCursor = true;
             Cursor.Current = Cursors.WaitCursor;
-            SetStatusMessage(T(
-                $"Loading preview for {viewItem.View.Name}...",
-                $"Loading preview for {viewItem.View.Name}..."));
+            SetStatusMessage(_controller.BuildLoadingStatus(viewItem.View));
             Refresh();
-
-            PreviewViewData preview = _previewService.PrepareView(viewItem.View, _request.FeatureTypes);
-            displayState = PreviewDisplayViewStateBuilder.Build(preview, _request);
-            _cache[viewItem.View.Id.Value] = displayState;
         }
 
+        PreviewDisplayViewState displayState = _controller.LoadView(viewItem.View);
         _isLoadingView = true;
         try
         {
@@ -710,7 +703,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             _currentDisplayState = displayState;
             _canvas.ConfigureBasemap(
                 displayState.MapContext,
-                new PreviewBasemapSettings(_request.PreviewBasemapUrlTemplate, _request.PreviewBasemapAttribution));
+                _controller.BasemapSettings);
             _canvas.SurveyPointMarkerLabel = "0,0";
             _canvas.SetViewData(displayState.DisplayFeatures, displayState.DisplayBounds, displayState.DisplaySurveyPoint);
             UpdateBasemapAvailability();
@@ -720,8 +713,8 @@ public sealed class ExportPreviewForm : WinFormsForm
             PopulateWarnings(displayState.SourceViewData);
             PopulateUnassignedFloors(displayState.SourceViewData);
             UpdateDetails(null);
-            RestoreAssignmentTargetAfterReload();
-            UpdateStatus(displayState.SourceViewData);
+            UpdateAssignmentControls();
+            RefreshStatusText();
         }
         finally
         {
@@ -805,7 +798,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private void PopulateUnassignedFloors(PreviewViewData viewData)
     {
-        string? selectedFloorType = _assignmentTarget?.FloorTypeName ?? _pendingAssignmentFloorTypeName;
+        string? selectedFloorType = _controller.GetAssignmentState().SelectedFloorTypeName;
         _suppressUnassignedSelectionChanged = true;
         try
         {
@@ -825,44 +818,18 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private void UpdateDetails(PreviewFeatureData? feature)
     {
-        if (_currentViewData == null)
+        PreviewDetailsSnapshot snapshot = _controller.BuildDetailsSnapshot(feature);
+        List<string> lines = snapshot.Entries
+            .Select(entry => $"{entry.Label}: {entry.Value}")
+            .ToList();
+        if (!string.IsNullOrWhiteSpace(snapshot.HelperText))
         {
-            _detailsTextBox.Text = string.Empty;
-            return;
-        }
+            if (lines.Count > 0)
+            {
+                lines.Add(string.Empty);
+            }
 
-        if (feature == null)
-        {
-            _detailsTextBox.Text =
-                $"View: {_currentViewData.ViewName}{Environment.NewLine}" +
-                $"Level: {_currentViewData.LevelName}{Environment.NewLine}" +
-                $"Features: {_currentViewData.Features.Count}{Environment.NewLine}" +
-                $"Unassigned Floor Types: {_currentViewData.UnassignedFloors.Count}{Environment.NewLine}" +
-                $"{Environment.NewLine}" +
-                T(
-                    "Click a feature to inspect its metadata.",
-                    "Click a feature to inspect its metadata.");
-            return;
-        }
-
-        List<string> lines = new()
-        {
-            $"Feature Type: {feature.FeatureType}",
-            $"Category: {NullToPlaceholder(feature.Category)}",
-            $"Name: {NullToPlaceholder(feature.Name)}",
-            $"Restriction: {NullToPlaceholder(feature.Restriction)}",
-            $"Export ID: {NullToPlaceholder(feature.ExportId)}",
-            $"Source Element ID: {(feature.SourceElementId.HasValue ? feature.SourceElementId.Value.ToString() : "-")}",
-            $"Fill Color: #{feature.FillColorHex}",
-            $"Stroke Color: #{feature.StrokeColorHex}",
-        };
-
-        if (feature.IsFloorDerived)
-        {
-            lines.Add($"Floor Type: {NullToPlaceholder(feature.FloorTypeName)}");
-            lines.Add($"Parsed Candidate: {NullToPlaceholder(feature.ParsedZoneCandidate)}");
-            lines.Add($"Category Resolution: {FormatResolutionSource(feature.CategoryResolutionSource)}");
-            lines.Add($"Unassigned Floor: {(feature.IsUnassignedFloor ? "Yes" : "No")}");
+            lines.Add(snapshot.HelperText);
         }
 
         _detailsTextBox.Text = string.Join(Environment.NewLine, lines);
@@ -876,26 +843,8 @@ public sealed class ExportPreviewForm : WinFormsForm
         }
 
         UpdateDetails(feature);
-
-        if (feature == null)
-        {
-            if (!_isLoadingView)
-            {
-                SetAssignmentTarget(null, selectMatchingListItem: false);
-                SelectUnassignedFloorItem(null);
-            }
-
-            return;
-        }
-
-        if (!feature.SupportsFloorCategoryAssignment)
-        {
-            SetAssignmentTarget(null, selectMatchingListItem: false);
-            SelectUnassignedFloorItem(null);
-            return;
-        }
-
-        SetAssignmentTarget(CreateAssignmentTarget(feature), selectMatchingListItem: true);
+        _controller.SelectFeature(feature);
+        UpdateAssignmentControls();
     }
 
     private void OnUnassignedFloorSelectionChanged()
@@ -907,183 +856,87 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         if (_unassignedFloorsListBox.SelectedItem is not UnassignedFloorItem item)
         {
+            _controller.SelectUnassignedFloor(null, null);
+            UpdateAssignmentControls();
             return;
         }
 
-        FloorAssignmentTarget target = TryBuildAssignmentTarget(item.Group.FloorTypeName)
-            ?? new FloorAssignmentTarget(
-                item.Group.FloorTypeName,
-                item.Group.ParsedZoneCandidate,
-                currentCategory: "unspecified",
-                hasOverride: false,
-                isUnassigned: true);
-        SetAssignmentTarget(target, selectMatchingListItem: false);
+        _controller.SelectUnassignedFloor(item.Group.FloorTypeName, item.Group.ParsedZoneCandidate);
+        UpdateAssignmentControls();
     }
 
     private void AssignSelectedFloorCategory()
     {
-        if (_assignmentTarget == null ||
-            _assignmentCategoryComboBox.SelectedItem is not string category ||
+        if (_assignmentCategoryComboBox.SelectedItem is not string category ||
             string.IsNullOrWhiteSpace(category))
         {
             return;
         }
 
-        IReadOnlyList<string> floorTypeNames = GetSelectedFloorTypeNames();
-        if (floorTypeNames.Count == 0)
+        PreviewDisplayViewState? displayState = _controller.StageCategoryOverride(GetSelectedFloorTypeNames(), category);
+        if (displayState == null)
         {
             return;
         }
 
-        foreach (string floorTypeName in floorTypeNames)
-        {
-            _previewService.StageFloorCategoryOverride(floorTypeName, category);
-        }
-
-        _pendingAssignmentFloorTypeName = floorTypeNames[0];
-        _cache.Clear();
+        _currentViewData = displayState.SourceViewData;
+        _currentDisplayState = displayState;
         LoadSelectedView();
-        SetStatusMessage(T(
-            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it.",
-            $"Pending floor override for {floorTypeNames.Count} floor type(s) -> {category}. Save assignments to persist it."));
     }
 
     private void ClearSelectedFloorCategoryOverride()
     {
-        IReadOnlyList<string> floorTypeNames = GetSelectedFloorTypeNames();
-        if (floorTypeNames.Count == 0)
+        PreviewDisplayViewState? displayState = _controller.ClearCategoryOverride(GetSelectedFloorTypeNames());
+        if (displayState == null)
         {
             return;
         }
 
-        foreach (string floorTypeName in floorTypeNames)
-        {
-            _previewService.StageClearFloorCategoryOverride(floorTypeName);
-        }
-
-        _pendingAssignmentFloorTypeName = floorTypeNames[0];
-        _cache.Clear();
+        _currentViewData = displayState.SourceViewData;
+        _currentDisplayState = displayState;
         LoadSelectedView();
-        SetStatusMessage(T(
-            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it.",
-            $"Pending override removal for {floorTypeNames.Count} floor type(s). Save assignments to persist it."));
     }
 
     private void SavePendingAssignments()
     {
-        if (!_previewService.HasPendingFloorCategoryChanges)
+        PreviewDisplayViewState? displayState = _controller.SavePendingAssignments();
+        if (displayState == null)
         {
             return;
         }
 
-        _previewService.ApplyPendingFloorCategoryOverrides();
-        _cache.Clear();
+        _currentViewData = displayState.SourceViewData;
+        _currentDisplayState = displayState;
         LoadSelectedView();
-        SetStatusMessage(T(
-            "Saved preview floor assignments.",
-            "Saved preview floor assignments."));
     }
 
     private void DiscardPendingAssignments()
     {
-        if (!_previewService.HasPendingFloorCategoryChanges)
+        PreviewDisplayViewState? displayState = _controller.DiscardPendingAssignments();
+        if (displayState == null)
         {
             return;
         }
 
-        _previewService.DiscardPendingFloorCategoryOverrides();
-        _cache.Clear();
+        _currentViewData = displayState.SourceViewData;
+        _currentDisplayState = displayState;
         LoadSelectedView();
-        SetStatusMessage(T(
-            "Discarded pending preview floor assignments.",
-            "Discarded pending preview floor assignments."));
-    }
-
-    private void RestoreAssignmentTargetAfterReload()
-    {
-        string? pendingFloorTypeName = _pendingAssignmentFloorTypeName;
-        _pendingAssignmentFloorTypeName = null;
-
-        if (string.IsNullOrWhiteSpace(pendingFloorTypeName))
-        {
-            SetAssignmentTarget(null, selectMatchingListItem: false);
-            return;
-        }
-
-        FloorAssignmentTarget? target = TryBuildAssignmentTarget(pendingFloorTypeName!);
-        SetAssignmentTarget(target, selectMatchingListItem: true);
-    }
-
-    private FloorAssignmentTarget CreateAssignmentTarget(PreviewFeatureData feature)
-    {
-        return new FloorAssignmentTarget(
-            feature.FloorTypeName ?? string.Empty,
-            feature.ParsedZoneCandidate,
-            feature.Category,
-            feature.UsesFloorCategoryOverride,
-            feature.IsUnassignedFloor);
-    }
-
-    private FloorAssignmentTarget? TryBuildAssignmentTarget(string floorTypeName)
-    {
-        if (_currentViewData == null || string.IsNullOrWhiteSpace(floorTypeName))
-        {
-            return null;
-        }
-
-        PreviewFeatureData? feature = _currentViewData.Features
-            .Where(candidate => candidate.IsFloorDerived &&
-                                string.Equals(candidate.FloorTypeName, floorTypeName, StringComparison.Ordinal))
-            .OrderByDescending(candidate => candidate.SupportsFloorCategoryAssignment)
-            .FirstOrDefault();
-
-        return feature == null ? null : CreateAssignmentTarget(feature);
-    }
-
-    private void SetAssignmentTarget(FloorAssignmentTarget? target, bool selectMatchingListItem)
-    {
-        _assignmentTarget = target;
-        UpdateAssignmentControls();
-        if (selectMatchingListItem)
-        {
-            SelectUnassignedFloorItem(target?.FloorTypeName);
-        }
     }
 
     private void UpdateAssignmentControls()
     {
-        if (_assignmentTarget == null)
-        {
-            _assignmentTargetValueLabel.Text = "-";
-            _assignmentCandidateValueLabel.Text = "-";
-            _assignmentCurrentValueLabel.Text = "-";
-            _assignmentCategoryComboBox.Enabled = false;
-            _assignButton.Enabled = false;
-            _clearAssignmentButton.Enabled = false;
-            _saveAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
-            _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
-            _assignmentHintLabel.Text = T(
-                "Select one or more floor types from the list, or click a floor-derived unit on the canvas, to stage category changes. Use Save Assignments to persist pending changes.",
-                "Select one or more floor types from the list, or click a floor-derived unit on the canvas, to stage category changes. Use Save Assignments to persist pending changes.");
-            return;
-        }
-
-        _assignmentTargetValueLabel.Text = NullToPlaceholder(_assignmentTarget.FloorTypeName);
-        _assignmentCandidateValueLabel.Text = NullToPlaceholder(_assignmentTarget.ParsedZoneCandidate);
-        _assignmentCurrentValueLabel.Text = BuildAssignmentSummary(_assignmentTarget);
-        _assignmentCategoryComboBox.Enabled = _assignmentCategoryComboBox.Items.Count > 0;
-        SelectAssignmentCategory(_assignmentTarget.CurrentCategory);
-        _assignButton.Enabled = _assignmentCategoryComboBox.Enabled;
-        _clearAssignmentButton.Enabled = _assignmentTarget.HasOverride;
-        _saveAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
-        _discardAssignmentsButton.Enabled = _previewService.HasPendingFloorCategoryChanges;
-        _assignmentHintLabel.Text = _assignmentTarget.HasOverride
-            ? T(
-                "This floor type currently uses a saved override. You can batch-assign or clear multiple selected floor types, then save the staged changes.",
-                "This floor type currently uses a saved override. You can batch-assign or clear multiple selected floor types, then save the staged changes.")
-            : T(
-                "Assigning a category stages a project-specific override for the selected floor type(s) without changing the Revit model. Save Assignments to persist it.",
-                "Assigning a category stages a project-specific override for the selected floor type(s) without changing the Revit model. Save Assignments to persist it.");
+        PreviewAssignmentState state = _controller.GetAssignmentState();
+        _assignmentTargetValueLabel.Text = state.TargetFloorType;
+        _assignmentCandidateValueLabel.Text = state.ParsedCandidate;
+        _assignmentCurrentValueLabel.Text = state.CurrentResolution;
+        _assignmentCategoryComboBox.Enabled = state.CanChooseCategory;
+        SelectAssignmentCategory(state.SuggestedCategory);
+        _assignButton.Enabled = state.CanAssign;
+        _clearAssignmentButton.Enabled = state.CanClear;
+        _saveAssignmentsButton.Enabled = state.CanSave;
+        _discardAssignmentsButton.Enabled = state.CanDiscard;
+        _assignmentHintLabel.Text = state.HintText;
+        SelectUnassignedFloorItem(state.SelectedFloorTypeName);
     }
 
     private void SelectAssignmentCategory(string? category)
@@ -1143,59 +996,30 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private IReadOnlyList<string> GetSelectedFloorTypeNames()
     {
-        List<string> names = _unassignedFloorsListBox.SelectedItems
+        return _controller.GetSelectedFloorTypeNames(_unassignedFloorsListBox.SelectedItems
             .OfType<UnassignedFloorItem>()
-            .Select(item => item.Group.FloorTypeName)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        if (names.Count == 0 && _assignmentTarget != null && !string.IsNullOrWhiteSpace(_assignmentTarget.FloorTypeName))
-        {
-            names.Add(_assignmentTarget.FloorTypeName);
-        }
-
-        return names;
-    }
-
-    private void UpdateStatus(PreviewViewData preview)
-    {
-        string suffix = _previewService.HasPendingFloorCategoryChanges
-            ? T(" | unsaved assignment changes", " | unsaved assignment changes")
-            : string.Empty;
-        SetStatusMessage(
-            T(
-                $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels",
-                $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels") + suffix);
+            .Select(item => item.Group.FloorTypeName));
     }
 
     private void SetStatusMessage(string message)
     {
-        _statusMessage = message ?? string.Empty;
-        RefreshStatusText();
+        _statusLabel.Text = message ?? string.Empty;
     }
 
     private void RefreshStatusText()
     {
-        string basemapStatus = BuildBasemapStatusText();
-        string surveyPointStatus = BuildSurveyPointStatusText();
-        string extraStatus = string.Join(
-            " | ",
-            new[] { basemapStatus, surveyPointStatus }.Where(value => !string.IsNullOrWhiteSpace(value)));
-        if (string.IsNullOrWhiteSpace(_statusMessage))
-        {
-            _statusLabel.Text = extraStatus;
-            return;
-        }
-
-        _statusLabel.Text = string.IsNullOrWhiteSpace(extraStatus)
-            ? _statusMessage
-            : $"{_statusMessage} | {extraStatus}";
+        _statusLabel.Text = _controller.BuildFooterStatus(
+            _canvas.BasemapAvailable,
+            _canvas.BasemapUnavailableReason,
+            _canvas.BasemapAttribution,
+            _canvas.ShowBasemap,
+            _canvas.SurveyPointAvailable,
+            _canvas.ShowSurveyPoint);
     }
 
     private void UpdateBasemapAvailability()
     {
-        bool available = _currentDisplayState?.MapContext.CanShowBasemap == true && _canvas.BasemapAvailable;
+        bool available = _controller.IsBasemapToggleAvailable(_canvas.BasemapAvailable);
         _basemapCheckBox.Enabled = available;
         if (!available)
         {
@@ -1208,7 +1032,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 
     private void UpdateSurveyPointAvailability()
     {
-        bool available = _currentDisplayState?.DisplaySurveyPoint.HasValue == true && _canvas.SurveyPointAvailable;
+        bool available = _controller.IsSurveyPointToggleAvailable(_canvas.SurveyPointAvailable);
         _surveyPointCheckBox.Enabled = available;
         if (!available)
         {
@@ -1219,103 +1043,12 @@ public sealed class ExportPreviewForm : WinFormsForm
         RefreshStatusText();
     }
 
-    private string BuildBasemapStatusText()
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_currentDisplayState == null)
-        {
-            return string.Empty;
-        }
-
-        if (!_canvas.BasemapAvailable)
-        {
-            string reason = LocalizeBasemapMessage(_canvas.BasemapUnavailableReason);
-            return reason.Length == 0
-                ? L("Preview.BasemapUnavailable", "Basemap unavailable")
-                : $"{L("Preview.BasemapUnavailable", "Basemap unavailable")}: {reason}";
-        }
-
-        if (!_canvas.ShowBasemap)
-        {
-            return string.Empty;
-        }
-
-        string attribution = _canvas.BasemapAttribution?.Trim() ?? string.Empty;
-        string providerStatus = LocalizeBasemapMessage(_basemapProviderStatus);
-        if (providerStatus.Length > 0)
-        {
-            return attribution.Length > 0
-                ? $"{L("Preview.Basemap", "Basemap")}: {attribution} ({providerStatus})"
-                : $"{L("Preview.Basemap", "Basemap")}: {providerStatus}";
-        }
-
-        return attribution.Length == 0
-            ? L("Preview.Basemap", "Basemap")
-            : $"{L("Preview.Basemap", "Basemap")}: {attribution}";
-    }
-
-    private string BuildSurveyPointStatusText()
-    {
-        if (_currentDisplayState?.OutputSurveyPoint is not Point2D surveyPoint ||
-            !_surveyPointCheckBox.Enabled ||
-            !_surveyPointCheckBox.Checked)
-        {
-            return string.Empty;
-        }
-
-        string label = L("Preview.SurveyPoint", "Survey point");
-        string coordinates = string.Format(
-            System.Globalization.CultureInfo.InvariantCulture,
-            "{0:0.###}, {1:0.###}",
-            surveyPoint.X,
-            surveyPoint.Y);
-        string crsLabel = _currentDisplayState.MapContext.OutputCrsLabel?.Trim() ?? string.Empty;
-        return crsLabel.Length == 0
-            ? $"{label}: {coordinates}"
-            : $"{label}: {coordinates} ({crsLabel})";
-    }
-
-    private string LocalizeBasemapMessage(string? message)
-    {
-        string normalized = (message ?? string.Empty).Trim();
-        if (normalized.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        return normalized switch
-        {
-            "No basemap tile source is configured." => L("Preview.BasemapSourceMissing", "No basemap tile source is configured."),
-            "Target EPSG could not be resolved for map preview." => L("Preview.BasemapTargetUnavailable", "Target CRS could not be resolved for map preview."),
-            "Model source CRS could not be resolved for preview conversion." => L("Preview.BasemapSourceUnavailableForConversion", "Model source CRS could not be resolved for preview conversion."),
-            "Model CRS could not be resolved for map preview." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
-            "The model's shared/site coordinate system could not be resolved to a supported CRS definition." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
-            "Web Mercator could not be resolved for map preview." => L("Preview.MapProjectionFailed", "Map preview projection failed."),
-            "Map preview projection failed." => L("Preview.MapProjectionFailed", "Map preview projection failed."),
-            "Basemap loading failed; showing model only." => L("Preview.BasemapLoadFailed", "Basemap loading failed; showing model only."),
-            _ => normalized,
-        };
+        _controller.DiscardPendingChangesOnClose();
     }
 
     private string L(string key, string fallback) => LocalizedTextProvider.Get(_language, key, fallback);
-
-    private void OnFormClosing(object? sender, FormClosingEventArgs e)
-    {
-        if (_previewService.HasPendingFloorCategoryChanges)
-        {
-            _previewService.DiscardPendingFloorCategoryOverrides();
-        }
-    }
-
-    private static string BuildAssignmentSummary(FloorAssignmentTarget target)
-    {
-        string category = NullToPlaceholder(target.CurrentCategory);
-        string source = target.HasOverride
-            ? "Override"
-            : target.IsUnassigned
-                ? "Fallback"
-                : "Catalog";
-        return $"{category} ({source})";
-    }
 
     private static string FormatResolutionSource(FloorCategoryResolutionSource? resolutionSource)
     {
