@@ -89,6 +89,3 @@ pwsh ./install/build-installer.ps1
 
 The add-in currently targets Revit 2024 and focuses on plan-view export. The preview-side floor assignment workflow is limited to floor-derived units; it does not rename Revit types or write category overrides back into the model.
 
-## UI modernization roadmap
-
-- See [docs/wpf-migration-plan.md](docs/wpf-migration-plan.md) for an incremental WinForms-to-WPF migration plan tailored to this repository.
