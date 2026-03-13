@@ -36,6 +36,7 @@ _ReSharper*/
 
 # Custom Ignore Rules
 .claude/
+.dotnet-home/
 node_modules/
 package.json
 package-lock.json

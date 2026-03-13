@@ -34,4 +34,34 @@ public sealed class CoordinateSystemCatalogProjectionTests
             Assert.False(double.IsInfinity(point.Y));
         });
     }
+
+    [Fact]
+    public void TryCreateSourceCoordinateSystem_PrefersSupportedResolvedEpsgOverWkt()
+    {
+        Assert.True(CoordinateSystemCatalog.TryGetDefinitionWkt(4326, out string wgs84Wkt));
+        Assert.True(
+            CoordinateSystemCatalog.TryCreateSourceCoordinateSystem(
+                wgs84Wkt,
+                "EPSG:6677",
+                6677,
+                out var source,
+                out string failureReason));
+        Assert.Equal(string.Empty, failureReason);
+        Assert.NotNull(source);
+        Assert.True(CoordinateSystemCatalog.TryCreateWebMercator(out var target));
+
+        ExportLineString feature = new(
+            new LineString2D(new[]
+            {
+                new Point2D(0d, 0d),
+                new Point2D(1d, 1d),
+            }));
+
+        ExportLineString transformed = Assert.IsType<ExportLineString>(
+            CoordinateSystemCatalog.ReprojectFeature(feature, source!, target!));
+
+        Point2D first = transformed.LineString.Points.First();
+        Assert.InRange(first.X, 15500000d, 15650000d);
+        Assert.InRange(first.Y, 4200000d, 4400000d);
+    }
 }

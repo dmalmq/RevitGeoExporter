@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Export;
 
@@ -36,11 +35,7 @@ internal static class PreviewDisplayViewStateBuilder
         try
         {
             List<PreviewFeatureData> displayFeatures = viewData.Features
-                .Select(feature => feature.WithFeature(
-                    CoordinateSystemCatalog.ReprojectFeature(
-                        feature.Feature,
-                        mapContext.OutputCoordinateSystem!,
-                        mapContext.DisplayCoordinateSystem!)))
+                .Select(feature => feature.WithFeature(mapContext.ProjectFeatureForDisplay(feature.Feature)))
                 .ToList();
             Bounds2D displayBounds = FeatureBoundsCalculator.FromFeatures(displayFeatures.Select(feature => feature.Feature));
             return new PreviewDisplayViewState(
@@ -53,6 +48,7 @@ internal static class PreviewDisplayViewStateBuilder
         {
             PreviewMapContext failedContext = new(
                 mapContext.CoordinateMode,
+                mapContext.SourceCoordinateSystem,
                 mapContext.OutputEpsg,
                 mapContext.OutputCrsLabel,
                 mapContext.OutputCoordinateSystem,
