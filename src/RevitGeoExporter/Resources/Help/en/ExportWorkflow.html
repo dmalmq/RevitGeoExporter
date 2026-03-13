@@ -1,21 +1,84 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>Export Workflow</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}code{background:#f3f5f7;padding:1px 4px;border-radius:3px}a{color:#145da0}</style></head><body>
-<h1>Export Workflow</h1>
-<p>The export dialog is the main place for selecting views, feature layers, CRS, package output, and geometry repair options.</p>
-<h2>Typical flow</h2>
-<ol>
-<li>Select one or more plan views.</li>
-<li>Choose the feature layers to export: <code>unit</code>, <code>detail</code>, <code>opening</code>, and <code>level</code>.</li>
-<li>Review output folder, target EPSG, diagnostics, packaging, and repair settings.</li>
-<li>Use <strong>Preview</strong> if you want to inspect geometry before export.</li>
-<li>Run export and review the validation dialog.</li>
-<li>After export, review files, warnings, package output, and change summaries.</li>
-</ol>
-<h2>Notes</h2>
-<ul>
-<li>Profiles can save export options for reuse.</li>
-<li>Package output can include preview images, a manifest, and diagnostics.</li>
-<li>Validation runs before writing files and can block export on hard errors.</li>
-</ul>
-<p>See <a href="help:PreviewAndAssignments">Preview and Assignments</a> for preview-specific behavior.</p>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Export Workflow</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ol, ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    .badge { display: inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border-radius: 999px; background: #eef3f9; border: 1px solid #d7e2ef; color: #27486a; font-size: 12px; font-weight: 600; }
+    .note { color: #617182; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #eef2f6; border-radius: 4px; padding: 1px 5px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Export Dialog</p>
+      <h1>Export Workflow</h1>
+      <p>The redesigned export dialog keeps the default path visible and moves technical settings behind expanders, so new users can finish a standard export without sorting through every advanced option first.</p>
+      <div>
+        <span class="badge">Export to</span>
+        <span class="badge">Include in export</span>
+        <span class="badge">Coordinate system</span>
+        <span class="badge">Advanced options</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Export to</h2>
+      <ul>
+        <li>The output folder is a required step and appears near the top of the dialog.</li>
+        <li>Use <strong>Browse...</strong> to select a new folder when needed.</li>
+        <li><strong>Export</strong> stays disabled until you have at least one view, at least one feature type, and a destination folder.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Include in export</h2>
+      <ul>
+        <li>Choose the layers you want to export: <strong>Units</strong>, <strong>Details</strong>, <strong>Openings</strong>, and <strong>Levels</strong>.</li>
+        <li>The plain-language labels make the options easier to scan, while the exporter still writes the expected GeoPackage layers such as <code>unit</code> and <code>opening</code>.</li>
+        <li>Preview is available as soon as at least one plan view and one feature type are selected.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Coordinate system</h2>
+      <ul>
+        <li>The status card summarizes the current shared-coordinate context and resolved EPSG when available.</li>
+        <li>Expand <strong>Change coordinate settings</strong> only if you need to switch from shared coordinates to a converted target CRS or EPSG.</li>
+        <li>Expand <strong>View technical details</strong> when you need the longer model-coordinate breakdown for troubleshooting.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Advanced options</h2>
+      <ul>
+        <li>Advanced options start collapsed so the main export path stays focused.</li>
+        <li><strong>Unit source</strong> only appears when <strong>Units</strong> is enabled, and the room category parameter only appears when the source is set to rooms.</li>
+        <li>Project mappings, diagnostics output, GIS package output, and legend-file options stay available without crowding the main workflow.</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <h2>Before you commit files</h2>
+      <p class="note">The footer summarizes the current selection, and the exporter runs validation before writing files.</p>
+      <ul>
+        <li>Use <a href="help:PreviewAndAssignments">Preview and Assignments</a> if you want to inspect geometry, warnings, or floor-category overrides first.</li>
+        <li>Use <a href="help:ValidationAndDiagnostics">Validation and Diagnostics</a> to understand what can block export or appear in the diagnostics report.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

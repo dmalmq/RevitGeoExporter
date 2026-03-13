@@ -1,20 +1,64 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>設定とプロファイル</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}</style></head><body>
-<h1>設定とプロファイル</h1>
-<p>設定ハブでは、<strong>グローバル</strong>既定値と<strong>プロジェクト</strong>ごとのマッピングを分けて管理します。</p>
-<h2>グローバル</h2>
-<ul>
-<li>既定の出力フォルダー</li>
-<li>UI 言語</li>
-<li>CRS / EPSG</li>
-<li>診断、パッケージ、補正の既定値</li>
-<li>グローバルのエクスポートプロファイル</li>
-</ul>
-<h2>プロジェクト</h2>
-<ul>
-<li>床タイプからカテゴリへのマッピング</li>
-<li>ファミリカテゴリ上書き</li>
-<li>許可された開口ファミリ</li>
-<li>プロジェクトスコープのエクスポートプロファイル</li>
-</ul>
-</body></html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>設定とプロファイル</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.7; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Configuration</p>
+      <h1>設定とプロファイル</h1>
+      <p>設定ハブでは、再利用したいグローバル既定値と、プロジェクト固有のマッピングを分けて管理できます。共通設定を保ちながら、案件ごとの判断を上書きせずに運用できます。</p>
+    </div>
+
+    <div class="section">
+      <h2>グローバル既定値</h2>
+      <ul>
+        <li>既定の出力フォルダーと UI 言語。</li>
+        <li>共有座標、CRS、EPSG の既定値。</li>
+        <li>診断レポートや GIS パッケージの既定設定。</li>
+        <li>プレビュー用ベースマップの設定。</li>
+        <li>グローバルのエクスポートプロファイル。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>プロジェクトデータ</h2>
+      <ul>
+        <li>床タイプからカテゴリへのマッピング。</li>
+        <li>ファミリカテゴリの上書き。</li>
+        <li>受け入れる開口ファミリ名。</li>
+        <li>プロジェクト専用のエクスポートプロファイル。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>読み込み、書き出し、リセット</h2>
+      <p>各スコープは個別に読み込み、書き出し、リセットできます。保存ファイルが不完全でも、状態領域に無視された内容が表示され、可能な範囲で安全な既定値が使われます。</p>
+    </div>
+
+    <div class="callout">
+      <h2>関連トピック</h2>
+      <ul>
+        <li><a href="help:PreviewAndAssignments">プレビューと割り当て</a></li>
+        <li><a href="help:ExportWorkflow">エクスポートの流れ</a></li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
