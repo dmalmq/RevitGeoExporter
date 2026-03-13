@@ -7,6 +7,7 @@ namespace RevitGeoExporter.Core.Tests.Coordinates;
 
 public sealed class CoordinateSystemCatalogProjectionTests
 {
+    private const double Tolerance = 0.01d;
     private const string Wgs84Wkt =
         "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
         "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433],AUTHORITY[\"EPSG\",\"4326\"]]";
@@ -28,8 +29,8 @@ public sealed class CoordinateSystemCatalogProjectionTests
             CoordinateSystemCatalog.ReprojectFeature(feature, source!, target!));
 
         Point2D first = transformed.LineString.Points.First();
-        Assert.InRange(first.X, 15500000d, 15650000d);
-        Assert.InRange(first.Y, 4200000d, 4400000d);
+        Assert.InRange(first.X, 15566175.462592717d - Tolerance, 15566175.462592717d + Tolerance);
+        Assert.InRange(first.Y, 4300621.372044271d - Tolerance, 4300621.372044271d + Tolerance);
         Assert.All(transformed.LineString.Points, point =>
         {
             Assert.False(double.IsNaN(point.X));
@@ -64,8 +65,8 @@ public sealed class CoordinateSystemCatalogProjectionTests
                 target!));
 
         Point2D first = transformed.LineString.Points.First();
-        Assert.InRange(first.X, 15500000d, 15650000d);
-        Assert.InRange(first.Y, 4200000d, 4400000d);
+        Assert.InRange(first.X, 15566175.462592717d - Tolerance, 15566175.462592717d + Tolerance);
+        Assert.InRange(first.Y, 4300621.372044271d - Tolerance, 4300621.372044271d + Tolerance);
     }
 
     [Fact]
@@ -126,7 +127,22 @@ public sealed class CoordinateSystemCatalogProjectionTests
 
         Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(new Point2D(0d, 0d), source!, target!);
 
-        Assert.InRange(transformed.X, 15500000d, 15650000d);
-        Assert.InRange(transformed.Y, 4200000d, 4400000d);
+        Assert.InRange(transformed.X, 15566175.462592717d - Tolerance, 15566175.462592717d + Tolerance);
+        Assert.InRange(transformed.Y, 4300621.372044271d - Tolerance, 4300621.372044271d + Tolerance);
+    }
+
+    [Fact]
+    public void ReprojectPoint_ConvertsWgs84ToPseudoMercator()
+    {
+        Assert.True(CoordinateSystemCatalog.TryCreateFromEpsg(4326, out var source));
+        Assert.True(CoordinateSystemCatalog.TryCreateWebMercator(out var target));
+
+        Point2D transformed = CoordinateSystemCatalog.ReprojectPoint(
+            new Point2D(139.833333333333d, 36d),
+            source!,
+            target!);
+
+        Assert.InRange(transformed.X, 15566175.462592717d - Tolerance, 15566175.462592717d + Tolerance);
+        Assert.InRange(transformed.Y, 4300621.372044271d - Tolerance, 4300621.372044271d + Tolerance);
     }
 }
