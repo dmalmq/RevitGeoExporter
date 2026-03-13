@@ -1286,6 +1286,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         {
             "No basemap tile source is configured." => L("Preview.BasemapSourceMissing", "No basemap tile source is configured."),
             "Target EPSG could not be resolved for map preview." => L("Preview.BasemapTargetUnavailable", "Target CRS could not be resolved for map preview."),
+            "Model source CRS could not be resolved for preview conversion." => L("Preview.BasemapSourceUnavailableForConversion", "Model source CRS could not be resolved for preview conversion."),
             "Model CRS could not be resolved for map preview." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
             "The model's shared/site coordinate system could not be resolved to a supported CRS definition." => L("Preview.BasemapUnavailableCrs", "Model CRS could not be resolved for map preview."),
             "Web Mercator could not be resolved for map preview." => L("Preview.MapProjectionFailed", "Map preview projection failed."),
