@@ -545,7 +545,7 @@ public sealed class ExportDialog : WinFormsForm
 
         _helpButton.Width = 90;
         _helpButton.Height = 30;
-        _helpButton.Text = UiLanguageText.Select(_language, "Help", "Help");
+        _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
         _helpButton.Click += (_, _) => HelpLauncher.Show(this, HelpTopic.ExportWorkflow, _language, Text);
 
         actions.Controls.Add(_cancelButton);
@@ -565,6 +565,8 @@ public sealed class ExportDialog : WinFormsForm
             ? settings.UiLanguage
             : UiLanguage.English;
         ViewSelectionItem.DisplayLanguage = _language;
+        UnitSourceItem.DisplayLanguage = _language;
+        ProfileItem.DisplayLanguage = _language;
 
         foreach (ViewSelectionItem item in _viewItems)
         {
@@ -626,24 +628,24 @@ public sealed class ExportDialog : WinFormsForm
 
     private void ApplyLanguage()
     {
-        Text = UiLanguageText.Select(_language, "Export GeoPackage", "Export GeoPackage");
-        _viewsGroup.Text = UiLanguageText.Select(_language, "Plan Views", "Plan Views");
-        _optionsGroup.Text = UiLanguageText.Select(_language, "Export Options", "Export Options");
-        _languageLabel.Text = UiLanguageText.Select(_language, "Language", "Language");
-        _featureTypesLabel.Text = UiLanguageText.Select(_language, "Feature Types", "Feature Types");
-        _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "Output Directory");
-        _crsLabel.Text = UiLanguageText.Select(_language, "CRS (EPSG)", "CRS (EPSG)");
-        _selectAllButton.Text = UiLanguageText.Select(_language, "Select All", "Select All");
-        _clearAllButton.Text = UiLanguageText.Select(_language, "Clear All", "Clear All");
-        _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "Browse...");
-        _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "Cancel");
-        _previewButton.Text = UiLanguageText.Select(_language, "Preview...", "Preview...");
-        _exportButton.Text = UiLanguageText.Select(_language, "Export", "Export");
-        _helpButton.Text = UiLanguageText.Select(_language, "Help", "Help");
-        _packageCheckBox.Text = UiLanguageText.Select(_language, "Write GIS package", "Write GIS package");
-        _packageLegendCheckBox.Text = UiLanguageText.Select(_language, "Include legend file", "Include legend file");
-        _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Source", "Unit Source");
-        _roomParameterInlineLabel.Text = UiLanguageText.Select(_language, "Room Category Parameter", "Room Category Parameter");
+        Text = UiLanguageText.Get(_language, "ExportDialog.Title", "Export GeoPackage");
+        _viewsGroup.Text = UiLanguageText.Get(_language, "ExportDialog.PlanViews", "Plan Views");
+        _optionsGroup.Text = UiLanguageText.Get(_language, "ExportDialog.Options", "Export Options");
+        _languageLabel.Text = UiLanguageText.Get(_language, "Common.Language", "Language");
+        _featureTypesLabel.Text = UiLanguageText.Get(_language, "ExportDialog.FeatureTypes", "Feature Types");
+        _outputDirectoryLabel.Text = UiLanguageText.Get(_language, "Common.OutputDirectory", "Output Directory");
+        _crsLabel.Text = UiLanguageText.Get(_language, "ExportDialog.CrsLabel", "CRS (EPSG)");
+        _selectAllButton.Text = UiLanguageText.Get(_language, "ExportDialog.SelectAll", "Select All");
+        _clearAllButton.Text = UiLanguageText.Get(_language, "ExportDialog.ClearAll", "Clear All");
+        _browseButton.Text = UiLanguageText.Get(_language, "Common.Browse", "Browse...");
+        _cancelButton.Text = UiLanguageText.Get(_language, "Common.Cancel", "Cancel");
+        _previewButton.Text = UiLanguageText.Get(_language, "ExportDialog.Preview", "Preview...");
+        _exportButton.Text = UiLanguageText.Get(_language, "ExportDialog.ExportButton", "Export");
+        _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
+        _packageCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.WritePackage", "Write GIS package");
+        _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
+        _unitSourceInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.UnitSource", "Unit Source");
+        _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
         _unitSourceComboBox.Refresh();
     }
     private void SelectLanguage(UiLanguage language)
@@ -662,21 +664,16 @@ public sealed class ExportDialog : WinFormsForm
 
     private void UpdateVersionLabel()
     {
-        _versionLabel.Text = _language == UiLanguage.Japanese
-            ? $"Version {ProjectInfo.VersionTag}"
-            : $"Version {ProjectInfo.VersionTag}";
+        _versionLabel.Text = UiLanguageText.Format(_language, "Common.Version", "Version {0}", ProjectInfo.VersionTag);
     }
 
     private void UpdateDiagnosticsText()
     {
-        _diagnosticsCheckBox.Text = UiLanguageText.Select(
-            _language,
-            "Write diagnostics report",
-            "Write diagnostics report");
+        _diagnosticsCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.WriteDiagnostics", "Write diagnostics report");
     }
     private void UpdateProfileText()
     {
-        _profilesLabel.Text = UiLanguageText.Select(_language, "Export Profiles", "鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｨ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｯ鬩幢ｽ｢繝ｻ・ｧ郢晢ｽｻ繝ｻ・ｹ鬩幢ｽ｢隴弱・・ｺ・｢驛｢譎｢・ｽ・ｻ鬩幢ｽ｢隴主・讓滄Δ譎｢・ｽ・ｻ鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｭ鬩幢ｽ｢隴弱・・ｽ・ｼ隴∵腸・ｼ諞ｺﾎ斐・・ｧ郢晢ｽｻ繝ｻ・､鬩幢ｽ｢隴趣ｽ｢繝ｻ・ｽ繝ｻ・ｫ");
+        _profilesLabel.Text = UiLanguageText.Get(_language, "ExportDialog.ExportProfiles", "Export Profiles");
         _profileComboBox.Refresh();
     }
 
@@ -687,7 +684,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Select at least one plan view to export.", "Select at least one plan view to export."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.SelectPlanViewToExport", "Select at least one plan view to export."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -699,7 +696,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Select at least one feature type.", "Select at least one feature type."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.SelectFeatureType", "Select at least one feature type."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -711,7 +708,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Choose an output directory.", "Choose an output directory."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.ChooseOutputDirectory", "Choose an output directory."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -722,7 +719,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Enter a valid EPSG code.", "Enter a valid EPSG code."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -758,7 +755,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Select at least one plan view to preview.", "Select at least one plan view to preview."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.SelectPlanViewToPreview", "Select at least one plan view to preview."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -770,7 +767,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             MessageBox.Show(
                 this,
-                UiLanguageText.Select(_language, "Preview requires at least one selected feature type.", "Preview requires at least one selected feature type."),
+                UiLanguageText.Get(_language, "ExportDialog.Message.PreviewRequiresFeatureType", "Preview requires at least one selected feature type."),
                 ProjectInfo.Name,
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -1151,8 +1148,8 @@ public sealed class ExportDialog : WinFormsForm
 
         public override string ToString()
         {
-            string levelName = View.GenLevel?.Name ?? UiLanguageText.Select(DisplayLanguage, "<no level>", "<no level>");
-            string levelLabel = UiLanguageText.Select(DisplayLanguage, "Level", "Level");
+            string levelName = View.GenLevel?.Name ?? UiLanguageText.Get(DisplayLanguage, "Common.NoLevel", "<no level>");
+            string levelLabel = UiLanguageText.Get(DisplayLanguage, "Common.Level", "Level");
             return $"{View.Name}  [{levelLabel}: {levelName}]";
         }
     }
@@ -1193,6 +1190,8 @@ public sealed class ExportDialog : WinFormsForm
 
     private sealed class UnitSourceItem
     {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
         public UnitSourceItem(UnitSource source)
         {
             Source = source;
@@ -1202,7 +1201,9 @@ public sealed class ExportDialog : WinFormsForm
 
         public override string ToString()
         {
-            return Source == UnitSource.Rooms ? "Rooms" : "Floors";
+            return Source == UnitSource.Rooms
+                ? UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms")
+                : UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors");
         }
     }
 
@@ -1227,10 +1228,12 @@ public sealed class ExportDialog : WinFormsForm
         {
             if (Profile == null)
             {
-                return DisplayLanguage == UiLanguage.Japanese ? "(鬮ｴ謇假ｽｽ・ｴ郢晢ｽｻ繝ｻ・ｾ鬮ｯ諛ｶ・ｽ・ｨ郢晢ｽｻ繝ｻ・ｨ鬩搾ｽｵ繝ｻ・ｺ郢晢ｽｻ繝ｻ・ｮ鬯ｮ・ｫ繝ｻ・ｪ郢晢ｽｻ繝ｻ・ｭ鬮ｯ讖ｸ・ｽ・ｳ驛｢譎｢・ｽ・ｻ" : "(Current settings)";
+                return UiLanguageText.Get(DisplayLanguage, "ExportDialog.CurrentSettings", "(Current settings)");
             }
 
-            string scopeLabel = Profile.Scope == ExportProfileScope.Project ? "Project" : "Global";
+            string scopeLabel = Profile.Scope == ExportProfileScope.Project
+                ? UiLanguageText.Get(DisplayLanguage, "SettingsHub.ProjectTab", "Project")
+                : UiLanguageText.Get(DisplayLanguage, "SettingsHub.GlobalTab", "Global");
             return $"[{scopeLabel}] {Profile.Name}";
         }
     }

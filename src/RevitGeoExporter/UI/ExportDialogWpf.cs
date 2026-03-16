@@ -1161,8 +1161,8 @@ namespace RevitGeoExporter.UI;
         {
             get
             {
-                string levelName = View.GenLevel?.Name ?? UiLanguageText.Select(DisplayLanguage, "<no level>", "<レベルなし>");
-                string levelLabel = UiLanguageText.Select(DisplayLanguage, "Level", "レベル");
+                string levelName = View.GenLevel?.Name ?? UiLanguageText.Get(DisplayLanguage, "Common.NoLevel", "<no level>");
+                string levelLabel = UiLanguageText.Get(DisplayLanguage, "Common.Level", "Level");
                 return $"{View.Name} [{levelLabel}: {levelName}]";
             }
         }
@@ -1182,9 +1182,7 @@ namespace RevitGeoExporter.UI;
 
         public override string ToString()
         {
-            return Language == UiLanguage.Japanese
-                ? UiLanguageText.Select(DisplayLanguage, "Japanese", "日本語")
-                : UiLanguageText.Select(DisplayLanguage, "English", "英語");
+            return UiLanguageText.DisplayName(Language);
         }
     }
 
@@ -1202,8 +1200,8 @@ namespace RevitGeoExporter.UI;
         public override string ToString()
         {
             return Mode == CoordinateExportMode.ConvertToTargetCrs
-                ? UiLanguageText.Select(DisplayLanguage, "Convert to target CRS", "出力 CRS に変換")
-                : UiLanguageText.Select(DisplayLanguage, "Shared coordinates (default)", "共有座標 (既定)");
+                ? UiLanguageText.Get(DisplayLanguage, "ExportDialog.CoordinateMode.ConvertToTargetCrs", "Convert to target CRS")
+                : UiLanguageText.Get(DisplayLanguage, "ExportDialog.CoordinateMode.SharedCoordinatesDefault", "Shared coordinates (default)");
         }
     }
 
@@ -1218,8 +1216,8 @@ namespace RevitGeoExporter.UI;
         public override string ToString()
         {
             return Source == UnitSource.Rooms
-                ? UiLanguageText.Select(DisplayLanguage, "Rooms", "部屋")
-                : UiLanguageText.Select(DisplayLanguage, "Floors", "床");
+                ? UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms")
+                : UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors");
         }
     }
 

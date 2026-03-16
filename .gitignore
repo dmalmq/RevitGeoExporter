@@ -36,9 +36,12 @@ _ReSharper*/
 
 # Custom Ignore Rules
 .claude/
+.dotnet-home/
 node_modules/
 package.json
 package-lock.json
 install/dist/
 install/output*/
 install/*.zip
+tmp/
+tmp_*.cs
