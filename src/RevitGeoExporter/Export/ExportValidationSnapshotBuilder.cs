@@ -38,7 +38,18 @@ public sealed class ExportValidationSnapshotBuilder
             List<UnsupportedOpeningFamilySnapshot> unsupportedOpenings = context.UnsupportedOpenings
                 .Select(opening => new UnsupportedOpeningFamilySnapshot(
                     OpeningFamilyClassifier.GetFamilyName(opening),
-                    opening.Id.Value))
+                    opening.Id.Value,
+                    DocumentProjectKeyBuilder.Create(opening.Document),
+                    DocumentProjectKeyBuilder.CreateDisplayName(opening.Document),
+                    canNavigateInRevit: true))
+                .Concat(
+                    context.LinkedSources.SelectMany(linkedSource => linkedSource.UnsupportedOpenings.Select(opening =>
+                        new UnsupportedOpeningFamilySnapshot(
+                            OpeningFamilyClassifier.GetFamilyName(opening),
+                            opening.Id.Value,
+                            linkedSource.SourceDocumentKey,
+                            linkedSource.SourceDocumentName,
+                            canNavigateInRevit: false))))
                 .ToList();
             views.Add(
                 new ValidationViewSnapshot(
@@ -47,9 +58,11 @@ public sealed class ExportValidationSnapshotBuilder
                     context.Level.Name,
                     features,
                     unsupportedOpenings,
-                    sourceStairsCount: context.Stairs.Count,
-                    sourceEscalatorCount: CountSourceFamilyUnits(context.FamilyUnits, "escalator"),
-                    sourceElevatorCount: CountSourceFamilyUnits(context.FamilyUnits, "elevator")));
+                    sourceStairsCount: context.Stairs.Count + context.LinkedSources.Sum(source => source.Stairs.Count),
+                    sourceEscalatorCount: CountSourceFamilyUnits(context.FamilyUnits, "escalator") +
+                                          context.LinkedSources.Sum(source => CountSourceFamilyUnits(source.FamilyUnits, "escalator")),
+                    sourceElevatorCount: CountSourceFamilyUnits(context.FamilyUnits, "elevator") +
+                                         context.LinkedSources.Sum(source => CountSourceFamilyUnits(source.FamilyUnits, "elevator"))));
         }
 
         return new ExportValidationRequest(
@@ -60,7 +73,8 @@ public sealed class ExportValidationSnapshotBuilder
             session.FeatureTypes.HasFlag(ExportFeatureType.Level),
             views,
             session.UnitSource,
-            session.RoomCategoryParameterName);
+            session.RoomCategoryParameterName,
+            session.SourceDocumentKey);
     }
 
     private static void AddLayerFeatures(
@@ -102,7 +116,14 @@ public sealed class ExportValidationSnapshotBuilder
             ReadString(feature.Attributes, "assignment_mapping_key") ?? ReadString(feature.Attributes, "source_floor_type_name"),
             ReadString(feature.Attributes, "assignment_source_kind"),
             ReadString(feature.Attributes, "assignment_parameter_name"),
-            ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true));
+            ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true),
+            ReadString(feature.Attributes, "assignment_parsed_candidate"),
+            ReadString(feature.Attributes, "name"),
+            ReadString(feature.Attributes, "alt_name"),
+            ReadString(feature.Attributes, "source_document_key"),
+            ReadString(feature.Attributes, "source_document_name"),
+            ReadBool(feature.Attributes, "is_linked_source"),
+            ReadBool(feature.Attributes, "has_persisted_export_id", defaultValue: true));
     }
 
     private int CountSourceFamilyUnits(IReadOnlyList<FamilyInstance> familyUnits, string category)

@@ -68,6 +68,10 @@ public sealed class ExportDiagnosticsWriterTests
                         "unit"),
                 },
                 ExportWarnings = { "Example export warning" },
+                IncludedLinks =
+                {
+                    ExportLinkedModelInfo.Create(101, "Architectural Link", "LinkModelA", "Architectural.rvt"),
+                },
                 OutputFiles =
                 {
                     new ExportDiagnosticsOutputFile
@@ -90,6 +94,7 @@ public sealed class ExportDiagnosticsWriterTests
             Assert.Equal(6677, reloaded["TargetEpsg"]?.Value<int>());
             Assert.Equal(2, reloaded["Views"]?[0]?["UnsnappedOpeningCount"]?.Value<int>());
             Assert.Equal((int)ValidationCode.UnassignedFloorCategory, reloaded["ValidationIssues"]?[0]?["Code"]?.Value<int>());
+            Assert.Equal("Architectural Link", reloaded["IncludedLinks"]?[0]?["LinkInstanceName"]?.Value<string>());
             Assert.Equal("unit", reloaded["OutputFiles"]?[0]?["FeatureType"]?.Value<string>());
         }
         finally

@@ -32,6 +32,8 @@ public sealed class ExportDialogSettings
 
     public string RoomCategoryParameterName { get; set; } = "Name";
 
+    public LinkExportOptions LinkExportOptions { get; set; } = new();
+
     public string PreviewBasemapUrlTemplate { get; set; } = PreviewBasemapSettings.DefaultUrlTemplate;
 
     public string PreviewBasemapAttribution { get; set; } = PreviewBasemapSettings.DefaultAttribution;

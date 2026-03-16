@@ -31,4 +31,21 @@ internal static class DocumentProjectKeyBuilder
         string title = (document.Title ?? string.Empty).Trim();
         return title.Length > 0 ? $"title:{title}" : "title:<unsaved>";
     }
+
+    public static string CreateDisplayName(Document document)
+    {
+        if (document is null)
+        {
+            throw new ArgumentNullException(nameof(document));
+        }
+
+        string title = (document.Title ?? string.Empty).Trim();
+        if (title.Length == 0)
+        {
+            return "Model";
+        }
+
+        string withoutExtension = Path.GetFileNameWithoutExtension(title);
+        return string.IsNullOrWhiteSpace(withoutExtension) ? title : withoutExtension.Trim();
+    }
 }

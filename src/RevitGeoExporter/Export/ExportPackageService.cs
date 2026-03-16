@@ -95,6 +95,13 @@ public sealed class ExportPackageService
             PackageDirectory = packageDirectory,
             TargetEpsg = session.OutputEpsg,
             ExportedAtUtc = exportedAtUtc,
+            IncludedLinks = session.IncludedLinks
+                .Select(link => ExportLinkedModelInfo.Create(
+                    link.LinkInstanceId,
+                    link.LinkInstanceName,
+                    link.SourceDocumentKey,
+                    link.SourceDocumentName))
+                .ToList(),
         };
 
         foreach (ViewExportResult file in exportResult.ViewResults)

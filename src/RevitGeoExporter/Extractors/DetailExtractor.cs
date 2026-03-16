@@ -8,6 +8,8 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Utilities;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
 
@@ -20,12 +22,21 @@ public sealed class DetailExtractor
     private readonly Document _document;
     private readonly SharedCoordinateProjector _sharedCoordinateProjector;
     private readonly GeometryRepairOptions _geometryRepairOptions;
+    private readonly ExportSourceDescriptor _sourceDescriptor;
+    private readonly string _sourceDocumentKey;
+    private readonly string _sourceDocumentName;
 
-    public DetailExtractor(Document document, GeometryRepairOptions? geometryRepairOptions = null)
+    public DetailExtractor(
+        Document document,
+        GeometryRepairOptions? geometryRepairOptions = null,
+        ExportSourceDescriptor? sourceDescriptor = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
+        _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
+        _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -34,7 +45,8 @@ public sealed class DetailExtractor
         IReadOnlyList<CurveElement> detailCurves,
         IReadOnlyList<Stairs> stairs,
         GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool skipLevelFilter = false)
     {
         if (level is null)
         {
@@ -74,7 +86,7 @@ public sealed class DetailExtractor
                 continue;
             }
 
-            if (!IsOnLevel(curveElement, level))
+            if (!skipLevelFilter && !IsOnLevel(curveElement, level))
             {
                 continue;
             }
@@ -86,15 +98,12 @@ public sealed class DetailExtractor
             }
 
             features.Add(
-                new ExportLineString(
+                CreateFeature(
                     lineString,
-                    new Dictionary<string, object?>
-                    {
-                        ["id"] = StableIdGenerator.Create("detail", curveElement.Id.Value, levelId),
-                        ["level_id"] = levelId,
-                        ["element_id"] = curveElement.Id.Value,
-                        ["source_label"] = "detail-curve",
-                    }));
+                    BuildSyntheticId("detail", curveElement.Id.Value, levelId),
+                    levelId,
+                    curveElement.Id.Value,
+                    "detail-curve"));
         }
 
         features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings));
@@ -197,15 +206,12 @@ public sealed class DetailExtractor
                 {
                     long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
                     features.Add(
-                        new ExportLineString(
+                        CreateFeature(
                             stepLines[i],
-                            new Dictionary<string, object?>
-                            {
-                                ["id"] = StableIdGenerator.Create("detail.stair.step", syntheticElementId, levelId),
-                                ["level_id"] = levelId,
-                                ["element_id"] = run.Id.Value,
-                                ["source_label"] = "stair-step",
-                            }));
+                            BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
+                            levelId,
+                            run.Id.Value,
+                            "stair-step"));
                 }
             }
         }
@@ -377,7 +383,45 @@ public sealed class DetailExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        return _sharedCoordinateProjector.ProjectPoint(point);
+        XYZ hostPoint = _sourceDescriptor.TransformToHost.OfPoint(point);
+        return _sharedCoordinateProjector.ProjectPoint(hostPoint);
+    }
+
+    private ExportLineString CreateFeature(
+        LineString2D lineString,
+        string id,
+        string levelId,
+        long elementId,
+        string sourceLabel)
+    {
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = id,
+            ["level_id"] = levelId,
+            ["element_id"] = elementId,
+            ["source_label"] = sourceLabel,
+            ["source_document_key"] = _sourceDocumentKey,
+            ["source_document_name"] = _sourceDocumentName,
+            ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
+            ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
+            ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
+        };
+        return new ExportLineString(lineString, attributes);
+    }
+
+    private string BuildSyntheticId(string scope, long elementId, string levelId)
+    {
+        if (!_sourceDescriptor.IsLinkedSource || !_sourceDescriptor.LinkInstanceId.HasValue)
+        {
+            return StableIdGenerator.Create(scope, elementId, levelId);
+        }
+
+        return DeterministicIdGenerator.CreateGuid(
+            scope,
+            _sourceDocumentKey,
+            _sourceDescriptor.LinkInstanceId.Value.ToString(),
+            elementId.ToString(),
+            levelId);
     }
 
     private static bool TryInterpolateOnPolyline(

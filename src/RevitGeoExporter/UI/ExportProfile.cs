@@ -33,6 +33,8 @@ public sealed class ExportProfile
 
     public string RoomCategoryParameterName { get; set; } = "Name";
 
+    public LinkExportOptions LinkExportOptions { get; set; } = new();
+
     public ExportDialogSettings ToSettings()
     {
         return new ExportDialogSettings
@@ -48,6 +50,7 @@ public sealed class ExportProfile
             CoordinateMode = CoordinateMode,
             UnitSource = UnitSource,
             RoomCategoryParameterName = RoomCategoryParameterName,
+            LinkExportOptions = LinkExportOptions?.Clone() ?? new LinkExportOptions(),
         };
     }
 
@@ -73,6 +76,7 @@ public sealed class ExportProfile
             CoordinateMode = settings.CoordinateMode,
             UnitSource = settings.UnitSource,
             RoomCategoryParameterName = settings.RoomCategoryParameterName?.Trim() ?? "Name",
+            LinkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions(),
         };
     }
 }

@@ -22,17 +22,20 @@ public sealed class OpeningExtractor
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly GeometryRepairOptions _geometryRepairOptions;
+    private readonly ExportSourceDescriptor _sourceDescriptor;
 
     public OpeningExtractor(
         Document document,
         IExportMetadataProvider metadataProvider,
         ZoneCatalog zoneCatalog,
-        GeometryRepairOptions? geometryRepairOptions = null)
+        GeometryRepairOptions? geometryRepairOptions = null,
+        ExportSourceDescriptor? sourceDescriptor = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
-        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
+        _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
     }
 
@@ -42,7 +45,8 @@ public sealed class OpeningExtractor
         IReadOnlyList<FamilyInstance> openingInstances,
         IReadOnlyList<ExportPolygon> unitFeatures,
         GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool skipLevelFilter = false)
     {
         if (level is null)
         {
@@ -80,7 +84,7 @@ public sealed class OpeningExtractor
 
         foreach (FamilyInstance opening in openingInstances)
         {
-            if (!IsOnLevel(opening, level))
+            if (!skipLevelFilter && !IsOnLevel(opening, level))
             {
                 continue;
             }
@@ -102,14 +106,14 @@ public sealed class OpeningExtractor
                 continue;
             }
 
-            string id = _metadataProvider.GetElementId(opening, warnings);
+            ExportElementMetadata metadata = _metadataProvider.GetElementMetadata(opening, warnings);
             AddFeature(
                 features,
                 seenGeometryKeys,
                 lineString,
                 snapResult.WasSnapped,
                 isElevatorDoor,
-                id,
+                metadata,
                 GetOpeningCategory(opening),
                 levelId,
                 opening.Id.Value,
@@ -462,7 +466,7 @@ public sealed class OpeningExtractor
         LineString2D lineString,
         bool wasSnappedToOutline,
         bool isElevatorDoor,
-        string id,
+        ExportElementMetadata metadata,
         string category,
         string levelId,
         long elementId,
@@ -479,13 +483,19 @@ public sealed class OpeningExtractor
                 lineString,
                 new Dictionary<string, object?>
                 {
-                    ["id"] = id,
+                    ["id"] = metadata.ExportId,
                     ["category"] = category,
                     ["level_id"] = levelId,
                     ["element_id"] = elementId,
                     ["is_snapped_to_outline"] = wasSnappedToOutline,
                     ["is_elevator_door"] = isElevatorDoor,
                     ["source_label"] = familyName,
+                    ["source_document_key"] = metadata.SourceDocumentKey,
+                    ["source_document_name"] = metadata.SourceDocumentName,
+                    ["has_persisted_export_id"] = metadata.HasPersistedId,
+                    ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
+                    ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
+                    ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
                 }));
     }
 
@@ -631,7 +641,8 @@ public sealed class OpeningExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        return _sharedCoordinateProjector.ProjectPoint(point);
+        XYZ hostPoint = _sourceDescriptor.TransformToHost.OfPoint(point);
+        return _sharedCoordinateProjector.ProjectPoint(hostPoint);
     }
 
     private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)

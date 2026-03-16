@@ -96,7 +96,8 @@ public sealed class FloorExportDataPreparer
                 exportViews,
                 _zoneCatalog,
                 familyCategoryOverrides,
-                acceptedOpeningFamilies);
+                acceptedOpeningFamilies,
+                options?.LinkExportOptions);
         if (contexts.Count == 0)
         {
             throw new InvalidOperationException("Selected views did not contain any exportable level context.");
@@ -107,6 +108,7 @@ public sealed class FloorExportDataPreparer
             allLevels.Count > 0 ? allLevels : contexts.Select(x => x.Level).ToList());
 
         string sourceModelName = GetSourceModelName(_document);
+        ExportSourceDescriptor hostSourceDescriptor = ExportSourceDescriptor.CreateHost(_document);
         UnitExtractor unitExtractor = new(
             _document,
             _zoneCatalog,
@@ -114,9 +116,10 @@ public sealed class FloorExportDataPreparer
             sourceModelName,
             floorCategoryResolver,
             roomCategoryResolver,
-            familyCategoryOverrides);
-        DetailExtractor detailExtractor = new(_document, geometryRepairOptions);
-        OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions);
+            familyCategoryOverrides,
+            hostSourceDescriptor);
+        DetailExtractor detailExtractor = new(_document, geometryRepairOptions, hostSourceDescriptor);
+        OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions, hostSourceDescriptor);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
 
         List<PreparedViewExportData> preparedViews = new(contexts.Count);
@@ -124,7 +127,8 @@ public sealed class FloorExportDataPreparer
         {
             List<string> viewWarnings = new();
             GeometryRepairResult geometryRepair = new();
-            string levelId = metadataProvider.GetLevelId(context.Level, viewWarnings);
+            ExportLevelMetadata levelMetadata = metadataProvider.GetLevelMetadata(context.Level, viewWarnings);
+            string levelId = levelMetadata.ExportId;
             if (string.IsNullOrWhiteSpace(levelId))
             {
                 viewWarnings.Add(
@@ -159,6 +163,18 @@ public sealed class FloorExportDataPreparer
                     AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, rawUnitLayer, viewWarnings);
                 }
 
+                AddLinkedUnitFeatures(
+                    context,
+                    levelId,
+                    metadataProvider,
+                    floorCategoryResolver,
+                    roomCategoryResolver,
+                    familyCategoryOverrides,
+                    options?.UnitSource ?? UnitSource.Floors,
+                    options?.RoomCategoryParameterName ?? "Name",
+                    rawUnitLayer,
+                    viewWarnings);
+
                 List<ExportPolygon> rawUnitFeatures = rawUnitLayer.Features.OfType<ExportPolygon>().ToList();
                 unitFeatures = RawFloorOnlyDebugMode
                     ? rawUnitFeatures
@@ -185,6 +201,8 @@ public sealed class FloorExportDataPreparer
                 {
                     detailLayer.AddFeature(detailFeature);
                 }
+
+                AddLinkedDetailFeatures(context, levelId, geometryRepairOptions, geometryRepair, detailLayer, viewWarnings);
             }
 
             ExportLayer? openingLayer = null;
@@ -201,6 +219,16 @@ public sealed class FloorExportDataPreparer
                 {
                     openingLayer.AddFeature(openingFeature);
                 }
+
+                AddLinkedOpeningFeatures(
+                    context,
+                    levelId,
+                    metadataProvider,
+                    geometryRepairOptions,
+                    unitFeatures,
+                    geometryRepair,
+                    openingLayer,
+                    viewWarnings);
             }
 
             ExportLayer? levelLayer = null;
@@ -344,6 +372,131 @@ public sealed class FloorExportDataPreparer
                 feature != null)
             {
                 unitLayer.AddFeature(feature);
+            }
+        }
+    }
+
+    private void AddLinkedUnitFeatures(
+        ViewExportContext context,
+        string levelId,
+        IExportMetadataProvider metadataProvider,
+        FloorCategoryResolver floorCategoryResolver,
+        RoomCategoryResolver roomCategoryResolver,
+        IReadOnlyDictionary<string, string> familyCategoryOverrides,
+        UnitSource unitSource,
+        string roomCategoryParameterName,
+        ExportLayer unitLayer,
+        ICollection<string> warnings)
+    {
+        if (context.LinkedSources.Count == 0)
+        {
+            return;
+        }
+
+        foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
+        {
+            ExportSourceDescriptor sourceDescriptor = ExportSourceDescriptor.CreateLinked(_document, linkedSource);
+            UnitExtractor linkedUnitExtractor = new(
+                linkedSource.LinkedDocument,
+                _zoneCatalog,
+                metadataProvider,
+                linkedSource.SourceDocumentName,
+                floorCategoryResolver,
+                roomCategoryResolver,
+                familyCategoryOverrides,
+                sourceDescriptor);
+
+            if (unitSource == UnitSource.Rooms)
+            {
+                AddRoomUnits(
+                    levelId,
+                    linkedSource.Rooms,
+                    linkedUnitExtractor,
+                    unitLayer,
+                    roomCategoryParameterName,
+                    warnings);
+            }
+            else
+            {
+                AddFloorUnits(levelId, linkedSource.Floors, linkedUnitExtractor, unitLayer, warnings);
+            }
+
+            if (RawFloorOnlyDebugMode)
+            {
+                continue;
+            }
+
+            AddStairsUnits(levelId, context.View, linkedSource.Stairs, linkedUnitExtractor, unitLayer, warnings);
+            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, unitLayer, warnings);
+        }
+    }
+
+    private void AddLinkedDetailFeatures(
+        ViewExportContext context,
+        string levelId,
+        GeometryRepairOptions geometryRepairOptions,
+        GeometryRepairResult geometryRepair,
+        ExportLayer detailLayer,
+        ICollection<string> warnings)
+    {
+        if (context.LinkedSources.Count == 0)
+        {
+            return;
+        }
+
+        foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
+        {
+            DetailExtractor linkedDetailExtractor = new(
+                linkedSource.LinkedDocument,
+                geometryRepairOptions,
+                ExportSourceDescriptor.CreateLinked(_document, linkedSource));
+            foreach (ExportLineString detailFeature in linkedDetailExtractor.ExtractForLevel(
+                         context.Level,
+                         levelId,
+                         linkedSource.DetailCurves,
+                         linkedSource.Stairs,
+                         geometryRepair,
+                         warnings,
+                         skipLevelFilter: true))
+            {
+                detailLayer.AddFeature(detailFeature);
+            }
+        }
+    }
+
+    private void AddLinkedOpeningFeatures(
+        ViewExportContext context,
+        string levelId,
+        IExportMetadataProvider metadataProvider,
+        GeometryRepairOptions geometryRepairOptions,
+        IReadOnlyList<ExportPolygon> unitFeatures,
+        GeometryRepairResult geometryRepair,
+        ExportLayer openingLayer,
+        ICollection<string> warnings)
+    {
+        if (context.LinkedSources.Count == 0)
+        {
+            return;
+        }
+
+        foreach (LinkedViewSourceContext linkedSource in context.LinkedSources)
+        {
+            OpeningExtractor linkedOpeningExtractor = new(
+                linkedSource.LinkedDocument,
+                metadataProvider,
+                _zoneCatalog,
+                geometryRepairOptions,
+                ExportSourceDescriptor.CreateLinked(_document, linkedSource));
+            foreach (ExportLineString openingFeature in linkedOpeningExtractor.ExtractForLevel(
+                         context.Level,
+                         levelId,
+                         linkedSource.Openings,
+                         unitFeatures,
+                         geometryRepair,
+                         warnings,
+                         skipLevelFilter: true))
+            {
+                openingLayer.AddFeature(openingFeature);
             }
         }
     }

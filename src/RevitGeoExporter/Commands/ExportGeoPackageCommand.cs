@@ -48,6 +48,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         ExportDialogSettings settings = bundleSnapshot.GlobalSettings;
         ExportProfileStore profileStore = new();
         IReadOnlyList<string> availableFloorTypeNames = GetAvailableFloorTypeNames(document);
+        IReadOnlyList<LinkSelectionItem> availableLinks = GetAvailableLinks(document);
         ModelCoordinateInfo coordinateInfo = new ModelCoordinateInfoReader().Read(document);
 
         bool forceLegacyWinForms = string.Equals(
@@ -59,14 +60,15 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         bool useWpfPreviewWindow = !forceLegacyWinForms;
         ExportWorkflowCoordinator workflow = new(
             document,
+            uiDocument,
             projectKey,
             availableFloorTypeNames,
             profileStore,
             useWpfPreviewWindow);
 
         ExportDialogResult? request = useWpfDialog
-            ? ShowWpfDialog(views, settings, bundleSnapshot, bundle, coordinateInfo, workflow)
-            : ShowLegacyDialog(views, settings, bundleSnapshot, bundle, coordinateInfo, workflow);
+            ? ShowWpfDialog(views, settings, availableLinks, bundleSnapshot, bundle, coordinateInfo, workflow)
+            : ShowLegacyDialog(views, settings, availableLinks, bundleSnapshot, bundle, coordinateInfo, workflow);
         if (request == null || request.SelectedViews.Count == 0)
         {
             return Result.Cancelled;
@@ -78,6 +80,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
     private static ExportDialogResult? ShowWpfDialog(
         IReadOnlyList<ViewPlan> views,
         ExportDialogSettings settings,
+        IReadOnlyList<LinkSelectionItem> availableLinks,
         SettingsBundleSnapshot bundleSnapshot,
         SettingsBundle bundle,
         ModelCoordinateInfo coordinateInfo,
@@ -86,6 +89,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         using ExportDialogWpf dialog = new(
             views,
             settings,
+            availableLinks,
             bundleSnapshot.Profiles,
             workflow.SaveProfile,
             workflow.RenameProfile,
@@ -106,6 +110,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
     private static ExportDialogResult? ShowLegacyDialog(
         IReadOnlyList<ViewPlan> views,
         ExportDialogSettings settings,
+        IReadOnlyList<LinkSelectionItem> availableLinks,
         SettingsBundleSnapshot bundleSnapshot,
         SettingsBundle bundle,
         ModelCoordinateInfo coordinateInfo,
@@ -114,6 +119,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         using ExportDialog dialog = new(
             views,
             settings,
+            availableLinks,
             bundleSnapshot.Profiles,
             workflow.SaveProfile,
             workflow.RenameProfile,
@@ -140,6 +146,28 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             .Where(name => name.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static IReadOnlyList<LinkSelectionItem> GetAvailableLinks(Document document)
+    {
+        ViewExportContextProvider contextProvider = new(document);
+        return contextProvider.GetLoadedLinkInstances()
+            .Select(linkInstance =>
+            {
+                Document? linkedDocument = linkInstance.GetLinkDocument();
+                string linkName = string.IsNullOrWhiteSpace(linkInstance.Name)
+                    ? $"Link {linkInstance.Id.Value}"
+                    : linkInstance.Name.Trim();
+                string sourceDocumentName = linkedDocument == null
+                    ? string.Empty
+                    : DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument);
+                string displayName = string.IsNullOrWhiteSpace(sourceDocumentName) ||
+                                     string.Equals(linkName, sourceDocumentName, StringComparison.OrdinalIgnoreCase)
+                    ? linkName
+                    : $"{linkName} [{sourceDocumentName}]";
+                return new LinkSelectionItem(linkInstance.Id.Value, displayName, sourceDocumentName);
+            })
             .ToList();
     }
 }

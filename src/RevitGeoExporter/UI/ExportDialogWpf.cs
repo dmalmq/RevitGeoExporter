@@ -32,6 +32,7 @@ namespace RevitGeoExporter.UI;
     private static readonly Brush StatusWarningTextBrush = WpfDialogChrome.StatusWarningTextBrush;
 
     private readonly ObservableCollection<ViewSelectionRow> _views = new();
+    private readonly ObservableCollection<LinkSelectionRow> _links = new();
     private readonly Action<ExportPreviewRequest, WinForms.IWin32Window?>? _previewRequested;
     private readonly Action? _openMappingsRequested;
     private readonly Window _window;
@@ -56,6 +57,7 @@ namespace RevitGeoExporter.UI;
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
+    private readonly CheckBox _includeLinkedModelsCheckBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
@@ -85,6 +87,7 @@ namespace RevitGeoExporter.UI;
     private readonly TextBlock _technicalDetailsHeaderText = new();
     private readonly TextBlock _unitSourceLabel = new();
     private readonly TextBlock _roomCategoryParameterLabel = new();
+    private readonly TextBlock _linkedModelsLabel = new();
     private readonly TextBlock _displayUnitsInfoText = new();
     private readonly TextBlock _projectLocationInfoText = new();
     private readonly TextBlock _siteCrsInfoText = new();
@@ -98,13 +101,17 @@ namespace RevitGeoExporter.UI;
     private readonly Expander _technicalDetailsExpander = new();
     private readonly Expander _advancedOptionsExpander = new();
     private readonly StackPanel _convertSettingsPanel = new();
+    private readonly ListBox _linkList = new();
     private FrameworkElement? _unitSourceRow;
     private FrameworkElement? _roomCategoryParameterRow;
+    private FrameworkElement? _linkedModelsRow;
     private FrameworkElement? _legendOptionRow;
+    private LinkExportOptions _linkExportOptions = new();
 
     public ExportDialogWpf(
         IReadOnlyList<ViewPlan> views,
         ExportDialogSettings settings,
+        IReadOnlyList<LinkSelectionItem>? availableLinks = null,
         IReadOnlyList<ExportProfile>? profiles = null,
         Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
         Action<ExportProfile, string>? renameProfileRequested = null,
@@ -128,11 +135,20 @@ namespace RevitGeoExporter.UI;
             _views.Add(new ViewSelectionRow(view));
         }
 
+        foreach (LinkSelectionItem link in availableLinks ?? Array.Empty<LinkSelectionItem>())
+        {
+            if (link != null)
+            {
+                _links.Add(new LinkSelectionRow(link));
+            }
+        }
+
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewRequested = previewRequested;
         _openMappingsRequested = openMappingsRequested;
         _coordinateInfo = coordinateInfo;
         _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
+        _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
 
         _window = new Window
         {
@@ -173,6 +189,7 @@ namespace RevitGeoExporter.UI;
             CoordinateMode = GetSelectedCoordinateMode(),
             UnitSource = ((_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source) ?? UnitSource.Floors,
             RoomCategoryParameterName = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            LinkExportOptions = BuildLinkExportOptions(),
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
@@ -226,6 +243,23 @@ namespace RevitGeoExporter.UI;
         FrameworkElementFactory checkBox = new(typeof(CheckBox));
         checkBox.SetBinding(CheckBox.ContentProperty, new System.Windows.Data.Binding(nameof(ViewSelectionRow.DisplayText)));
         checkBox.SetBinding(CheckBox.IsCheckedProperty, new System.Windows.Data.Binding(nameof(ViewSelectionRow.IsSelected))
+        {
+            Mode = System.Windows.Data.BindingMode.TwoWay,
+            UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
+        });
+        checkBox.SetValue(FrameworkElement.MarginProperty, new Thickness(2, 1, 2, 1));
+
+        return new DataTemplate
+        {
+            VisualTree = checkBox,
+        };
+    }
+
+    private DataTemplate BuildLinkSelectionTemplate()
+    {
+        FrameworkElementFactory checkBox = new(typeof(CheckBox));
+        checkBox.SetBinding(CheckBox.ContentProperty, new System.Windows.Data.Binding(nameof(LinkSelectionRow.DisplayText)));
+        checkBox.SetBinding(CheckBox.IsCheckedProperty, new System.Windows.Data.Binding(nameof(LinkSelectionRow.IsSelected))
         {
             Mode = System.Windows.Data.BindingMode.TwoWay,
             UpdateSourceTrigger = System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
@@ -432,11 +466,31 @@ namespace RevitGeoExporter.UI;
         _unitSourceComboBox.SelectionChanged += (_, _) => RefreshDialogState();
         _roomCategoryParameterTextBox.MinHeight = 32;
         _roomCategoryParameterTextBox.TextChanged += (_, _) => RefreshDialogState();
+        _includeLinkedModelsCheckBox.Margin = new Thickness(0, 0, 0, 8);
+        _includeLinkedModelsCheckBox.Padding = new Thickness(2);
+        _includeLinkedModelsCheckBox.Checked += (_, _) => RefreshDialogState();
+        _includeLinkedModelsCheckBox.Unchecked += (_, _) => RefreshDialogState();
+
+        _linkList.ItemsSource = _links;
+        _linkList.ItemTemplate = BuildLinkSelectionTemplate();
+        _linkList.BorderThickness = new Thickness(1);
+        _linkList.BorderBrush = CardBorderBrush;
+        _linkList.Background = Brushes.White;
+        _linkList.MinHeight = 92;
+        _linkList.MaxHeight = 168;
+        _linkList.Padding = new Thickness(4);
+        _linkList.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(OnInputChanged));
+        _linkList.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(OnInputChanged));
 
         _unitSourceRow = CreateFieldBlock(_unitSourceLabel, _unitSourceComboBox);
         _roomCategoryParameterRow = CreateFieldBlock(_roomCategoryParameterLabel, _roomCategoryParameterTextBox);
+        StackPanel linkedModelsPanel = new();
+        linkedModelsPanel.Children.Add(_includeLinkedModelsCheckBox);
+        linkedModelsPanel.Children.Add(_linkList);
+        _linkedModelsRow = CreateFieldBlock(_linkedModelsLabel, linkedModelsPanel);
         advancedContent.Children.Add(_unitSourceRow);
         advancedContent.Children.Add(_roomCategoryParameterRow);
+        advancedContent.Children.Add(_linkedModelsRow);
 
         _mappingsButton.HorizontalAlignment = HorizontalAlignment.Left;
         _mappingsButton.Padding = new Thickness(12, 6, 12, 6);
@@ -601,6 +655,8 @@ namespace RevitGeoExporter.UI;
             _roomCategoryParameterTextBox.Text = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName)
                 ? "Name"
                 : settings.RoomCategoryParameterName.Trim();
+            _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+            ApplyLinkSelections(_linkExportOptions);
 
             HashSet<long> selectedIds = new(settings.SelectedViewIds ?? new List<long>());
             bool selectAll = selectedIds.Count == 0;
@@ -710,7 +766,8 @@ namespace RevitGeoExporter.UI;
             uiLanguage,
             coordinateMode,
             unitSource,
-            (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim());
+            (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            BuildLinkExportOptions());
 
         _window.DialogResult = true;
         _window.Close();
@@ -759,6 +816,7 @@ namespace RevitGeoExporter.UI;
             _coordinateInfo?.SurveyPointSharedCoordinates,
             (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            BuildLinkExportOptions(),
             _previewBasemapSettings.UrlTemplate,
             _previewBasemapSettings.Attribution);
 
@@ -868,6 +926,7 @@ namespace RevitGeoExporter.UI;
         bool unitsEnabled = _unitCheckBox.IsChecked == true;
         bool roomsSelected = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source == UnitSource.Rooms;
         bool packageEnabled = _packageCheckBox.IsChecked == true;
+        bool linksEnabled = _includeLinkedModelsCheckBox.IsChecked == true && _links.Count > 0;
 
         if (_unitSourceRow != null)
         {
@@ -879,13 +938,51 @@ namespace RevitGeoExporter.UI;
             _roomCategoryParameterRow.Visibility = unitsEnabled && roomsSelected ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
 
+        if (_linkedModelsRow != null)
+        {
+            _linkedModelsRow.Visibility = System.Windows.Visibility.Visible;
+        }
+
         if (_legendOptionRow != null)
         {
             _legendOptionRow.Visibility = packageEnabled ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
+
+        _includeLinkedModelsCheckBox.IsEnabled = _links.Count > 0;
+        _linkList.IsEnabled = linksEnabled;
     }
 
     private List<ViewPlan> GetSelectedViews() => _views.Where(x => x.IsSelected).Select(x => x.View).ToList();
+
+    private void ApplyLinkSelections(LinkExportOptions linkExportOptions)
+    {
+        HashSet<long> selectedIds = new(linkExportOptions.SelectedLinkInstanceIds ?? new List<long>());
+        foreach (LinkSelectionRow row in _links)
+        {
+            row.IsSelected = linkExportOptions.IncludeLinkedModels && selectedIds.Contains(row.Link.LinkInstanceId);
+        }
+
+        _includeLinkedModelsCheckBox.IsChecked = linkExportOptions.IncludeLinkedModels && _links.Count > 0;
+        _linkList.Items.Refresh();
+    }
+
+    private LinkExportOptions BuildLinkExportOptions()
+    {
+        if (_links.Count == 0 || _includeLinkedModelsCheckBox.IsChecked != true)
+        {
+            return new LinkExportOptions();
+        }
+
+        return new LinkExportOptions
+        {
+            IncludeLinkedModels = true,
+            SelectedLinkInstanceIds = _links
+                .Where(link => link.IsSelected)
+                .Select(link => link.Link.LinkInstanceId)
+                .Distinct()
+                .ToList(),
+        };
+    }
 
     private ExportFeatureType GetSelectedFeatureTypes()
     {
@@ -982,6 +1079,7 @@ namespace RevitGeoExporter.UI;
     private void UpdateFooterSummary()
     {
         int selectedViewCount = GetSelectedViews().Count;
+        int selectedLinkCount = BuildLinkExportOptions().SelectedLinkInstanceIds.Count;
         bool isConvertMode = GetSelectedCoordinateMode() == CoordinateExportMode.ConvertToTargetCrs;
         string modeText = isConvertMode
             ? T("Convert to target CRS", "出力 CRS に変換")
@@ -990,7 +1088,13 @@ namespace RevitGeoExporter.UI;
             ? ParseTargetEpsgOrDefault()
             : (_coordinateInfo?.ResolvedSourceEpsg ?? ParseTargetEpsgOrDefault());
 
-        _footerSummaryText.Text = TF("{0} views selected | {1} | EPSG {2}", "{0} ビュー選択 | {1} | EPSG {2}", selectedViewCount, modeText, epsg);
+        _footerSummaryText.Text = TF(
+            "{0} views selected | {1} linked models | {2} | EPSG {3}",
+            "{0} ビュー選択 | リンク モデル {1} 件 | {2} | EPSG {3}",
+            selectedViewCount,
+            selectedLinkCount,
+            modeText,
+            epsg);
     }
 
     private void UpdateActionButtons()
@@ -1025,6 +1129,7 @@ namespace RevitGeoExporter.UI;
         _advancedOptionsHeaderText.Text = T("Show advanced options", "詳細オプションを表示");
         _unitSourceLabel.Text = T("Unit source", "ユニット取得元");
         _roomCategoryParameterLabel.Text = T("Room category parameter", "部屋カテゴリ パラメータ");
+        _linkedModelsLabel.Text = T("Linked models", "リンク モデル");
 
         _unitCheckBox.Content = T("Units", "ユニット");
         _detailCheckBox.Content = T("Details", "ディテール");
@@ -1033,6 +1138,7 @@ namespace RevitGeoExporter.UI;
         _diagnosticsCheckBox.Content = T("Create diagnostics report", "診断レポートを作成");
         _packageCheckBox.Content = T("Create GIS package folder", "GIS パッケージ フォルダーを作成");
         _packageLegendCheckBox.Content = T("Include legend file", "凡例ファイルを含める");
+        _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
         _mappingsButton.Content = T("Edit category mappings...", "カテゴリ マッピングを編集...");
         _browseButton.Content = T("Browse...", "参照...");
@@ -1166,6 +1272,22 @@ namespace RevitGeoExporter.UI;
                 return $"{View.Name} [{levelLabel}: {levelName}]";
             }
         }
+
+        public bool IsSelected { get; set; }
+
+        public override string ToString() => DisplayText;
+    }
+
+    private sealed class LinkSelectionRow
+    {
+        public LinkSelectionRow(LinkSelectionItem link)
+        {
+            Link = link ?? throw new ArgumentNullException(nameof(link));
+        }
+
+        public LinkSelectionItem Link { get; }
+
+        public string DisplayText => Link.DisplayName;
 
         public bool IsSelected { get; set; }
 

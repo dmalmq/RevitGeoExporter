@@ -14,7 +14,8 @@ public sealed class ExportValidationRequest
         bool includeLevels,
         IReadOnlyList<ValidationViewSnapshot> views,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        string roomCategoryParameterName,
+        string? sourceDocumentKey = null)
     {
         TargetEpsg = targetEpsg;
         IncludeUnits = includeUnits;
@@ -24,6 +25,8 @@ public sealed class ExportValidationRequest
         Views = views ?? throw new ArgumentNullException(nameof(views));
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        string normalizedSourceDocumentKey = sourceDocumentKey?.Trim() ?? string.Empty;
+        SourceDocumentKey = normalizedSourceDocumentKey.Length == 0 ? null : normalizedSourceDocumentKey;
     }
 
     public int TargetEpsg { get; }
@@ -41,4 +44,6 @@ public sealed class ExportValidationRequest
     public UnitSource UnitSource { get; }
 
     public string RoomCategoryParameterName { get; }
+
+    public string? SourceDocumentKey { get; }
 }

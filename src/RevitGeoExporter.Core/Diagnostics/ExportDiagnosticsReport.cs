@@ -22,5 +22,7 @@ public sealed class ExportDiagnosticsReport
 
     public List<string> ExportWarnings { get; set; } = new();
 
+    public List<ExportLinkedModelInfo> IncludedLinks { get; set; } = new();
+
     public List<ExportDiagnosticsOutputFile> OutputFiles { get; set; } = new();
 }

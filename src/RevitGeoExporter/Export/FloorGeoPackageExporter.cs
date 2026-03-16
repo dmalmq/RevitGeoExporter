@@ -37,6 +37,7 @@ public sealed class FloorGeoPackageExporter
         string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
+        LinkExportOptions? linkExportOptions = null,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
@@ -53,7 +54,8 @@ public sealed class FloorGeoPackageExporter
             sourceCoordinateSystemId,
             sourceCoordinateSystemDefinition,
             unitSource,
-            roomCategoryParameterName);
+            roomCategoryParameterName,
+            linkExportOptions);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -71,7 +73,8 @@ public sealed class FloorGeoPackageExporter
         string? sourceCoordinateSystemId = null,
         string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
-        string roomCategoryParameterName = "Name")
+        string roomCategoryParameterName = "Name",
+        LinkExportOptions? linkExportOptions = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -123,12 +126,14 @@ public sealed class FloorGeoPackageExporter
         GeometryRepairOptions effectiveGeometryRepairOptions =
             (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
+        LinkExportOptions effectiveLinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
 
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
             zoneCatalog,
             familyOverrideLoad.Value,
-            acceptedOpeningLoad.Value);
+            acceptedOpeningLoad.Value,
+            effectiveLinkExportOptions);
         EnsureSharedParameters(parameterManager, setupWarnings);
         EnsureStableIds(parameterManager, contexts, setupWarnings);
 
@@ -147,6 +152,7 @@ public sealed class FloorGeoPackageExporter
                 GeometryRepairOptions = effectiveGeometryRepairOptions,
                 UnitSource = unitSource,
                 RoomCategoryParameterName = roomCategoryParameterName,
+                LinkExportOptions = effectiveLinkExportOptions,
                 ViewContexts = contexts,
             });
 
@@ -168,13 +174,16 @@ public sealed class FloorGeoPackageExporter
             effectivePackageOptions,
             profileName,
             string.IsNullOrWhiteSpace(baselineKey) ? projectKey : baselineKey!,
+            projectKey,
             sourceModelName,
             coordinateMode,
             sourceEpsg,
             sourceCoordinateSystemId,
             sourceCoordinateSystemDefinition,
             unitSource,
-            roomCategoryParameterName);
+            roomCategoryParameterName,
+            effectiveLinkExportOptions,
+            BuildIncludedLinks(contexts));
     }
 
     public FloorGeoPackageExportResult WritePreparedExport(
@@ -382,6 +391,25 @@ public sealed class FloorGeoPackageExporter
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
         transaction.Commit();
+    }
+
+    private static IReadOnlyList<LinkedModelSummary> BuildIncludedLinks(IReadOnlyList<ViewExportContext> contexts)
+    {
+        return contexts
+            .SelectMany(context => context.LinkedSources)
+            .GroupBy(source => source.LinkInstance.Id.Value)
+            .Select(group =>
+            {
+                LinkedViewSourceContext first = group.First();
+                return new LinkedModelSummary(
+                    first.LinkInstance.Id.Value,
+                    first.LinkInstance.Name,
+                    first.SourceDocumentKey,
+                    first.SourceDocumentName);
+            })
+            .OrderBy(summary => summary.LinkInstanceName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(summary => summary.LinkInstanceId)
+            .ToList();
     }
 
     private static void AddUniqueElements<TElement>(IDictionary<long, Element> target, IReadOnlyList<TElement> elements)
