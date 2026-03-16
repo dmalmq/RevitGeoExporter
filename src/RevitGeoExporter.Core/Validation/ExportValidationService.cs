@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 
 namespace RevitGeoExporter.Core.Validation;
 
@@ -179,6 +180,34 @@ public sealed class ExportValidationService
                     ValidationCode.LinkedElementUsingFallbackId,
                     $"Linked {feature.FeatureType} element {feature.SourceElementId?.ToString() ?? "<unknown>"} from '{sourceDocument}' is using a deterministic fallback export ID."));
             }
+
+            AddSchemaIssues(issues, request, view, feature);
+        }
+    }
+
+    private static void AddSchemaIssues(
+        ICollection<ValidationIssue> issues,
+        ExportValidationRequest request,
+        ValidationViewSnapshot view,
+        ExportFeatureValidationSnapshot feature)
+    {
+        foreach (SchemaAttributeIssue schemaIssue in feature.SchemaIssues)
+        {
+            ValidationCode code = schemaIssue.Code switch
+            {
+                SchemaAttributeIssueCode.MissingMappedParameter => ValidationCode.MissingSchemaMappedParameter,
+                SchemaAttributeIssueCode.TypeConversionFailed => ValidationCode.SchemaTypeConversionFailed,
+                SchemaAttributeIssueCode.DuplicateFieldName => ValidationCode.DuplicateSchemaField,
+                _ => ValidationCode.SchemaTypeConversionFailed,
+            };
+
+            issues.Add(CreateIssue(
+                request,
+                view,
+                feature,
+                ValidationSeverity.Warning,
+                code,
+                schemaIssue.Message));
         }
     }
 
@@ -311,6 +340,11 @@ public sealed class ExportValidationService
                 return ValidationActionKind.ResolveMappings;
             case ValidationCode.LinkedElementUsingFallbackId:
                 return ValidationActionKind.ReviewElementInRevit;
+            case ValidationCode.MissingSchemaMappedParameter:
+            case ValidationCode.SchemaTypeConversionFailed:
+                return ValidationActionKind.ReviewElementInRevit;
+            case ValidationCode.DuplicateSchemaField:
+                return ValidationActionKind.ReviewExportSettings;
             case ValidationCode.UnsupportedOpeningFamily:
                 return ValidationActionKind.ReviewOpeningFamilies;
             case ValidationCode.EmptyGeometry:
@@ -339,6 +373,12 @@ public sealed class ExportValidationService
                 return "Review the unassigned floor or room mapping and save an override if needed.";
             case ValidationCode.LinkedElementUsingFallbackId:
                 return "Review the linked source element and assign a persisted exporter ID in the linked model if a stable cross-export ID is required.";
+            case ValidationCode.MissingSchemaMappedParameter:
+                return "Review the schema mapping and confirm the mapped Revit parameter exists on the affected source element.";
+            case ValidationCode.SchemaTypeConversionFailed:
+                return "Review the schema mapping source value, default value, and target type before continuing.";
+            case ValidationCode.DuplicateSchemaField:
+                return "Review the active schema profile and remove duplicate custom field names for this layer.";
             case ValidationCode.UnsupportedOpeningFamily:
                 return "Review accepted opening families or update project mappings for the unsupported family.";
             case ValidationCode.EmptyGeometry:

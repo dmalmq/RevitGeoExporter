@@ -14,6 +14,7 @@ using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -49,6 +50,7 @@ namespace RevitGeoExporter.UI;
     private readonly ComboBox _presetComboBox = new();
     private readonly ComboBox _coordinateModeComboBox = new();
     private readonly ComboBox _unitSourceComboBox = new();
+    private readonly ComboBox _schemaProfileComboBox = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly CheckBox _unitCheckBox = new();
     private readonly CheckBox _detailCheckBox = new();
@@ -66,6 +68,7 @@ namespace RevitGeoExporter.UI;
     private readonly Button _clearAllButton = new();
     private readonly Button _helpButton = new();
     private readonly Button _mappingsButton = new();
+    private readonly Button _manageSchemaProfilesButton = new();
     private readonly TextBlock _viewsTitleText = new();
     private readonly TextBlock _viewSelectionSummaryText = new();
     private readonly TextBlock _exportToTitleText = new();
@@ -87,6 +90,7 @@ namespace RevitGeoExporter.UI;
     private readonly TextBlock _technicalDetailsHeaderText = new();
     private readonly TextBlock _unitSourceLabel = new();
     private readonly TextBlock _roomCategoryParameterLabel = new();
+    private readonly TextBlock _schemaProfileLabel = new();
     private readonly TextBlock _linkedModelsLabel = new();
     private readonly TextBlock _displayUnitsInfoText = new();
     private readonly TextBlock _projectLocationInfoText = new();
@@ -104,9 +108,12 @@ namespace RevitGeoExporter.UI;
     private readonly ListBox _linkList = new();
     private FrameworkElement? _unitSourceRow;
     private FrameworkElement? _roomCategoryParameterRow;
+    private FrameworkElement? _schemaProfileRow;
     private FrameworkElement? _linkedModelsRow;
     private FrameworkElement? _legendOptionRow;
     private LinkExportOptions _linkExportOptions = new();
+    private List<SchemaProfile> _schemaProfiles = new() { SchemaProfile.CreateCoreProfile() };
+    private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
 
     public ExportDialogWpf(
         IReadOnlyList<ViewPlan> views,
@@ -190,6 +197,8 @@ namespace RevitGeoExporter.UI;
             UnitSource = ((_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source) ?? UnitSource.Floors,
             RoomCategoryParameterName = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             LinkExportOptions = BuildLinkExportOptions(),
+            SchemaProfiles = _schemaProfiles.Select(profile => profile.Clone()).ToList(),
+            ActiveSchemaProfileName = _activeSchemaProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
@@ -466,6 +475,20 @@ namespace RevitGeoExporter.UI;
         _unitSourceComboBox.SelectionChanged += (_, _) => RefreshDialogState();
         _roomCategoryParameterTextBox.MinHeight = 32;
         _roomCategoryParameterTextBox.TextChanged += (_, _) => RefreshDialogState();
+        _schemaProfileComboBox.MinHeight = 32;
+        _schemaProfileComboBox.SelectionChanged += (_, _) =>
+        {
+            if (_schemaProfileComboBox.SelectedItem is SchemaProfileItem selected)
+            {
+                _activeSchemaProfileName = selected.Profile.Name;
+            }
+
+            RefreshDialogState();
+        };
+        _manageSchemaProfilesButton.HorizontalAlignment = HorizontalAlignment.Left;
+        _manageSchemaProfilesButton.Padding = new Thickness(12, 6, 12, 6);
+        _manageSchemaProfilesButton.Margin = new Thickness(8, 0, 0, 0);
+        _manageSchemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
         _includeLinkedModelsCheckBox.Margin = new Thickness(0, 0, 0, 8);
         _includeLinkedModelsCheckBox.Padding = new Thickness(2);
         _includeLinkedModelsCheckBox.Checked += (_, _) => RefreshDialogState();
@@ -484,12 +507,21 @@ namespace RevitGeoExporter.UI;
 
         _unitSourceRow = CreateFieldBlock(_unitSourceLabel, _unitSourceComboBox);
         _roomCategoryParameterRow = CreateFieldBlock(_roomCategoryParameterLabel, _roomCategoryParameterTextBox);
+        StackPanel schemaProfilePanel = new()
+        {
+            Orientation = Orientation.Horizontal,
+        };
+        _schemaProfileComboBox.MinWidth = 200;
+        schemaProfilePanel.Children.Add(_schemaProfileComboBox);
+        schemaProfilePanel.Children.Add(_manageSchemaProfilesButton);
+        _schemaProfileRow = CreateFieldBlock(_schemaProfileLabel, schemaProfilePanel);
         StackPanel linkedModelsPanel = new();
         linkedModelsPanel.Children.Add(_includeLinkedModelsCheckBox);
         linkedModelsPanel.Children.Add(_linkList);
         _linkedModelsRow = CreateFieldBlock(_linkedModelsLabel, linkedModelsPanel);
         advancedContent.Children.Add(_unitSourceRow);
         advancedContent.Children.Add(_roomCategoryParameterRow);
+        advancedContent.Children.Add(_schemaProfileRow);
         advancedContent.Children.Add(_linkedModelsRow);
 
         _mappingsButton.HorizontalAlignment = HorizontalAlignment.Left;
@@ -656,6 +688,9 @@ namespace RevitGeoExporter.UI;
                 ? "Name"
                 : settings.RoomCategoryParameterName.Trim();
             _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+            _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
+            _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+            PopulateSchemaProfiles();
             ApplyLinkSelections(_linkExportOptions);
 
             HashSet<long> selectedIds = new(settings.SelectedViewIds ?? new List<long>());
@@ -767,7 +802,8 @@ namespace RevitGeoExporter.UI;
             coordinateMode,
             unitSource,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
-            BuildLinkExportOptions());
+            BuildLinkExportOptions(),
+            GetActiveSchemaProfile());
 
         _window.DialogResult = true;
         _window.Close();
@@ -817,6 +853,7 @@ namespace RevitGeoExporter.UI;
             (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             BuildLinkExportOptions(),
+            GetActiveSchemaProfile(),
             _previewBasemapSettings.UrlTemplate,
             _previewBasemapSettings.Attribution);
 
@@ -964,6 +1001,55 @@ namespace RevitGeoExporter.UI;
 
         _includeLinkedModelsCheckBox.IsChecked = linkExportOptions.IncludeLinkedModels && _links.Count > 0;
         _linkList.Items.Refresh();
+    }
+
+    private void PopulateSchemaProfiles()
+    {
+        _schemaProfiles = SchemaProfile.NormalizeProfiles(_schemaProfiles).Select(profile => profile.Clone()).ToList();
+        _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
+
+        _schemaProfileComboBox.Items.Clear();
+        foreach (SchemaProfile profile in _schemaProfiles.OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _schemaProfileComboBox.Items.Add(new SchemaProfileItem(profile));
+        }
+
+        for (int i = 0; i < _schemaProfileComboBox.Items.Count; i++)
+        {
+            if (_schemaProfileComboBox.Items[i] is SchemaProfileItem item &&
+                string.Equals(item.Profile.Name, _activeSchemaProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _schemaProfileComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _schemaProfileComboBox.SelectedIndex = _schemaProfileComboBox.Items.Count > 0 ? 0 : -1;
+    }
+
+    private SchemaProfile GetActiveSchemaProfile()
+    {
+        return SchemaProfile.ResolveActive(_schemaProfiles, _activeSchemaProfileName);
+    }
+
+    private void EditSchemaProfiles()
+    {
+        using SchemaProfileManagerForm form = new(_schemaProfiles, _language);
+        if (TryGetOwnerWindow() is WinForms.IWin32Window owner)
+        {
+            if (form.ShowDialog(owner) != WinForms.DialogResult.OK)
+            {
+                return;
+            }
+        }
+        else if (form.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        _schemaProfiles = SchemaProfile.NormalizeProfiles(form.Profiles).Select(profile => profile.Clone()).ToList();
+        _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
+        PopulateSchemaProfiles();
     }
 
     private LinkExportOptions BuildLinkExportOptions()
@@ -1129,6 +1215,7 @@ namespace RevitGeoExporter.UI;
         _advancedOptionsHeaderText.Text = T("Show advanced options", "詳細オプションを表示");
         _unitSourceLabel.Text = T("Unit source", "ユニット取得元");
         _roomCategoryParameterLabel.Text = T("Room category parameter", "部屋カテゴリ パラメータ");
+        _schemaProfileLabel.Text = T("Schema profile", "スキーマ プロファイル");
         _linkedModelsLabel.Text = T("Linked models", "リンク モデル");
 
         _unitCheckBox.Content = T("Units", "ユニット");
@@ -1141,6 +1228,7 @@ namespace RevitGeoExporter.UI;
         _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
         _mappingsButton.Content = T("Edit category mappings...", "カテゴリ マッピングを編集...");
+        _manageSchemaProfilesButton.Content = T("Schemas...", "スキーマ...");
         _browseButton.Content = T("Browse...", "参照...");
         _selectAllButton.Content = T("Select All", "すべて選択");
         _clearAllButton.Content = T("Clear All", "選択解除");
@@ -1292,6 +1380,18 @@ namespace RevitGeoExporter.UI;
         public bool IsSelected { get; set; }
 
         public override string ToString() => DisplayText;
+    }
+
+    private sealed class SchemaProfileItem
+    {
+        public SchemaProfileItem(SchemaProfile profile)
+        {
+            Profile = profile?.Clone() ?? throw new ArgumentNullException(nameof(profile));
+        }
+
+        public SchemaProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
     }
 
     private sealed class LanguageItem

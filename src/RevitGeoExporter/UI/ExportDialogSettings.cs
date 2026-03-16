@@ -2,6 +2,7 @@
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.UI;
@@ -33,6 +34,10 @@ public sealed class ExportDialogSettings
     public string RoomCategoryParameterName { get; set; } = "Name";
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
+
+    public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
+
+    public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;
 
     public string PreviewBasemapUrlTemplate { get; set; } = PreviewBasemapSettings.DefaultUrlTemplate;
 

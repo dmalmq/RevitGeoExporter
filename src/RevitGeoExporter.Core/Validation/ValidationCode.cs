@@ -14,4 +14,7 @@ public enum ValidationCode
     MissingVerticalCirculation = 9,
     NonStandardUnitCategory = 10,
     LinkedElementUsingFallbackId = 11,
+    MissingSchemaMappedParameter = 12,
+    SchemaTypeConversionFailed = 13,
+    DuplicateSchemaField = 14,
 }

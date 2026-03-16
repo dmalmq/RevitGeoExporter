@@ -8,6 +8,7 @@ using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Help;
 using RevitGeoExporter.Resources;
 using WinForms = System.Windows.Forms;
@@ -38,6 +39,8 @@ public sealed class SettingsHubForm : IDisposable
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
+    private readonly Button _schemaProfilesButton = new();
+    private readonly TextBlock _schemaProfilesSummary = new();
     private readonly DataGrid _floorGrid = new();
     private readonly DataGrid _roomGrid = new();
     private readonly DataGrid _familyGrid = new();
@@ -187,6 +190,12 @@ public sealed class SettingsHubForm : IDisposable
         toggles.Children.Add(_packageCheckBox);
         toggles.Children.Add(_packageLegendCheckBox);
         toggles.Children.Add(_repairEnabledCheckBox);
+        _schemaProfilesButton.HorizontalAlignment = HorizontalAlignment.Left;
+        _schemaProfilesButton.Margin = new Thickness(0, 8, 0, 4);
+        _schemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
+        toggles.Children.Add(_schemaProfilesButton);
+        _schemaProfilesSummary.TextWrapping = TextWrapping.Wrap;
+        toggles.Children.Add(_schemaProfilesSummary);
         AddFormRow(form, 6, () => L("ExportDialog.Options", "Export Options"), toggles);
 
         return form;
@@ -373,6 +382,7 @@ public sealed class SettingsHubForm : IDisposable
         _repairEnabledCheckBox.IsChecked = _snapshot.GlobalSettings.GeometryRepairOptions?.Enabled ?? false;
         _language = _snapshot.GlobalSettings.UiLanguage;
         SelectPreset(_snapshot.GlobalSettings.TargetEpsg);
+        UpdateSchemaProfileSummary();
         PopulateMappings(_snapshot.ProjectMappings);
         PopulateStatuses(_snapshot.StatusEntries);
         ApplyLanguage();
@@ -539,6 +549,33 @@ public sealed class SettingsHubForm : IDisposable
         settings.GeometryRepairOptions.Enabled = _repairEnabledCheckBox.IsChecked == true;
         return settings;
     }
+
+    private void EditSchemaProfiles()
+    {
+        using SchemaProfileManagerForm form = new(_snapshot.GlobalSettings.SchemaProfiles, _language);
+        if (form.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        _snapshot.GlobalSettings.SchemaProfiles = SchemaProfile.NormalizeProfiles(form.Profiles).Select(profile => profile.Clone()).ToList();
+        _snapshot.GlobalSettings.ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(
+            _snapshot.GlobalSettings.SchemaProfiles,
+            _snapshot.GlobalSettings.ActiveSchemaProfileName);
+        UpdateSchemaProfileSummary();
+    }
+
+    private void UpdateSchemaProfileSummary()
+    {
+        int count = _snapshot.GlobalSettings?.SchemaProfiles?.Count ?? 0;
+        string activeName = SchemaProfile.ResolveActiveName(
+            _snapshot.GlobalSettings?.SchemaProfiles,
+            _snapshot.GlobalSettings?.ActiveSchemaProfileName);
+        _schemaProfilesSummary.Text = string.Format(
+            L("SettingsHub.SchemaProfilesSummary", "Schema profiles: {0}    Default active schema: {1}"),
+            count,
+            activeName);
+    }
     private ProjectMappingRules BuildProjectMappings()
     {
         return ProjectMappingRules.Create(
@@ -653,6 +690,8 @@ public sealed class SettingsHubForm : IDisposable
         _packageCheckBox.Content = L("ExportDialog.WritePackage", "Write GIS package");
         _packageLegendCheckBox.Content = L("ExportDialog.IncludeLegend", "Include legend file");
         _repairEnabledCheckBox.Content = L("ExportDialog.GeometryRepair", "Geometry Repair");
+        _schemaProfilesButton.Content = L("SettingsHub.SchemaProfilesButton", "Manage Schema Profiles...");
+        UpdateSchemaProfileSummary();
 
         foreach (ScopeButtonSet set in _scopeButtons.Values)
         {
@@ -723,6 +762,10 @@ public sealed class SettingsHubForm : IDisposable
         snapshot.GlobalSettings.GeometryRepairOptions ??= new RevitGeoExporter.Core.Geometry.GeometryRepairOptions();
         snapshot.GlobalSettings.PreviewBasemapUrlTemplate ??= PreviewBasemapSettings.DefaultUrlTemplate;
         snapshot.GlobalSettings.PreviewBasemapAttribution ??= PreviewBasemapSettings.DefaultAttribution;
+        snapshot.GlobalSettings.SchemaProfiles = SchemaProfile.NormalizeProfiles(snapshot.GlobalSettings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
+        snapshot.GlobalSettings.ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(
+            snapshot.GlobalSettings.SchemaProfiles,
+            snapshot.GlobalSettings.ActiveSchemaProfileName);
         snapshot.Profiles = (snapshot.Profiles ?? Array.Empty<ExportProfile>())
             .Where(profile => profile != null)
             .ToList();
