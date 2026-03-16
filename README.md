@@ -19,12 +19,12 @@ At a glance, the add-in:
   - `Export GeoPackage`
   - `Help`
 - Lets the user select one or more floor or ceiling plan views to export.
+- Opens the settings hub from the export workflow for global defaults, project mappings, accepted opening families, and export profiles.
 - Exports one GeoPackage per selected view and feature type:
   - `_unit`
   - `_detail`
   - `_opening`
   - `_level`
-- Includes a settings hub for global defaults, project mappings, accepted opening families, and export profiles.
 - Supports configurable shared-coordinate export or conversion to a target CRS / EPSG.
 - Preserves stable IMDF IDs during export by using shared parameters in the Revit model.
 
@@ -52,10 +52,11 @@ Floor category assignments are stored as project-specific exporter overrides. Th
 1. Open a supported plan view model in Revit 2024.
 2. Start `GeoExporter > Export GeoPackage`.
 3. Choose the plan views, output folder, and feature types to export.
-4. Review the coordinate summary and expand coordinate settings only if you need to convert to a target CRS / EPSG.
-5. Open `Preview...` to verify units, openings, details, levels, warnings, and vertical circulation.
-6. If needed, assign categories to unassigned floor-derived units in the preview.
-7. Run export, review validation results, and then inspect the generated GeoPackage files and diagnostics output.
+4. Open the settings hub from the export flow if you need to adjust defaults, mappings, basemap settings, or export profiles.
+5. Review the coordinate summary and expand coordinate settings only if you need to convert to a target CRS / EPSG.
+6. Open `Preview...` to verify units, openings, details, levels, warnings, and vertical circulation.
+7. If needed, assign categories to unassigned floor-derived units in the preview.
+8. Run export, review validation results, and then inspect the generated GeoPackage files and diagnostics output.
 
 ## Installation
 

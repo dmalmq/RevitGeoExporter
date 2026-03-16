@@ -30,16 +30,7 @@
   <data name="Ribbon.Export.Description" xml:space="preserve">
     <value>平面図または天井伏図を選択し、ビューごとに _unit、_detail、_opening、_level GeoPackage を出力します。</value>
   </data>
-  <data name="Ribbon.Settings.Text" xml:space="preserve">
-    <value>設定</value>
-  </data>
-  <data name="Ribbon.Settings.ToolTip" xml:space="preserve">
-    <value>グローバル設定とプロジェクト設定を管理します。</value>
-  </data>
-  <data name="Ribbon.Settings.Description" xml:space="preserve">
-    <value>既定値、プロファイル、マッピング、設定診断を管理する設定ハブを開きます。</value>
-  </data>
-  <data name="Ribbon.Help.Text" xml:space="preserve">
+        <data name="Ribbon.Help.Text" xml:space="preserve">
     <value>ヘルプ</value>
   </data>
   <data name="Ribbon.Help.ToolTip" xml:space="preserve">
@@ -312,10 +303,7 @@
   <data name="Command.SettingsSaved" xml:space="preserve">
     <value>設定を保存しました。</value>
   </data>
-  <data name="Command.OpenSettingsFailed" xml:space="preserve">
-    <value>設定を開けませんでした。</value>
-  </data>
-  <data name="Command.ExportFailed" xml:space="preserve">
+    <data name="Command.ExportFailed" xml:space="preserve">
     <value>書き出しに失敗しました。</value>
   </data>
   <data name="Help.Command.OpenFailed" xml:space="preserve">
@@ -409,4 +397,51 @@
   <data name="Preview.MapProjectionFailed" xml:space="preserve">
     <value>地図プレビューの投影変換に失敗しました。</value>
   </data>
-</root>
+  <data name="Common.Rooms" xml:space="preserve">
+    <value>部屋</value>
+  </data>
+  <data name="Common.Floors" xml:space="preserve">
+    <value>床</value>
+  </data>
+  <data name="ExportDialog.CrsLabel" xml:space="preserve">
+    <value>CRS (EPSG)</value>
+  </data>
+  <data name="ExportDialog.UnitSource" xml:space="preserve">
+    <value>ユニット取得元</value>
+  </data>
+  <data name="ExportDialog.RoomCategoryParameter" xml:space="preserve">
+    <value>部屋カテゴリ パラメータ</value>
+  </data>
+  <data name="ExportDialog.CurrentSettings" xml:space="preserve">
+    <value>(現在の設定)</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.ConvertToTargetCrs" xml:space="preserve">
+    <value>出力 CRS に変換</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.SharedCoordinatesDefault" xml:space="preserve">
+    <value>共有座標 (既定)</value>
+  </data>
+  <data name="Command.ExportFailed.Body" xml:space="preserve">
+    <value>GeoPackage の出力中にエラーが発生しました。エラーレポートを保存しますか?</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReport" xml:space="preserve">
+    <value>エラーレポートを保存</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReportTitle" xml:space="preserve">
+    <value>エラーレポートの保存</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaved" xml:space="preserve">
+    <value>エラーレポートを保存しました。</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaveFailed" xml:space="preserve">
+    <value>エラーレポートを保存できませんでした。</value>
+  </data>
+  <data name="SettingsDialog.SelectDefaultOutputDirectory" xml:space="preserve">
+    <value>既定の出力フォルダーを選択</value>
+  </data>
+  <data name="Validation.ResolveWarnings" xml:space="preserve">
+    <value>検証修正の適用中にいくつかの問題が発生しました。</value>
+  </data>
+  <data name="Validation.ResolveWarnings.Body" xml:space="preserve">
+    <value>{0}{1}{1}{2}</value>
+  </data></root>

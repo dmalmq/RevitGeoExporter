@@ -218,7 +218,7 @@ This catalog should be embedded in the add-in as a lookup table and be easily ex
 
 A custom ribbon tab "GeoExporter" with:
 - **Export GeoPackage** button — opens the export dialog.
-- **Settings** button — opens CRS and project settings.
+- **Help** button — opens the offline help viewer.
 
 ### Export Dialog
 
@@ -226,11 +226,13 @@ A custom ribbon tab "GeoExporter" with:
 - Checklist of feature types to include: `unit`, `detail`, `opening`, `level`.
 - Output directory picker.
 - CRS selector (dropdown of Japan Plane Rectangular zones + custom EPSG input).
+- Entry point to the settings hub for defaults, mappings, basemap settings, and export profiles.
 - "Export" button.
 - Progress bar with per-view status.
 
 ### Settings Dialog (Phase 2+)
 
+- Opened from the export workflow rather than a dedicated ribbon command.
 - Default CRS.
 - Default output directory.
 - Zone name extraction settings (prefix `j ` and suffix `_床` stripping, customizable per project).

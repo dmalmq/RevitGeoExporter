@@ -21,7 +21,6 @@ public sealed class ExportPreviewForm : WinFormsForm
     private readonly ExportPreviewRequest _request;
     private readonly ExportPreviewService _previewService;
     private readonly ExportPreviewController _controller;
-    private readonly Dictionary<long, PreviewDisplayViewState> _cache = new();
     private readonly UiLanguage _language;
     private readonly IReadOnlyList<string> _supportedFloorCategories;
 
