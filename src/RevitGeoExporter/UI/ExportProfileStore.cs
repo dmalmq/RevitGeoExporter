@@ -196,6 +196,7 @@ public sealed class ExportProfileStore
             CoordinateMode = profile.CoordinateMode,
             UnitSource = profile.UnitSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
+            LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
         };
     }
 

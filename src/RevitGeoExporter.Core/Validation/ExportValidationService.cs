@@ -167,6 +167,18 @@ public sealed class ExportValidationService
                     ValidationCode.UnsnappedOpening,
                     $"Opening {feature.SourceElementId?.ToString() ?? "<unknown>"} in view '{view.ViewName}' could not be snapped to a unit outline."));
             }
+
+            if (feature.IsLinkedSource && !feature.HasPersistedExportId)
+            {
+                string sourceDocument = feature.SourceDocumentKey ?? request.SourceDocumentKey ?? "linked document";
+                issues.Add(CreateIssue(
+                    request,
+                    view,
+                    feature,
+                    ValidationSeverity.Warning,
+                    ValidationCode.LinkedElementUsingFallbackId,
+                    $"Linked {feature.FeatureType} element {feature.SourceElementId?.ToString() ?? "<unknown>"} from '{sourceDocument}' is using a deterministic fallback export ID."));
+            }
         }
     }
 
@@ -177,15 +189,19 @@ public sealed class ExportValidationService
     {
         foreach (UnsupportedOpeningFamilySnapshot opening in view.UnsupportedOpenings)
         {
-            issues.Add(CreateIssue(
-                request,
-                view,
-                feature: null,
+            issues.Add(new ValidationIssue(
                 ValidationSeverity.Warning,
                 ValidationCode.UnsupportedOpeningFamily,
                 $"Unsupported opening family '{opening.FamilyName}' was encountered in view '{view.ViewName}'.",
-                opening.ElementId,
-                "opening"));
+                view.ViewName,
+                view.LevelName,
+                "opening",
+                sourceElementId: opening.ElementId,
+                owningViewId: view.ViewId,
+                sourceDocumentKey: opening.SourceDocumentKey ?? request.SourceDocumentKey,
+                actionKind: GetActionKind(ValidationCode.UnsupportedOpeningFamily),
+                recommendedAction: GetRecommendedAction(ValidationCode.UnsupportedOpeningFamily),
+                canNavigateInRevit: opening.CanNavigateInRevit));
         }
     }
 
@@ -275,10 +291,11 @@ public sealed class ExportValidationService
             feature?.Category,
             sourceElementId ?? feature?.SourceElementId,
             view.ViewId,
-            request.SourceDocumentKey,
+            feature?.SourceDocumentKey ?? request.SourceDocumentKey,
             GetActionKind(code),
             GetRecommendedAction(code),
-            canNavigateInRevit: (sourceElementId ?? feature?.SourceElementId).HasValue || view.ViewId > 0);
+            canNavigateInRevit: !(feature?.IsLinkedSource ?? false) &&
+                                ((sourceElementId ?? feature?.SourceElementId).HasValue || view.ViewId > 0));
     }
 
     private static ValidationActionKind GetActionKind(ValidationCode code)
@@ -292,6 +309,8 @@ public sealed class ExportValidationService
                 return ValidationActionKind.RegenerateStableIds;
             case ValidationCode.UnassignedFloorCategory:
                 return ValidationActionKind.ResolveMappings;
+            case ValidationCode.LinkedElementUsingFallbackId:
+                return ValidationActionKind.ReviewElementInRevit;
             case ValidationCode.UnsupportedOpeningFamily:
                 return ValidationActionKind.ReviewOpeningFamilies;
             case ValidationCode.EmptyGeometry:
@@ -318,6 +337,8 @@ public sealed class ExportValidationService
                 return "Regenerate exporter IDs for the affected elements before writing output.";
             case ValidationCode.UnassignedFloorCategory:
                 return "Review the unassigned floor or room mapping and save an override if needed.";
+            case ValidationCode.LinkedElementUsingFallbackId:
+                return "Review the linked source element and assign a persisted exporter ID in the linked model if a stable cross-export ID is required.";
             case ValidationCode.UnsupportedOpeningFamily:
                 return "Review accepted opening families or update project mappings for the unsupported family.";
             case ValidationCode.EmptyGeometry:

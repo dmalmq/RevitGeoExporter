@@ -13,4 +13,5 @@ public enum ValidationCode
     UnsnappedOpening = 8,
     MissingVerticalCirculation = 9,
     NonStandardUnitCategory = 10,
+    LinkedElementUsingFallbackId = 11,
 }

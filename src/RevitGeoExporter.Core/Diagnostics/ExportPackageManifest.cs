@@ -13,6 +13,8 @@ public sealed class ExportPackageManifest
 
     public DateTimeOffset ExportedAtUtc { get; set; }
 
+    public List<ExportLinkedModelInfo> IncludedLinks { get; set; } = new();
+
     public List<ExportPackageManifestFile> Files { get; set; } = new();
 }
 

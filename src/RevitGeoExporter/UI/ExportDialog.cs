@@ -33,6 +33,9 @@ public sealed class ExportDialog : WinFormsForm
     private readonly ComboBox _unitSourceComboBox = new();
     private readonly Label _roomParameterInlineLabel = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
+    private readonly Label _linkedModelsLabel = new();
+    private readonly CheckBox _includeLinkedModelsCheckBox = new();
+    private readonly CheckedListBox _linkList = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
@@ -64,6 +67,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Action<ExportProfile, string>? _renameProfileRequested;
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action? _openMappingsRequested;
+    private readonly IReadOnlyList<LinkSelectionItem> _availableLinks;
     private readonly List<ExportProfile> _profiles;
     private readonly PreviewBasemapSettings _previewBasemapSettings;
     private readonly ModelCoordinateInfo? _coordinateInfo;
@@ -72,10 +76,12 @@ public sealed class ExportDialog : WinFormsForm
     private CoordinateExportMode _coordinateMode = CoordinateExportMode.SharedCoordinates;
     private UnitSource _unitSource = UnitSource.Floors;
     private string _roomCategoryParameterName = "Name";
+    private LinkExportOptions _linkExportOptions = new();
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
         ExportDialogSettings settings,
+        IReadOnlyList<LinkSelectionItem>? availableLinks = null,
         IReadOnlyList<ExportProfile>? profiles = null,
         Action<ExportProfileScope, string, ExportDialogSettings>? saveProfileRequested = null,
         Action<ExportProfile, string>? renameProfileRequested = null,
@@ -97,10 +103,12 @@ public sealed class ExportDialog : WinFormsForm
         _viewItems = views
             .Select(view => new ViewSelectionItem(view))
             .ToList();
+        _availableLinks = (availableLinks ?? Array.Empty<LinkSelectionItem>()).ToList();
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
         _coordinateInfo = coordinateInfo;
         _coordinateMode = settings.CoordinateMode;
+        _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
         _saveProfileRequested = saveProfileRequested;
         _renameProfileRequested = renameProfileRequested;
         _deleteProfileRequested = deleteProfileRequested;
@@ -213,7 +221,7 @@ public sealed class ExportDialog : WinFormsForm
         {
             Dock = DockStyle.Top,
             ColumnCount = 1,
-            RowCount = 15,
+            RowCount = 17,
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             Padding = new Padding(10),
@@ -224,6 +232,8 @@ public sealed class ExportDialog : WinFormsForm
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 228f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 104f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 32f));
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 22f));
@@ -325,9 +335,35 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_roomCategoryParameterTextBox);
         panel.Controls.Add(featuresPanel, 0, 5);
 
+        _linkedModelsLabel.Dock = DockStyle.Fill;
+        _linkedModelsLabel.TextAlign = ContentAlignment.MiddleLeft;
+        panel.Controls.Add(_linkedModelsLabel, 0, 6);
+
+        TableLayoutPanel linkPanel = new()
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        linkPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
+        linkPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+        _includeLinkedModelsCheckBox.AutoSize = true;
+        _includeLinkedModelsCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateLinkSelectionState();
+        };
+        linkPanel.Controls.Add(_includeLinkedModelsCheckBox, 0, 0);
+
+        _linkList.Dock = DockStyle.Fill;
+        _linkList.CheckOnClick = true;
+        _linkList.HorizontalScrollbar = true;
+        _linkList.IntegralHeight = false;
+        linkPanel.Controls.Add(_linkList, 0, 1);
+        panel.Controls.Add(linkPanel, 0, 7);
+
         _outputDirectoryLabel.Dock = DockStyle.Fill;
         _outputDirectoryLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_outputDirectoryLabel, 0, 6);
+        panel.Controls.Add(_outputDirectoryLabel, 0, 8);
 
         TableLayoutPanel outputPanel = new()
         {
@@ -358,11 +394,11 @@ public sealed class ExportDialog : WinFormsForm
             }
         };
         outputPanel.Controls.Add(_browseButton, 1, 0);
-        panel.Controls.Add(outputPanel, 0, 7);
+        panel.Controls.Add(outputPanel, 0, 9);
 
         _crsLabel.Dock = DockStyle.Fill;
         _crsLabel.TextAlign = ContentAlignment.MiddleLeft;
-        panel.Controls.Add(_crsLabel, 0, 8);
+        panel.Controls.Add(_crsLabel, 0, 10);
 
         TableLayoutPanel crsPanel = new()
         {
@@ -391,7 +427,7 @@ public sealed class ExportDialog : WinFormsForm
 
         _targetEpsgTextBox.Dock = DockStyle.Fill;
         crsPanel.Controls.Add(_targetEpsgTextBox, 0, 1);
-        panel.Controls.Add(crsPanel, 0, 9);
+        panel.Controls.Add(crsPanel, 0, 11);
 
         Button mappingsButton = new()
         {
@@ -400,23 +436,23 @@ public sealed class ExportDialog : WinFormsForm
             Text = "Mappings...",
         };
         mappingsButton.Click += (_, _) => _openMappingsRequested?.Invoke();
-        panel.Controls.Add(mappingsButton, 0, 10);
+        panel.Controls.Add(mappingsButton, 0, 12);
 
         panel.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "Geometry Repair",
-        }, 0, 11);
-        panel.Controls.Add(BuildRepairPanel(), 0, 12);
+        }, 0, 13);
+        panel.Controls.Add(BuildRepairPanel(), 0, 14);
 
         panel.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
             Text = "Packaging",
-        }, 0, 13);
-        panel.Controls.Add(BuildPackagingPanel(), 0, 14);
+        }, 0, 15);
+        panel.Controls.Add(BuildPackagingPanel(), 0, 16);
 
         return _optionsGroup;
     }
@@ -605,6 +641,7 @@ public sealed class ExportDialog : WinFormsForm
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
         _unitSource = settings.UnitSource;
         _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
+        _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
         SelectUnitSource(_unitSource);
         _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
@@ -612,6 +649,7 @@ public sealed class ExportDialog : WinFormsForm
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
         _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
         LoadGeometryRepairOptions(settings.GeometryRepairOptions);
+        PopulateLinkList();
 
         _targetEpsgTextBox.Text = settings.TargetEpsg > 0
             ? settings.TargetEpsg.ToString()
@@ -646,7 +684,13 @@ public sealed class ExportDialog : WinFormsForm
         _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
         _unitSourceInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.UnitSource", "Unit Source");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
+        _linkedModelsLabel.Text = UiLanguageText.Get(_language, "ExportDialog.LinkedModels", "Linked Models");
+        _includeLinkedModelsCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLinkedModels", "Include selected linked models");
         _unitSourceComboBox.Refresh();
+        if (_availableLinks.Count == 0)
+        {
+            PopulateLinkList();
+        }
     }
     private void SelectLanguage(UiLanguage language)
     {
@@ -739,7 +783,8 @@ public sealed class ExportDialog : WinFormsForm
             _language,
             _coordinateMode,
             _unitSource,
-            _roomCategoryParameterName);
+            _roomCategoryParameterName,
+            BuildLinkExportOptions());
         DialogResult = DialogResult.OK;
         Close();
     }
@@ -787,6 +832,7 @@ public sealed class ExportDialog : WinFormsForm
             _coordinateInfo?.SurveyPointSharedCoordinates,
             _unitSource,
             _roomCategoryParameterName,
+            BuildLinkExportOptions(),
             _previewBasemapSettings.UrlTemplate,
             _previewBasemapSettings.Attribution));
     }
@@ -810,6 +856,58 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         return selected;
+    }
+
+    private void PopulateLinkList()
+    {
+        _linkList.Items.Clear();
+        if (_availableLinks.Count == 0)
+        {
+            _includeLinkedModelsCheckBox.Checked = false;
+            _includeLinkedModelsCheckBox.Enabled = false;
+            _linkList.Items.Add(UiLanguageText.Get(_language, "ExportDialog.NoLoadedLinks", "No loaded linked models found."));
+            _linkList.Enabled = false;
+            return;
+        }
+
+        _includeLinkedModelsCheckBox.Enabled = true;
+        HashSet<long> selectedLinkIds = new(_linkExportOptions.SelectedLinkInstanceIds ?? new List<long>());
+        foreach (LinkSelectionItem link in _availableLinks)
+        {
+            bool isSelected = _linkExportOptions.IncludeLinkedModels && selectedLinkIds.Contains(link.LinkInstanceId);
+            _linkList.Items.Add(link, isSelected);
+        }
+
+        _includeLinkedModelsCheckBox.Checked = _linkExportOptions.IncludeLinkedModels;
+        UpdateLinkSelectionState();
+    }
+
+    private void UpdateLinkSelectionState()
+    {
+        _linkList.Enabled = _availableLinks.Count > 0 && _includeLinkedModelsCheckBox.Checked;
+    }
+
+    private LinkExportOptions BuildLinkExportOptions()
+    {
+        if (_availableLinks.Count == 0 || !_includeLinkedModelsCheckBox.Checked)
+        {
+            return new LinkExportOptions();
+        }
+
+        List<long> selectedLinkIds = new();
+        foreach (object item in _linkList.CheckedItems)
+        {
+            if (item is LinkSelectionItem link)
+            {
+                selectedLinkIds.Add(link.LinkInstanceId);
+            }
+        }
+
+        return new LinkExportOptions
+        {
+            IncludeLinkedModels = true,
+            SelectedLinkInstanceIds = selectedLinkIds.Distinct().ToList(),
+        };
     }
 
     private ExportFeatureType GetSelectedFeatureTypes()
@@ -920,6 +1018,7 @@ public sealed class ExportDialog : WinFormsForm
             CoordinateMode = _coordinateMode,
             UnitSource = _unitSource,
             RoomCategoryParameterName = _roomCategoryParameterName,
+            LinkExportOptions = BuildLinkExportOptions(),
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
         };
@@ -975,20 +1074,18 @@ public sealed class ExportDialog : WinFormsForm
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
             _unitSource = settings.UnitSource;
-        _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
-        SelectUnitSource(_unitSource);
-        _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
-        _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
+            _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
+            _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+            SelectUnitSource(_unitSource);
+            _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
+            _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.Checked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
             _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
             LoadGeometryRepairOptions(settings.GeometryRepairOptions);
             SelectPresetIfAvailable(settings.TargetEpsg);
             SelectLanguage(settings.UiLanguage);
-            _unitSource = settings.UnitSource;
-            _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
-            SelectUnitSource(_unitSource);
-            _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
+            PopulateLinkList();
         }
         finally
         {

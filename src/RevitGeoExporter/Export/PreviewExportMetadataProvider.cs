@@ -9,7 +9,7 @@ namespace RevitGeoExporter.Export;
 
 public sealed class PreviewExportMetadataProvider : IExportMetadataProvider
 {
-    public string GetElementId(Element element, ICollection<string> warnings)
+    public ExportElementMetadata GetElementMetadata(Element element, ICollection<string> warnings)
     {
         if (element is null)
         {
@@ -21,25 +21,28 @@ public sealed class PreviewExportMetadataProvider : IExportMetadataProvider
             throw new ArgumentNullException(nameof(warnings));
         }
 
+        string sourceDocumentKey = DocumentProjectKeyBuilder.Create(element.Document);
+        string sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(element.Document);
         string? existing = GetOptionalStringParameter(element, SharedParameterManager.ImdfIdParameterName);
         if (existing != null)
         {
             string trimmedExisting = existing.Trim();
             if (trimmedExisting.Length > 0)
             {
-                return trimmedExisting;
+                return new ExportElementMetadata(trimmedExisting, sourceDocumentKey, sourceDocumentName, hasPersistedId: true);
             }
         }
 
         string generated = DeterministicIdGenerator.CreateGuid(
             "preview-element",
+            sourceDocumentKey,
             element.Id.Value.ToString(CultureInfo.InvariantCulture));
         warnings.Add(
-            $"Element {element.Id.Value} is missing '{SharedParameterManager.ImdfIdParameterName}'. Using transient preview ID '{generated}'.");
-        return generated;
+            $"Element {element.Id.Value} in '{sourceDocumentName}' is missing '{SharedParameterManager.ImdfIdParameterName}'. Using transient preview ID '{generated}'.");
+        return new ExportElementMetadata(generated, sourceDocumentKey, sourceDocumentName, hasPersistedId: false);
     }
 
-    public string GetLevelId(Level level, ICollection<string> warnings)
+    public ExportLevelMetadata GetLevelMetadata(Level level, ICollection<string> warnings)
     {
         if (level is null)
         {
@@ -57,7 +60,7 @@ public sealed class PreviewExportMetadataProvider : IExportMetadataProvider
             string trimmedExisting = existing.Trim();
             if (trimmedExisting.Length > 0)
             {
-                return trimmedExisting;
+                return new ExportLevelMetadata(trimmedExisting, hasPersistedId: true);
             }
         }
 
@@ -66,7 +69,7 @@ public sealed class PreviewExportMetadataProvider : IExportMetadataProvider
             level.Id.Value.ToString(CultureInfo.InvariantCulture));
         warnings.Add(
             $"Level {level.Id.Value} is missing '{SharedParameterManager.ImdfLevelIdParameterName}'. Using transient preview ID '{generated}'.");
-        return generated;
+        return new ExportLevelMetadata(generated, hasPersistedId: false);
     }
 
     public string? GetOptionalStringParameter(Element element, string parameterName)

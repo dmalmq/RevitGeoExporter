@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Validation;
 using Xunit;
@@ -120,6 +121,91 @@ public sealed class ExportValidationServiceTests
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsupportedOpeningFamily);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsnappedOpening);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsupportedOpeningFamily && issue.ActionKind == ValidationActionKind.ReviewOpeningFamilies);
+    }
+
+    [Fact]
+    public void Validate_ReturnsWarningForLinkedFallbackIdsWithoutNavigation()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: true,
+                includeDetails: false,
+                includeOpenings: false,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "Host View",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot(
+                                "unit",
+                                "fallback-1",
+                                "retail",
+                                501,
+                                hasGeometry: true,
+                                geometryValid: true,
+                                sourceDocumentKey: "LinkedModelA",
+                                sourceDocumentName: "Linked Model A",
+                                isLinkedSource: true,
+                                hasPersistedExportId: false),
+                        }),
+                }));
+
+        ValidationIssue issue = Assert.Single(result.Issues);
+        Assert.Equal(ValidationCode.LinkedElementUsingFallbackId, issue.Code);
+        Assert.Equal(ValidationSeverity.Warning, issue.Severity);
+        Assert.Equal("LinkedModelA", issue.SourceDocumentKey);
+        Assert.False(issue.CanNavigateInRevit);
+        Assert.Equal(ValidationActionKind.ReviewElementInRevit, issue.ActionKind);
+    }
+
+    [Fact]
+    public void Validate_DoesNotMarkLinkedUnsupportedOpeningsAsNavigable()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: false,
+                includeDetails: false,
+                includeOpenings: true,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "Host View",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot(
+                                "opening",
+                                "opening-1",
+                                "pedestrian",
+                                99,
+                                hasGeometry: true,
+                                geometryValid: true),
+                        },
+                        unsupportedOpenings: new[]
+                        {
+                            new UnsupportedOpeningFamilySnapshot(
+                                "Odd Door Family",
+                                12,
+                                sourceDocumentKey: "LinkedModelB",
+                                sourceDocumentName: "Linked Model B",
+                                canNavigateInRevit: false),
+                        }),
+                }));
+
+        ValidationIssue issue = Assert.Single(result.Issues.Where(x => x.Code == ValidationCode.UnsupportedOpeningFamily));
+        Assert.Equal(ValidationCode.UnsupportedOpeningFamily, issue.Code);
+        Assert.Equal("LinkedModelB", issue.SourceDocumentKey);
+        Assert.False(issue.CanNavigateInRevit);
     }
 
     [Fact]

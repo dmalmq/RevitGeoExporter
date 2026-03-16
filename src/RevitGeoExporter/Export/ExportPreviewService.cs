@@ -32,12 +32,14 @@ public sealed class ExportPreviewService
     private readonly GeometryRepairOptions _geometryRepairOptions;
     private readonly UnitSource _unitSource;
     private readonly string _roomCategoryParameterName;
+    private readonly LinkExportOptions _linkExportOptions;
 
     public ExportPreviewService(
         Document document,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
-        GeometryRepairOptions? geometryRepairOptions = null)
+        GeometryRepairOptions? geometryRepairOptions = null,
+        LinkExportOptions? linkExportOptions = null)
     {
         if (document is null)
         {
@@ -76,6 +78,7 @@ public sealed class ExportPreviewService
             ? new RoomCategoryResolver(zoneCatalog).SupportedCategories
             : new FloorCategoryResolver(zoneCatalog).SupportedCategories;
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        _linkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -151,6 +154,7 @@ public sealed class ExportPreviewService
                 GeometryRepairOptions = _geometryRepairOptions,
                 UnitSource = _unitSource,
                 RoomCategoryParameterName = _roomCategoryParameterName,
+                LinkExportOptions = _linkExportOptions,
             });
         List<PreviewFeatureData> features = new();
 

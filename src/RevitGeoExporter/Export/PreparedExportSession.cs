@@ -21,13 +21,16 @@ public sealed class PreparedExportSession
         ExportPackageOptions packageOptions,
         string? profileName,
         string baselineKey,
+        string sourceDocumentKey,
         string sourceModelName,
         CoordinateExportMode coordinateMode,
         int? sourceEpsg,
         string? sourceCoordinateSystemId,
         string? sourceCoordinateSystemDefinition,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions,
+        IReadOnlyList<LinkedModelSummary>? includedLinks)
     {
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
             ? throw new ArgumentException("An output directory is required.", nameof(outputDirectory))
@@ -43,6 +46,9 @@ public sealed class PreparedExportSession
         PackageOptions = packageOptions ?? throw new ArgumentNullException(nameof(packageOptions));
         ProfileName = string.IsNullOrWhiteSpace(profileName) ? null : profileName.Trim();
         BaselineKey = string.IsNullOrWhiteSpace(baselineKey) ? throw new ArgumentException("A baseline key is required.", nameof(baselineKey)) : baselineKey.Trim();
+        SourceDocumentKey = string.IsNullOrWhiteSpace(sourceDocumentKey)
+            ? throw new ArgumentException("A source document key is required.", nameof(sourceDocumentKey))
+            : sourceDocumentKey.Trim();
         SourceModelName = string.IsNullOrWhiteSpace(sourceModelName) ? "Model" : sourceModelName.Trim();
         CoordinateMode = coordinateMode;
         SourceEpsg = sourceEpsg;
@@ -53,6 +59,8 @@ public sealed class PreparedExportSession
             : targetEpsg;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        IncludedLinks = includedLinks ?? Array.Empty<LinkedModelSummary>();
     }
 
     public string OutputDirectory { get; }
@@ -79,6 +87,8 @@ public sealed class PreparedExportSession
 
     public string BaselineKey { get; }
 
+    public string SourceDocumentKey { get; }
+
     public string SourceModelName { get; }
 
     public CoordinateExportMode CoordinateMode { get; }
@@ -94,4 +104,8 @@ public sealed class PreparedExportSession
     public UnitSource UnitSource { get; }
 
     public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
+
+    public IReadOnlyList<LinkedModelSummary> IncludedLinks { get; }
 }

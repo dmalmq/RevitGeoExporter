@@ -21,7 +21,8 @@ public sealed class ExportDialogResult
         string? selectedProfileName,
         UiLanguage uiLanguage,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions = null)
         : this(
             selectedViews,
             outputDirectory,
@@ -35,7 +36,8 @@ public sealed class ExportDialogResult
             uiLanguage,
             CoordinateExportMode.SharedCoordinates,
             unitSource,
-            roomCategoryParameterName)
+            roomCategoryParameterName,
+            linkExportOptions)
     {
     }
 
@@ -52,7 +54,8 @@ public sealed class ExportDialogResult
         UiLanguage uiLanguage,
         CoordinateExportMode coordinateMode,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions = null)
     {
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
@@ -67,6 +70,7 @@ public sealed class ExportDialogResult
         CoordinateMode = coordinateMode;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -94,4 +98,6 @@ public sealed class ExportDialogResult
     public UnitSource UnitSource { get; }
 
     public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
 }

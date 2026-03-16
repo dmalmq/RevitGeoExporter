@@ -57,6 +57,7 @@ public sealed class SettingsDialog : Form
             UiLanguage = _language,
             UnitSource = _original.UnitSource,
             RoomCategoryParameterName = _original.RoomCategoryParameterName,
+            LinkExportOptions = _original.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
         };
     }
 

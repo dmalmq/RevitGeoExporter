@@ -51,6 +51,13 @@ public sealed class ExportDiagnosticsReportBuilder
             Views = views,
             ValidationIssues = validationResult.Issues.ToList(),
             ExportWarnings = exportResult.Warnings.ToList(),
+            IncludedLinks = session.IncludedLinks
+                .Select(link => ExportLinkedModelInfo.Create(
+                    link.LinkInstanceId,
+                    link.LinkInstanceName,
+                    link.SourceDocumentKey,
+                    link.SourceDocumentName))
+                .ToList(),
             OutputFiles = exportResult.ViewResults
                 .Select(result => new ExportDiagnosticsOutputFile
                 {
@@ -73,6 +80,7 @@ public sealed class ExportDiagnosticsReportBuilder
             ViewName = context.View.Name,
             LevelName = context.Level.Name,
             UnsupportedOpeningFamilies = context.UnsupportedOpenings
+                .Concat(context.LinkedSources.SelectMany(source => source.UnsupportedOpenings))
                 .GroupBy(opening => OpeningFamilyClassifier.GetFamilyName(opening), StringComparer.OrdinalIgnoreCase)
                 .Select(group => new ExportDiagnosticsFamilyOccurrence
                 {

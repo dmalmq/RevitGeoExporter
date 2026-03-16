@@ -115,19 +115,25 @@ public sealed class ExportValidationForm : IDisposable
         {
             Header = T("Validation.Column.FeatureType", "Feature Type"),
             Binding = new Binding(nameof(ValidationRow.FeatureType)),
-            Width = new DataGridLength(0.12, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.1, DataGridLengthUnitType.Star),
+        });
+        _grid.Columns.Add(new DataGridTextColumn
+        {
+            Header = T("Validation.Column.SourceDocument", "Source Document"),
+            Binding = new Binding(nameof(ValidationRow.SourceDocumentKey)),
+            Width = new DataGridLength(0.16, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.Message", "Message"),
             Binding = new Binding(nameof(ValidationRow.Message)),
-            Width = new DataGridLength(0.28, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.24, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.RecommendedAction", "Recommended Action"),
             Binding = new Binding(nameof(ValidationRow.RecommendedAction)),
-            Width = new DataGridLength(0.22, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.18, DataGridLengthUnitType.Star),
         });
 
         Grid.SetRow(_grid, 1);
@@ -227,6 +233,7 @@ public sealed class ExportValidationForm : IDisposable
             Code = issue.Code.ToString(),
             View = issue.ViewName ?? string.Empty,
             FeatureType = issue.FeatureType ?? string.Empty,
+            SourceDocumentKey = issue.SourceDocumentKey ?? string.Empty,
             Message = issue.Message,
             RecommendedAction = issue.RecommendedAction ?? string.Empty,
         }).ToList();
@@ -292,6 +299,7 @@ public sealed class ExportValidationForm : IDisposable
         public string Code { get; init; } = string.Empty;
         public string View { get; init; } = string.Empty;
         public string FeatureType { get; init; } = string.Empty;
+        public string SourceDocumentKey { get; init; } = string.Empty;
         public string Message { get; init; } = string.Empty;
         public string RecommendedAction { get; init; } = string.Empty;
     }

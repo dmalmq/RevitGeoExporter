@@ -23,6 +23,7 @@ public sealed class ExportPreviewRequest
         Point2D? surveyPointSharedCoordinates,
         UnitSource unitSource,
         string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions,
         string? previewBasemapUrlTemplate,
         string? previewBasemapAttribution)
     {
@@ -38,6 +39,7 @@ public sealed class ExportPreviewRequest
         SurveyPointSharedCoordinates = surveyPointSharedCoordinates;
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         PreviewBasemapUrlTemplate = string.IsNullOrWhiteSpace(previewBasemapUrlTemplate)
             ? PreviewBasemapSettings.DefaultUrlTemplate
             : previewBasemapUrlTemplate.Trim();
@@ -69,6 +71,8 @@ public sealed class ExportPreviewRequest
     public UnitSource UnitSource { get; }
 
     public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
 
     public string PreviewBasemapUrlTemplate { get; }
 

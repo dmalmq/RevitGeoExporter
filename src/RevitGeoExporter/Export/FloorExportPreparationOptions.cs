@@ -22,5 +22,7 @@ public sealed class FloorExportPreparationOptions
 
     public string RoomCategoryParameterName { get; set; } = "Name";
 
+    public LinkExportOptions LinkExportOptions { get; set; } = new();
+
     internal IReadOnlyList<ViewExportContext>? ViewContexts { get; set; }
 }
