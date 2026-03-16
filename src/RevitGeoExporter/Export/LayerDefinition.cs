@@ -1,16 +1,20 @@
+using System.Collections.Generic;
+using System.Linq;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 
 namespace RevitGeoExporter.Export;
 
 public static class LayerDefinition
 {
-    public static ExportLayer CreateUnitLayer()
+    public static ExportLayer CreateUnitLayer(SchemaProfile? schemaProfile = null, System.Collections.Generic.ICollection<string>? warnings = null)
     {
-        return new ExportLayer(
-            name: "unit",
-            geometryType: GpkgGeometryType.MultiPolygon,
-            attributes: new[]
+        return CreateLayer(
+            "unit",
+            GpkgGeometryType.MultiPolygon,
+            SchemaLayerType.Unit,
+            new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
                 new AttributeDefinition("category", ExportAttributeType.Text),
@@ -20,47 +24,75 @@ public static class LayerDefinition
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("source", ExportAttributeType.Text),
                 new AttributeDefinition("display_point", ExportAttributeType.Text),
-            });
+            },
+            schemaProfile,
+            warnings);
     }
 
-    public static ExportLayer CreateDetailLayer()
+    public static ExportLayer CreateDetailLayer(SchemaProfile? schemaProfile = null, System.Collections.Generic.ICollection<string>? warnings = null)
     {
-        return new ExportLayer(
-            name: "detail",
-            geometryType: GpkgGeometryType.LineString,
-            attributes: new[]
+        return CreateLayer(
+            "detail",
+            GpkgGeometryType.LineString,
+            SchemaLayerType.Detail,
+            new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("element_id", ExportAttributeType.Integer),
-            });
+            },
+            schemaProfile,
+            warnings);
     }
 
-    public static ExportLayer CreateOpeningLayer()
+    public static ExportLayer CreateOpeningLayer(SchemaProfile? schemaProfile = null, System.Collections.Generic.ICollection<string>? warnings = null)
     {
-        return new ExportLayer(
-            name: "opening",
-            geometryType: GpkgGeometryType.LineString,
-            attributes: new[]
+        return CreateLayer(
+            "opening",
+            GpkgGeometryType.LineString,
+            SchemaLayerType.Opening,
+            new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
                 new AttributeDefinition("category", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("element_id", ExportAttributeType.Integer),
-            });
+            },
+            schemaProfile,
+            warnings);
     }
 
-    public static ExportLayer CreateLevelLayer()
+    public static ExportLayer CreateLevelLayer(SchemaProfile? schemaProfile = null, System.Collections.Generic.ICollection<string>? warnings = null)
     {
-        return new ExportLayer(
-            name: "level",
-            geometryType: GpkgGeometryType.MultiPolygon,
-            attributes: new[]
+        return CreateLayer(
+            "level",
+            GpkgGeometryType.MultiPolygon,
+            SchemaLayerType.Level,
+            new[]
             {
                 new AttributeDefinition("id", ExportAttributeType.Text),
                 new AttributeDefinition("level_name", ExportAttributeType.Text),
                 new AttributeDefinition("ordinal", ExportAttributeType.Integer),
                 new AttributeDefinition("elevation_m", ExportAttributeType.Real),
-            });
+            },
+            schemaProfile,
+            warnings);
+    }
+
+    private static ExportLayer CreateLayer(
+        string name,
+        GpkgGeometryType geometryType,
+        SchemaLayerType layerType,
+        IReadOnlyList<AttributeDefinition> coreAttributes,
+        SchemaProfile? schemaProfile,
+        System.Collections.Generic.ICollection<string>? warnings)
+    {
+        System.Collections.Generic.List<AttributeDefinition> attributes = new(coreAttributes);
+        attributes.AddRange(SchemaAttributeMapper.BuildAttributeDefinitions(
+            schemaProfile,
+            layerType,
+            coreAttributes.Select(attribute => attribute.Name),
+            warnings));
+        return new ExportLayer(name, geometryType, attributes);
     }
 }

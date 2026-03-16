@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 
 namespace RevitGeoExporter.UI;
 
@@ -35,8 +38,13 @@ public sealed class ExportProfile
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
 
+    public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
+
+    public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;
+
     public ExportDialogSettings ToSettings()
     {
+        List<SchemaProfile> schemaProfiles = CloneSchemaProfiles(SchemaProfiles);
         return new ExportDialogSettings
         {
             OutputDirectory = OutputDirectory,
@@ -51,6 +59,8 @@ public sealed class ExportProfile
             UnitSource = UnitSource,
             RoomCategoryParameterName = RoomCategoryParameterName,
             LinkExportOptions = LinkExportOptions?.Clone() ?? new LinkExportOptions(),
+            SchemaProfiles = schemaProfiles,
+            ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, ActiveSchemaProfileName),
         };
     }
 
@@ -60,6 +70,8 @@ public sealed class ExportProfile
         {
             throw new ArgumentNullException(nameof(settings));
         }
+
+        List<SchemaProfile> schemaProfiles = CloneSchemaProfiles(settings.SchemaProfiles);
 
         return new ExportProfile
         {
@@ -77,6 +89,15 @@ public sealed class ExportProfile
             UnitSource = settings.UnitSource,
             RoomCategoryParameterName = settings.RoomCategoryParameterName?.Trim() ?? "Name",
             LinkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions(),
+            SchemaProfiles = schemaProfiles,
+            ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, settings.ActiveSchemaProfileName),
         };
+    }
+
+    private static List<SchemaProfile> CloneSchemaProfiles(IEnumerable<SchemaProfile>? schemaProfiles)
+    {
+        return SchemaProfile.NormalizeProfiles(schemaProfiles)
+            .Select(profile => profile.Clone())
+            .ToList();
     }
 }

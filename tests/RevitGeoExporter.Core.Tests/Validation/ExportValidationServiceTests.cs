@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Validation;
 using Xunit;
 
@@ -145,7 +146,7 @@ public sealed class ExportValidationServiceTests
                             new ExportFeatureValidationSnapshot(
                                 "unit",
                                 "fallback-1",
-                                "retail",
+                                "room",
                                 501,
                                 hasGeometry: true,
                                 geometryValid: true,
@@ -202,10 +203,55 @@ public sealed class ExportValidationServiceTests
                         }),
                 }));
 
-        ValidationIssue issue = Assert.Single(result.Issues.Where(x => x.Code == ValidationCode.UnsupportedOpeningFamily));
+        ValidationIssue issue = Assert.Single(result.Issues, x => x.Code == ValidationCode.UnsupportedOpeningFamily);
         Assert.Equal(ValidationCode.UnsupportedOpeningFamily, issue.Code);
         Assert.Equal("LinkedModelB", issue.SourceDocumentKey);
         Assert.False(issue.CanNavigateInRevit);
+    }
+
+    [Fact]
+    public void Validate_ReturnsWarningsForSchemaMappingIssues()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: true,
+                includeDetails: false,
+                includeOpenings: false,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "View A",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot(
+                                "unit",
+                                "unit-1",
+                                "walkway",
+                                88,
+                                hasGeometry: true,
+                                geometryValid: true,
+                                schemaIssues: new[]
+                                {
+                                    new SchemaAttributeIssue(
+                                        SchemaAttributeIssueCode.MissingMappedParameter,
+                                        "client_code",
+                                        "Schema field 'client_code' on unit element 88 could not resolve its mapped source. Revit parameter 'Client Code' was not found on element 88. Null was written instead."),
+                                    new SchemaAttributeIssue(
+                                        SchemaAttributeIssueCode.TypeConversionFailed,
+                                        "suite_count",
+                                        "Schema field 'suite_count' on unit element 88 could not convert source value 'abc' to Integer. Value 'abc' could not be converted to an integer."),
+                                }),
+                        }),
+                }));
+
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingSchemaMappedParameter);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.SchemaTypeConversionFailed);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingSchemaMappedParameter && issue.ActionKind == ValidationActionKind.ReviewElementInRevit);
     }
 
     [Fact]

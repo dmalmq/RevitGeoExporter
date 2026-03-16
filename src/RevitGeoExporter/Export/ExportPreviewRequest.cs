@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.UI;
 
 namespace RevitGeoExporter.Export;
@@ -24,6 +25,7 @@ public sealed class ExportPreviewRequest
         UnitSource unitSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions,
+        SchemaProfile? activeSchemaProfile,
         string? previewBasemapUrlTemplate,
         string? previewBasemapAttribution)
     {
@@ -40,6 +42,7 @@ public sealed class ExportPreviewRequest
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         PreviewBasemapUrlTemplate = string.IsNullOrWhiteSpace(previewBasemapUrlTemplate)
             ? PreviewBasemapSettings.DefaultUrlTemplate
             : previewBasemapUrlTemplate.Trim();
@@ -73,6 +76,8 @@ public sealed class ExportPreviewRequest
     public string RoomCategoryParameterName { get; }
 
     public LinkExportOptions LinkExportOptions { get; }
+
+    public SchemaProfile ActiveSchemaProfile { get; }
 
     public string PreviewBasemapUrlTemplate { get; }
 

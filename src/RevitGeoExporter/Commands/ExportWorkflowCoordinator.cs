@@ -78,7 +78,8 @@ internal sealed class ExportWorkflowCoordinator
             previewRequest.UnitSource,
             previewRequest.RoomCategoryParameterName,
             previewRequest.GeometryRepairOptions,
-            previewRequest.LinkExportOptions);
+            previewRequest.LinkExportOptions,
+            previewRequest.ActiveSchemaProfile);
 
         if (_useWpfPreviewWindow)
         {
@@ -129,7 +130,8 @@ internal sealed class ExportWorkflowCoordinator
                     coordinateInfo.SiteCoordinateSystemDefinition,
                     request.UnitSource,
                     request.RoomCategoryParameterName,
-                    request.LinkExportOptions);
+                    request.LinkExportOptions,
+                    request.ActiveSchemaProfile);
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
                 validationResult = validationService.Validate(validationRequest);

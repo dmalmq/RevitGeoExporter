@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 
 namespace RevitGeoExporter.Export;
 
@@ -23,6 +24,8 @@ public sealed class FloorExportPreparationOptions
     public string RoomCategoryParameterName { get; set; } = "Name";
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
+
+    public SchemaProfile ActiveSchemaProfile { get; set; } = SchemaProfile.CreateCoreProfile();
 
     internal IReadOnlyList<ViewExportContext>? ViewContexts { get; set; }
 }

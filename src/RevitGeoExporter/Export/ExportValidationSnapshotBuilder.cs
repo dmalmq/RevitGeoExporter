@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.Export;
@@ -123,7 +124,8 @@ public sealed class ExportValidationSnapshotBuilder
             ReadString(feature.Attributes, "source_document_key"),
             ReadString(feature.Attributes, "source_document_name"),
             ReadBool(feature.Attributes, "is_linked_source"),
-            ReadBool(feature.Attributes, "has_persisted_export_id", defaultValue: true));
+            ReadBool(feature.Attributes, "has_persisted_export_id", defaultValue: true),
+            ReadSchemaIssues(feature.Attributes));
     }
 
     private int CountSourceFamilyUnits(IReadOnlyList<FamilyInstance> familyUnits, string category)
@@ -220,5 +222,25 @@ public sealed class ExportValidationSnapshotBuilder
             string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
             _ => null,
         };
+    }
+
+    private static IReadOnlyList<SchemaAttributeIssue> ReadSchemaIssues(IReadOnlyDictionary<string, object?> attributes)
+    {
+        if (!attributes.TryGetValue(SchemaAttributeMapper.SchemaIssuesAttributeName, out object? value) || value == null)
+        {
+            return Array.Empty<SchemaAttributeIssue>();
+        }
+
+        if (value is IReadOnlyList<SchemaAttributeIssue> readOnlyIssues)
+        {
+            return readOnlyIssues;
+        }
+
+        if (value is IEnumerable<SchemaAttributeIssue> issueEnumerable)
+        {
+            return issueEnumerable.ToList();
+        }
+
+        return Array.Empty<SchemaAttributeIssue>();
     }
 }
