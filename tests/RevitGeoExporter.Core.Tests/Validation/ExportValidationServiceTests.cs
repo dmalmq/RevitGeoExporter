@@ -41,6 +41,12 @@ public sealed class ExportValidationServiceTests
         ValidationIssue issue = Assert.Single(result.Issues);
         Assert.Equal(ValidationCode.UnassignedFloorCategory, issue.Code);
         Assert.Equal(ValidationSeverity.Warning, issue.Severity);
+        Assert.Equal(ValidationActionKind.ResolveMappings, issue.ActionKind);
+        Assert.Equal(101, issue.SourceElementId);
+        Assert.Equal(1, issue.OwningViewId);
+        Assert.Equal("TestModel", issue.SourceDocumentKey);
+        Assert.True(issue.CanNavigateInRevit);
+        Assert.False(string.IsNullOrWhiteSpace(issue.RecommendedAction));
     }
 
     [Fact]
@@ -78,6 +84,8 @@ public sealed class ExportValidationServiceTests
         Assert.True(result.HasErrors);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingStableId);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.DuplicateStableId);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingStableId && issue.ActionKind == ValidationActionKind.RegenerateStableIds);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.DuplicateStableId && issue.CanNavigateInRevit);
     }
 
     [Fact]
@@ -111,6 +119,7 @@ public sealed class ExportValidationServiceTests
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.EmptyGeometry);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsupportedOpeningFamily);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsnappedOpening);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.UnsupportedOpeningFamily && issue.ActionKind == ValidationActionKind.ReviewOpeningFamilies);
     }
 
     [Fact]
@@ -146,6 +155,7 @@ public sealed class ExportValidationServiceTests
 
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.EmptyViewOutput);
         Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingVerticalCirculation);
+        Assert.Contains(result.Issues, issue => issue.Code == ValidationCode.MissingVerticalCirculation && issue.ActionKind == ValidationActionKind.ReviewVerticalCirculation);
     }
 
     [Fact]
@@ -164,6 +174,8 @@ public sealed class ExportValidationServiceTests
         ValidationIssue issue = Assert.Single(result.Issues);
         Assert.Equal(ValidationCode.InvalidTargetEpsg, issue.Code);
         Assert.True(result.HasErrors);
+        Assert.Equal(ValidationActionKind.ReviewExportSettings, issue.ActionKind);
+        Assert.False(issue.CanNavigateInRevit);
     }
 
     private static ExportValidationRequest CreateRequest(
@@ -182,6 +194,7 @@ public sealed class ExportValidationServiceTests
             includeLevels,
             views,
             UnitSource.Floors,
-            "Name");
+            "Name",
+            "TestModel");
     }
 }

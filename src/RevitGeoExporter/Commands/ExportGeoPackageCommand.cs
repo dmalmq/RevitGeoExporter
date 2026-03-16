@@ -59,6 +59,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
         bool useWpfPreviewWindow = !forceLegacyWinForms;
         ExportWorkflowCoordinator workflow = new(
             document,
+            uiDocument,
             projectKey,
             availableFloorTypeNames,
             profileStore,

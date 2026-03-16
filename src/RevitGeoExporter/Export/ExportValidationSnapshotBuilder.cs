@@ -60,7 +60,8 @@ public sealed class ExportValidationSnapshotBuilder
             session.FeatureTypes.HasFlag(ExportFeatureType.Level),
             views,
             session.UnitSource,
-            session.RoomCategoryParameterName);
+            session.RoomCategoryParameterName,
+            session.SourceModelName);
     }
 
     private static void AddLayerFeatures(
@@ -102,7 +103,10 @@ public sealed class ExportValidationSnapshotBuilder
             ReadString(feature.Attributes, "assignment_mapping_key") ?? ReadString(feature.Attributes, "source_floor_type_name"),
             ReadString(feature.Attributes, "assignment_source_kind"),
             ReadString(feature.Attributes, "assignment_parameter_name"),
-            ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true));
+            ReadBool(feature.Attributes, "is_snapped_to_outline", defaultValue: true),
+            ReadString(feature.Attributes, "assignment_parsed_candidate"),
+            ReadString(feature.Attributes, "name"),
+            ReadString(feature.Attributes, "alt_name"));
     }
 
     private int CountSourceFamilyUnits(IReadOnlyList<FamilyInstance> familyUnits, string category)

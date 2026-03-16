@@ -12,7 +12,12 @@ public sealed class ValidationIssue
         string? levelName = null,
         string? featureType = null,
         string? category = null,
-        long? sourceElementId = null)
+        long? sourceElementId = null,
+        long? owningViewId = null,
+        string? sourceDocumentKey = null,
+        ValidationActionKind actionKind = ValidationActionKind.None,
+        string? recommendedAction = null,
+        bool? canNavigateInRevit = null)
     {
         Severity = severity;
         Code = code;
@@ -24,6 +29,11 @@ public sealed class ValidationIssue
         FeatureType = Normalize(featureType);
         Category = Normalize(category);
         SourceElementId = sourceElementId;
+        OwningViewId = owningViewId;
+        SourceDocumentKey = Normalize(sourceDocumentKey);
+        ActionKind = actionKind;
+        RecommendedAction = Normalize(recommendedAction);
+        CanNavigateInRevit = canNavigateInRevit ?? (sourceElementId.HasValue || owningViewId.HasValue);
     }
 
     public ValidationSeverity Severity { get; }
@@ -41,6 +51,16 @@ public sealed class ValidationIssue
     public string? Category { get; }
 
     public long? SourceElementId { get; }
+
+    public long? OwningViewId { get; }
+
+    public string? SourceDocumentKey { get; }
+
+    public ValidationActionKind ActionKind { get; }
+
+    public string? RecommendedAction { get; }
+
+    public bool CanNavigateInRevit { get; }
 
     private static string? Normalize(string? value)
     {
