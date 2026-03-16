@@ -61,6 +61,20 @@ public sealed class ExportDialogResult
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null)
     {
+        string? normalizedSelectedProfileName = selectedProfileName?.Trim();
+        string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
+        GeometryRepairOptions normalizedGeometryRepairOptions = geometryRepairOptions ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+
+        if (string.IsNullOrEmpty(normalizedSelectedProfileName))
+        {
+            normalizedSelectedProfileName = null;
+        }
+
+        if (normalizedRoomCategoryParameterName.Length == 0)
+        {
+            normalizedRoomCategoryParameterName = "Name";
+        }
+
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
         TargetEpsg = targetEpsg;
@@ -68,12 +82,12 @@ public sealed class ExportDialogResult
         GenerateDiagnosticsReport = generateDiagnosticsReport;
         GeneratePackageOutput = generatePackageOutput;
         IncludePackageLegend = includePackageLegend;
-        GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
-        SelectedProfileName = string.IsNullOrWhiteSpace(selectedProfileName) ? null : selectedProfileName.Trim();
+        GeometryRepairOptions = normalizedGeometryRepairOptions.Clone();
+        SelectedProfileName = normalizedSelectedProfileName;
         UiLanguage = uiLanguage;
         CoordinateMode = coordinateMode;
         UnitSource = unitSource;
-        RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        RoomCategoryParameterName = normalizedRoomCategoryParameterName;
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }

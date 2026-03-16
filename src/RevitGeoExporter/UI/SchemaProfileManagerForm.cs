@@ -372,9 +372,10 @@ public sealed class SchemaProfileManagerForm : Form
 
     private string BuildUniqueProfileName(string? proposedName, int? currentIndex)
     {
-        string baseName = string.IsNullOrWhiteSpace(proposedName)
+        string? trimmedProposedName = proposedName?.Trim();
+        string baseName = string.IsNullOrWhiteSpace(trimmedProposedName)
             ? T("Schema", "スキーマ")
-            : proposedName.Trim();
+            : trimmedProposedName!;
 
         HashSet<string> existingNames = new(
             _profiles
