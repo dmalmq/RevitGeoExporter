@@ -2,9 +2,17 @@
 
 RevitGeoExporter is a Revit 2024 add-in that turns selected floor and ceiling plan views into IMDF-style GeoPackage files for indoor mapping workflows.
 
-It is intended for teams that already model indoor spaces in Revit and need a repeatable way to extract units, circulation, openings, and level geometry into GIS-friendly deliverables.
+<p>
+A native Revit add-in that turns floor and ceiling plan views into georeferenced GeoPackage files<br />
+for indoor mapping, digital twin, and navigation workflows.<br />
+Built for teams that model indoor spaces in Revit and need a repeatable path to GIS-ready deliverables.
+</p>
 
-At a glance, the add-in:
+<p>
+  <img src="https://img.shields.io/badge/Platform-Revit_2024-0f766e?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Output-GeoPackage-0284c7?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Schema-IMDF--Style-0891b2?style=for-the-badge" />
+</p>
 
 - Exports selected Revit plan views into `_unit`, `_detail`, `_opening`, and `_level` GeoPackages.
 - Includes a guided export dialog with output, feature, coordinate, and advanced sections.
@@ -15,39 +23,25 @@ At a glance, the add-in:
 
 ## What the add-in does
 
-- Adds a `GeoExporter` ribbon tab in Revit with:
-  - `Export GeoPackage`
-  - `Help`
-- Lets the user select one or more floor or ceiling plan views to export.
-- Opens the settings hub from the export workflow for global defaults, project mappings, accepted opening families, and export profiles.
-- Exports one GeoPackage per selected view and feature type:
-  - `_unit`
-  - `_detail`
-  - `_opening`
-  - `_level`
-- Supports configurable shared-coordinate export or conversion to a target CRS / EPSG.
-- Preserves stable IMDF IDs during export by using shared parameters in the Revit model.
+---
 
-## Preview workflow
+## About
 
-The export dialog includes a full preview workflow before export.
+RevitGeoExporter extracts units, circulation, openings, and level geometry from Revit plan views and writes them into individual GeoPackage files with full IMDF-style attribution. It handles coordinate transforms, stable ID persistence, and category resolution so the exported data is ready for downstream GIS and indoor navigation systems without manual conversion steps.
 
-The preview can:
+The add-in is designed around Japanese rail station and commercial complex workflows but works with any Revit model that uses floor and ceiling plan views.
 
-- Show the selected view before export.
-- Toggle `Units`, `Openings`, `Details`, `Levels`, and vertical circulation layers.
-- Color-code unit categories.
-- Search by feature name, category, or export ID.
-- Filter warnings, overrides, unassigned content, and vertical circulation types like `stairs`, `escalators`, and `elevators`.
-- Pan, zoom, fit, reset, and inspect feature metadata.
-- Show warnings, assignments, and selected-feature details in a dedicated inspector.
-- List floor-derived units that fell back to `unspecified`.
-- Let the user assign a category to those unassigned floor types before export.
-- Optionally show a basemap and survey point when the current preview context supports them.
+---
 
-Floor category assignments are stored as project-specific exporter overrides. They are not written back into Revit floor names or parameters.
+## Features
 
-## Typical export flow
+- **Plan view export** — select one or more floor or ceiling plan views and export `_unit`, `_detail`, `_opening`, and `_level` GeoPackages per view
+- **Interactive preview** — inspect geometry, toggle layers, color-code categories, search features, and resolve unassigned floor types before writing files
+- **Stable IMDF IDs** — auto-generated UUIDs stored as Revit shared parameters and preserved across exports
+- **Coordinate system support** — shared coordinates, configurable target CRS / EPSG, and a built-in Japan Plane Rectangular zone catalog
+- **Validation & diagnostics** — pre-export checks for duplicate IDs, empty views, and vertical circulation audits, plus JSON diagnostics output
+- **Settings hub** — global defaults, project-specific zone mappings, accepted opening families, and reusable export profiles
+- **Bilingual help** — embedded offline help viewer with English and Japanese content
 
 1. Open a supported plan view model in Revit 2024.
 2. Start `GeoExporter > Export GeoPackage`.
@@ -95,8 +89,8 @@ pwsh ./install/build-installer.ps1
 
 ## Current scope
 
-The add-in currently targets Revit 2024 and focuses on plan-view export. The preview-side floor assignment workflow is limited to floor-derived units; it does not rename Revit types or write category overrides back into the model. The built-in help content is offline and embedded with the add-in for English and Japanese workflows.
+<div align="center">
 
-## UI modernization roadmap
+Revit plan views → georeferenced GeoPackage → indoor mapping & navigation
 
-- The main export, preview, and help experiences now use the newer WPF shell. See [docs/wpf-migration-plan.md](docs/wpf-migration-plan.md) for the remaining incremental WinForms-to-WPF migration plan across the rest of the repository.
+</div>
