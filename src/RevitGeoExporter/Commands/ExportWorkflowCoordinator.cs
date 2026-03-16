@@ -22,6 +22,7 @@ namespace RevitGeoExporter.Commands;
 internal sealed class ExportWorkflowCoordinator
 {
     private readonly Document _document;
+    private readonly UIDocument? _uiDocument;
     private readonly string _projectKey;
     private readonly IReadOnlyList<string> _availableFloorTypeNames;
     private readonly ExportProfileStore _profileStore;
@@ -29,12 +30,14 @@ internal sealed class ExportWorkflowCoordinator
 
     public ExportWorkflowCoordinator(
         Document document,
+        UIDocument? uiDocument,
         string projectKey,
         IReadOnlyList<string> availableFloorTypeNames,
         ExportProfileStore profileStore,
         bool useWpfPreviewWindow)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
+        _uiDocument = uiDocument;
         _projectKey = string.IsNullOrWhiteSpace(projectKey)
             ? throw new ArgumentException("A project key is required.", nameof(projectKey))
             : projectKey.Trim();
@@ -128,11 +131,46 @@ internal sealed class ExportWorkflowCoordinator
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
                 validationResult = validationService.Validate(validationRequest);
+                SharedCoordinateValidationResult coordinateValidation = new SharedCoordinateValidator().Validate(_document);
+                ExportReadinessSummary readinessSummary = new ExportReadinessSummaryBuilder().Build(
+                    validationRequest,
+                    validationResult,
+                    ZoneCatalog.CreateDefault());
+                bool canResolveIssues = ValidationIssueResolutionForm.HasResolvableIssues(validationRequest);
+
+                using ExportReadinessForm readinessForm = new(
+                    readinessSummary,
+                    coordinateValidation,
+                    request.UiLanguage,
+                    canResolveIssues);
+                _ = readinessForm.ShowDialog();
+
+                if (readinessForm.Outcome == ExportReadinessOutcome.ResolveIssues)
+                {
+                    if (!TryResolveValidationIssues(validationRequest, request.UiLanguage))
+                    {
+                        continue;
+                    }
+
+                    continue;
+                }
+
+                if (readinessForm.Outcome == ExportReadinessOutcome.OpenMappings)
+                {
+                    OpenMappings();
+                    continue;
+                }
+
+                if (readinessForm.Outcome != ExportReadinessOutcome.ContinueToValidation)
+                {
+                    return Result.Cancelled;
+                }
 
                 using ExportValidationForm validationForm = new(
                     validationResult,
                     request.UiLanguage,
-                    ValidationIssueResolutionForm.HasResolvableIssues(validationRequest));
+                    canResolveIssues,
+                    NavigateToValidationIssue);
                 _ = validationForm.ShowDialog();
 
                 if (validationForm.Outcome == ExportValidationOutcome.ResolveIssues)
@@ -420,5 +458,54 @@ internal sealed class ExportWorkflowCoordinator
             Environment.NewLine,
             warningText);
         TaskDialog.Show(ProjectInfo.Name, warningMessage);
+    }
+
+    private string? NavigateToValidationIssue(ValidationIssue issue)
+    {
+        if (issue == null)
+        {
+            return "Validation issue details were not available.";
+        }
+
+        if (_uiDocument == null)
+        {
+            return "Revit navigation is not available in this export session.";
+        }
+
+        try
+        {
+            if (issue.OwningViewId.HasValue)
+            {
+                Autodesk.Revit.DB.View? owningView = _document.GetElement(new ElementId(issue.OwningViewId.Value)) as Autodesk.Revit.DB.View;
+                if (owningView != null &&
+                    !owningView.IsTemplate &&
+                    _uiDocument.ActiveView?.Id != owningView.Id)
+                {
+                    _uiDocument.ActiveView = owningView;
+                }
+            }
+
+            if (!issue.SourceElementId.HasValue)
+            {
+                return issue.OwningViewId.HasValue
+                    ? null
+                    : "This validation issue is not attached to a specific Revit element.";
+            }
+
+            ElementId elementId = new(issue.SourceElementId.Value);
+            Element? element = _document.GetElement(elementId);
+            if (element == null)
+            {
+                return $"Element {issue.SourceElementId.Value} could not be found in the active Revit document.";
+            }
+
+            _uiDocument.Selection.SetElementIds(new List<ElementId> { elementId });
+            _uiDocument.ShowElements(elementId);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
     }
 }
