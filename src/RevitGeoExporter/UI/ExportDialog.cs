@@ -10,6 +10,7 @@ using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -36,6 +37,9 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Label _linkedModelsLabel = new();
     private readonly CheckBox _includeLinkedModelsCheckBox = new();
     private readonly CheckedListBox _linkList = new();
+    private readonly Label _schemaProfileInlineLabel = new();
+    private readonly ComboBox _schemaProfileComboBox = new();
+    private readonly Button _manageSchemaProfilesButton = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
@@ -77,6 +81,8 @@ public sealed class ExportDialog : WinFormsForm
     private UnitSource _unitSource = UnitSource.Floors;
     private string _roomCategoryParameterName = "Name";
     private LinkExportOptions _linkExportOptions = new();
+    private List<SchemaProfile> _schemaProfiles = new() { SchemaProfile.CreateCoreProfile() };
+    private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
@@ -321,6 +327,19 @@ public sealed class ExportDialog : WinFormsForm
             string value = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim();
             _roomCategoryParameterName = value.Length == 0 ? "Name" : value;
         };
+        _schemaProfileInlineLabel.AutoSize = true;
+        _schemaProfileComboBox.Width = 220;
+        _schemaProfileComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _schemaProfileComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            if (_schemaProfileComboBox.SelectedItem is SchemaProfileItem selected)
+            {
+                _activeSchemaProfileName = selected.Profile.Name;
+            }
+        };
+        _manageSchemaProfilesButton.Width = 120;
+        _manageSchemaProfilesButton.Height = 26;
+        _manageSchemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
 
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
@@ -333,6 +352,9 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_unitSourceComboBox);
         featuresPanel.Controls.Add(_roomParameterInlineLabel);
         featuresPanel.Controls.Add(_roomCategoryParameterTextBox);
+        featuresPanel.Controls.Add(_schemaProfileInlineLabel);
+        featuresPanel.Controls.Add(_schemaProfileComboBox);
+        featuresPanel.Controls.Add(_manageSchemaProfilesButton);
         panel.Controls.Add(featuresPanel, 0, 5);
 
         _linkedModelsLabel.Dock = DockStyle.Fill;
@@ -642,8 +664,11 @@ public sealed class ExportDialog : WinFormsForm
         _unitSource = settings.UnitSource;
         _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+        _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
+        _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
         SelectUnitSource(_unitSource);
         _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
+        PopulateSchemaProfiles();
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
         _packageCheckBox.Checked = settings.GeneratePackageOutput;
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -684,9 +709,12 @@ public sealed class ExportDialog : WinFormsForm
         _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
         _unitSourceInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.UnitSource", "Unit Source");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
+        _schemaProfileInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.SchemaProfile", "Schema Profile");
+        _manageSchemaProfilesButton.Text = UiLanguageText.Get(_language, "ExportDialog.ManageSchemas", "Schemas...");
         _linkedModelsLabel.Text = UiLanguageText.Get(_language, "ExportDialog.LinkedModels", "Linked Models");
         _includeLinkedModelsCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLinkedModels", "Include selected linked models");
         _unitSourceComboBox.Refresh();
+        _schemaProfileComboBox.Refresh();
         if (_availableLinks.Count == 0)
         {
             PopulateLinkList();
@@ -784,7 +812,8 @@ public sealed class ExportDialog : WinFormsForm
             _coordinateMode,
             _unitSource,
             _roomCategoryParameterName,
-            BuildLinkExportOptions());
+            BuildLinkExportOptions(),
+            GetActiveSchemaProfile());
         DialogResult = DialogResult.OK;
         Close();
     }
@@ -833,6 +862,7 @@ public sealed class ExportDialog : WinFormsForm
             _unitSource,
             _roomCategoryParameterName,
             BuildLinkExportOptions(),
+            GetActiveSchemaProfile(),
             _previewBasemapSettings.UrlTemplate,
             _previewBasemapSettings.Attribution));
     }
@@ -885,6 +915,48 @@ public sealed class ExportDialog : WinFormsForm
     private void UpdateLinkSelectionState()
     {
         _linkList.Enabled = _availableLinks.Count > 0 && _includeLinkedModelsCheckBox.Checked;
+    }
+
+    private void PopulateSchemaProfiles()
+    {
+        _schemaProfiles = SchemaProfile.NormalizeProfiles(_schemaProfiles).Select(profile => profile.Clone()).ToList();
+        _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
+
+        _schemaProfileComboBox.Items.Clear();
+        foreach (SchemaProfile profile in _schemaProfiles.OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _schemaProfileComboBox.Items.Add(new SchemaProfileItem(profile));
+        }
+
+        for (int i = 0; i < _schemaProfileComboBox.Items.Count; i++)
+        {
+            if (_schemaProfileComboBox.Items[i] is SchemaProfileItem item &&
+                string.Equals(item.Profile.Name, _activeSchemaProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _schemaProfileComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _schemaProfileComboBox.SelectedIndex = _schemaProfileComboBox.Items.Count > 0 ? 0 : -1;
+    }
+
+    private SchemaProfile GetActiveSchemaProfile()
+    {
+        return SchemaProfile.ResolveActive(_schemaProfiles, _activeSchemaProfileName);
+    }
+
+    private void EditSchemaProfiles()
+    {
+        using SchemaProfileManagerForm form = new(_schemaProfiles, _language);
+        if (form.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _schemaProfiles = SchemaProfile.NormalizeProfiles(form.Profiles).Select(profile => profile.Clone()).ToList();
+        _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
+        PopulateSchemaProfiles();
     }
 
     private LinkExportOptions BuildLinkExportOptions()
@@ -1019,6 +1091,8 @@ public sealed class ExportDialog : WinFormsForm
             UnitSource = _unitSource,
             RoomCategoryParameterName = _roomCategoryParameterName,
             LinkExportOptions = BuildLinkExportOptions(),
+            SchemaProfiles = _schemaProfiles.Select(profile => profile.Clone()).ToList(),
+            ActiveSchemaProfileName = _activeSchemaProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
         };
@@ -1076,8 +1150,11 @@ public sealed class ExportDialog : WinFormsForm
             _unitSource = settings.UnitSource;
             _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
             _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+            _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
+            _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
             SelectUnitSource(_unitSource);
             _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
+            PopulateSchemaProfiles();
             _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.Checked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -1333,6 +1410,18 @@ public sealed class ExportDialog : WinFormsForm
                 : UiLanguageText.Get(DisplayLanguage, "SettingsHub.GlobalTab", "Global");
             return $"[{scopeLabel}] {Profile.Name}";
         }
+    }
+
+    private sealed class SchemaProfileItem
+    {
+        public SchemaProfileItem(SchemaProfile profile)
+        {
+            Profile = profile?.Clone() ?? throw new ArgumentNullException(nameof(profile));
+        }
+
+        public SchemaProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
     }
 }
 

@@ -8,6 +8,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Utilities;
 using RevitGeoExporter.Export;
 
@@ -25,11 +26,13 @@ public sealed class DetailExtractor
     private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly string _sourceDocumentKey;
     private readonly string _sourceDocumentName;
+    private readonly SchemaProfile _schemaProfile;
 
     public DetailExtractor(
         Document document,
         GeometryRepairOptions? geometryRepairOptions = null,
-        ExportSourceDescriptor? sourceDescriptor = null)
+        ExportSourceDescriptor? sourceDescriptor = null,
+        SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
@@ -37,6 +40,7 @@ public sealed class DetailExtractor
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
+        _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -46,6 +50,7 @@ public sealed class DetailExtractor
         IReadOnlyList<Stairs> stairs,
         GeometryRepairResult geometryRepair,
         ICollection<string> warnings,
+        string? viewName = null,
         bool skipLevelFilter = false)
     {
         if (level is null)
@@ -99,14 +104,16 @@ public sealed class DetailExtractor
 
             features.Add(
                 CreateFeature(
+                    curveElement,
                     lineString,
                     BuildSyntheticId("detail", curveElement.Id.Value, levelId),
                     levelId,
-                    curveElement.Id.Value,
-                    "detail-curve"));
+                    "detail-curve",
+                    viewName,
+                    warnings));
         }
 
-        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings));
+        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings, viewName));
         return features;
     }
 
@@ -185,7 +192,8 @@ public sealed class DetailExtractor
         IReadOnlyList<Stairs> stairs,
         string levelId,
         GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        string? viewName)
     {
         List<ExportLineString> features = new();
         foreach (Stairs stair in stairs)
@@ -207,11 +215,13 @@ public sealed class DetailExtractor
                     long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
                     features.Add(
                         CreateFeature(
+                            run,
                             stepLines[i],
                             BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
                             levelId,
-                            run.Id.Value,
-                            "stair-step"));
+                            "stair-step",
+                            viewName,
+                            warnings));
                 }
             }
         }
@@ -388,24 +398,34 @@ public sealed class DetailExtractor
     }
 
     private ExportLineString CreateFeature(
+        Element sourceElement,
         LineString2D lineString,
         string id,
         string levelId,
-        long elementId,
-        string sourceLabel)
+        string sourceLabel,
+        string? viewName,
+        ICollection<string> warnings)
     {
         Dictionary<string, object?> attributes = new()
         {
             ["id"] = id,
             ["level_id"] = levelId,
-            ["element_id"] = elementId,
+            ["element_id"] = sourceElement.Id.Value,
             ["source_label"] = sourceLabel,
             ["source_document_key"] = _sourceDocumentKey,
             ["source_document_name"] = _sourceDocumentName,
+            ["has_persisted_export_id"] = false,
             ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
             ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
             ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
         };
+        SchemaAttributeMapper.ApplyMappings(
+            _schemaProfile,
+            SchemaLayerType.Detail,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings);
         return new ExportLineString(lineString, attributes);
     }
 

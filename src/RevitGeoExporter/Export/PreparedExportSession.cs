@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 
 namespace RevitGeoExporter.Export;
 
@@ -30,6 +31,7 @@ public sealed class PreparedExportSession
         UnitSource unitSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions,
+        SchemaProfile? activeSchemaProfile,
         IReadOnlyList<LinkedModelSummary>? includedLinks)
     {
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
@@ -60,6 +62,7 @@ public sealed class PreparedExportSession
         UnitSource = unitSource;
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         IncludedLinks = includedLinks ?? Array.Empty<LinkedModelSummary>();
     }
 
@@ -106,6 +109,8 @@ public sealed class PreparedExportSession
     public string RoomCategoryParameterName { get; }
 
     public LinkExportOptions LinkExportOptions { get; }
+
+    public SchemaProfile ActiveSchemaProfile { get; }
 
     public IReadOnlyList<LinkedModelSummary> IncludedLinks { get; }
 }

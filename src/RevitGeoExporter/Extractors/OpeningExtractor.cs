@@ -7,6 +7,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
@@ -23,13 +24,15 @@ public sealed class OpeningExtractor
     private readonly ZoneCatalog _zoneCatalog;
     private readonly GeometryRepairOptions _geometryRepairOptions;
     private readonly ExportSourceDescriptor _sourceDescriptor;
+    private readonly SchemaProfile _schemaProfile;
 
     public OpeningExtractor(
         Document document,
         IExportMetadataProvider metadataProvider,
         ZoneCatalog zoneCatalog,
         GeometryRepairOptions? geometryRepairOptions = null,
-        ExportSourceDescriptor? sourceDescriptor = null)
+        ExportSourceDescriptor? sourceDescriptor = null,
+        SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
@@ -37,6 +40,7 @@ public sealed class OpeningExtractor
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
         _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -46,6 +50,7 @@ public sealed class OpeningExtractor
         IReadOnlyList<ExportPolygon> unitFeatures,
         GeometryRepairResult geometryRepair,
         ICollection<string> warnings,
+        string? viewName = null,
         bool skipLevelFilter = false)
     {
         if (level is null)
@@ -110,14 +115,16 @@ public sealed class OpeningExtractor
             AddFeature(
                 features,
                 seenGeometryKeys,
+                opening,
                 lineString,
                 snapResult.WasSnapped,
                 isElevatorDoor,
                 metadata,
                 GetOpeningCategory(opening),
                 levelId,
-                opening.Id.Value,
-                OpeningFamilyClassifier.GetFamilyName(opening));
+                OpeningFamilyClassifier.GetFamilyName(opening),
+                viewName,
+                warnings);
         }
 
         return features;
@@ -463,14 +470,16 @@ public sealed class OpeningExtractor
     private void AddFeature(
         ICollection<ExportLineString> target,
         ISet<string> seenGeometryKeys,
+        FamilyInstance sourceElement,
         LineString2D lineString,
         bool wasSnappedToOutline,
         bool isElevatorDoor,
         ExportElementMetadata metadata,
         string category,
         string levelId,
-        long elementId,
-        string familyName)
+        string familyName,
+        string? viewName,
+        ICollection<string> warnings)
     {
         string geometryKey = BuildGeometryKey(lineString);
         if (!seenGeometryKeys.Add(geometryKey))
@@ -478,25 +487,30 @@ public sealed class OpeningExtractor
             return;
         }
 
-        target.Add(
-            new ExportLineString(
-                lineString,
-                new Dictionary<string, object?>
-                {
-                    ["id"] = metadata.ExportId,
-                    ["category"] = category,
-                    ["level_id"] = levelId,
-                    ["element_id"] = elementId,
-                    ["is_snapped_to_outline"] = wasSnappedToOutline,
-                    ["is_elevator_door"] = isElevatorDoor,
-                    ["source_label"] = familyName,
-                    ["source_document_key"] = metadata.SourceDocumentKey,
-                    ["source_document_name"] = metadata.SourceDocumentName,
-                    ["has_persisted_export_id"] = metadata.HasPersistedId,
-                    ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
-                    ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
-                    ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
-                }));
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = metadata.ExportId,
+            ["category"] = category,
+            ["level_id"] = levelId,
+            ["element_id"] = sourceElement.Id.Value,
+            ["is_snapped_to_outline"] = wasSnappedToOutline,
+            ["is_elevator_door"] = isElevatorDoor,
+            ["source_label"] = familyName,
+            ["source_document_key"] = metadata.SourceDocumentKey,
+            ["source_document_name"] = metadata.SourceDocumentName,
+            ["has_persisted_export_id"] = metadata.HasPersistedId,
+            ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
+            ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
+            ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
+        };
+        SchemaAttributeMapper.ApplyMappings(
+            _schemaProfile,
+            SchemaLayerType.Opening,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings);
+        target.Add(new ExportLineString(lineString, attributes));
     }
 
     private bool IsEscalatorFamily(FamilyInstance family)

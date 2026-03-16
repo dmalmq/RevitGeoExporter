@@ -7,6 +7,7 @@ using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.Export;
@@ -33,13 +34,15 @@ public sealed class ExportPreviewService
     private readonly UnitSource _unitSource;
     private readonly string _roomCategoryParameterName;
     private readonly LinkExportOptions _linkExportOptions;
+    private readonly SchemaProfile _activeSchemaProfile;
 
     public ExportPreviewService(
         Document document,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
         GeometryRepairOptions? geometryRepairOptions = null,
-        LinkExportOptions? linkExportOptions = null)
+        LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null)
     {
         if (document is null)
         {
@@ -79,6 +82,7 @@ public sealed class ExportPreviewService
             : new FloorCategoryResolver(zoneCatalog).SupportedCategories;
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _linkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        _activeSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -155,6 +159,7 @@ public sealed class ExportPreviewService
                 UnitSource = _unitSource,
                 RoomCategoryParameterName = _roomCategoryParameterName,
                 LinkExportOptions = _linkExportOptions,
+                ActiveSchemaProfile = _activeSchemaProfile,
             });
         List<PreviewFeatureData> features = new();
 

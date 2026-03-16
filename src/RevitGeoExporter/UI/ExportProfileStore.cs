@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Utilities;
 
 namespace RevitGeoExporter.UI;
@@ -197,6 +198,8 @@ public sealed class ExportProfileStore
             UnitSource = profile.UnitSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
+            SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
+            ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
         };
     }
 

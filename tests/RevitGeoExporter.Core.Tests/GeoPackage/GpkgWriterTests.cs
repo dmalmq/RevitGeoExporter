@@ -180,6 +180,71 @@ public sealed class GpkgWriterTests
         }
     }
 
+    [Fact]
+    public void CustomAttributes_AreWrittenWithDeclaredTypes()
+    {
+        string path = GetTemporaryGpkgPath();
+        try
+        {
+            ExportLayer unit = new(
+                name: "unit",
+                geometryType: GpkgGeometryType.MultiPolygon,
+                attributes: new[]
+                {
+                    new AttributeDefinition("id", ExportAttributeType.Text),
+                    new AttributeDefinition("category", ExportAttributeType.Text),
+                    new AttributeDefinition("restrict", ExportAttributeType.Text),
+                    new AttributeDefinition("name", ExportAttributeType.Text),
+                    new AttributeDefinition("alt_name", ExportAttributeType.Text),
+                    new AttributeDefinition("level_id", ExportAttributeType.Text),
+                    new AttributeDefinition("source", ExportAttributeType.Text),
+                    new AttributeDefinition("display_point", ExportAttributeType.Text),
+                    new AttributeDefinition("client_code", ExportAttributeType.Text),
+                    new AttributeDefinition("suite_count", ExportAttributeType.Integer),
+                    new AttributeDefinition("is_public", ExportAttributeType.Boolean),
+                });
+
+            unit.AddFeature(
+                new ExportPolygon(
+                    new Polygon2D(
+                        new[]
+                        {
+                            new Point2D(0, 0),
+                            new Point2D(5, 0),
+                            new Point2D(5, 5),
+                            new Point2D(0, 5),
+                        }),
+                    new Dictionary<string, object?>
+                    {
+                        ["id"] = "unit-1",
+                        ["category"] = "walkway",
+                        ["restrict"] = null,
+                        ["name"] = "Unit A",
+                        ["alt_name"] = null,
+                        ["level_id"] = "level-1",
+                        ["source"] = "TestModel",
+                        ["display_point"] = "POINT (2.5 2.5)",
+                        ["client_code"] = "A-100",
+                        ["suite_count"] = 12L,
+                        ["is_public"] = true,
+                    }));
+
+            GpkgWriter writer = new();
+            writer.Write(path, srsId: 6677, layers: new[] { unit });
+
+            using SqliteConnection connection = new($"Data Source={path};Pooling=False");
+            connection.Open();
+
+            Assert.Equal("A-100", ExecuteScalarString(connection, "SELECT client_code FROM unit LIMIT 1;"));
+            Assert.Equal(12L, ExecuteScalarLong(connection, "SELECT suite_count FROM unit LIMIT 1;"));
+            Assert.Equal(1L, ExecuteScalarLong(connection, "SELECT is_public FROM unit LIMIT 1;"));
+        }
+        finally
+        {
+            DeleteIfExists(path);
+        }
+    }
+
     private static ExportLayer CreateUnitLayer()
     {
         return new ExportLayer(

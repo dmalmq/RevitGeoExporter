@@ -9,6 +9,7 @@ using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using ProjNet.CoordinateSystems;
 
 namespace RevitGeoExporter.Export;
@@ -38,6 +39,7 @@ public sealed class FloorGeoPackageExporter
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
         LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
@@ -55,7 +57,8 @@ public sealed class FloorGeoPackageExporter
             sourceCoordinateSystemDefinition,
             unitSource,
             roomCategoryParameterName,
-            linkExportOptions);
+            linkExportOptions,
+            activeSchemaProfile);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -74,7 +77,8 @@ public sealed class FloorGeoPackageExporter
         string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
         string roomCategoryParameterName = "Name",
-        LinkExportOptions? linkExportOptions = null)
+        LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -127,6 +131,7 @@ public sealed class FloorGeoPackageExporter
             (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
         LinkExportOptions effectiveLinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        SchemaProfile effectiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
 
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
@@ -153,6 +158,7 @@ public sealed class FloorGeoPackageExporter
                 UnitSource = unitSource,
                 RoomCategoryParameterName = roomCategoryParameterName,
                 LinkExportOptions = effectiveLinkExportOptions,
+                ActiveSchemaProfile = effectiveSchemaProfile,
                 ViewContexts = contexts,
             });
 
@@ -183,6 +189,7 @@ public sealed class FloorGeoPackageExporter
             unitSource,
             roomCategoryParameterName,
             effectiveLinkExportOptions,
+            effectiveSchemaProfile,
             BuildIncludedLinks(contexts));
     }
 
