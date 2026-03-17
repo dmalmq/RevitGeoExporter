@@ -1,22 +1,64 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>Settings and Profiles</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}a{color:#145da0}</style></head><body>
-<h1>Settings and Profiles</h1>
-<p>The settings hub separates <strong>Global</strong> defaults from <strong>Project</strong> mappings and scoped data.</p>
-<h2>Global</h2>
-<ul>
-<li>Default output folder</li>
-<li>UI language</li>
-<li>CRS / EPSG</li>
-<li>Diagnostics, packaging, and repair defaults</li>
-<li>Global export profiles</li>
-</ul>
-<h2>Project</h2>
-<ul>
-<li>Floor type to category mappings</li>
-<li>Family category overrides</li>
-<li>Accepted opening family names</li>
-<li>Project-scoped export profiles</li>
-</ul>
-<h2>Import, export, and reset</h2>
-<p>Each scope can be imported, exported, or reset independently. Malformed saved files appear in the settings status area and safe defaults are used when needed.</p>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Settings and Profiles</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Configuration</p>
+      <h1>Settings and Profiles</h1>
+      <p>The settings hub separates stable global defaults from project-specific mappings, so teams can keep reusable settings without overwriting project decisions.</p>
+    </div>
+
+    <div class="section">
+      <h2>Global defaults</h2>
+      <ul>
+        <li>Default output folder and UI language.</li>
+        <li>Shared CRS / EPSG defaults.</li>
+        <li>Diagnostics and GIS package defaults.</li>
+        <li>Basemap source settings for preview.</li>
+        <li>Global export profiles.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Project data</h2>
+      <ul>
+        <li>Floor type to category mappings.</li>
+        <li>Family category overrides.</li>
+        <li>Accepted opening family names.</li>
+        <li>Project-scoped export profiles.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Import, export, and reset</h2>
+      <p>Each scope can be imported, exported, or reset independently. If a saved file is incomplete or malformed, the status area explains what was ignored and safe defaults are used where possible.</p>
+    </div>
+
+    <div class="callout">
+      <h2>Related topics</h2>
+      <ul>
+        <li><a href="help:PreviewAndAssignments">Preview and Assignments</a> for working with project-side category overrides.</li>
+        <li><a href="help:ExportWorkflow">Export Workflow</a> for how these defaults appear in the export dialog.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

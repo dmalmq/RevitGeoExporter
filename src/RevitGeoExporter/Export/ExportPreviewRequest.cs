@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.UI;
 
 namespace RevitGeoExporter.Export;
@@ -20,28 +21,56 @@ public sealed class ExportPreviewRequest
         int? sourceEpsg,
         string? sourceCoordinateSystemId,
         string? sourceCoordinateSystemDefinition,
+        Point2D? surveyPointSharedCoordinates,
         UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions,
+        SchemaProfile? activeSchemaProfile,
         string? previewBasemapUrlTemplate,
         string? previewBasemapAttribution)
     {
+        string normalizedSourceCoordinateSystemId = sourceCoordinateSystemId?.Trim() ?? string.Empty;
+        string normalizedSourceCoordinateSystemDefinition = sourceCoordinateSystemDefinition?.Trim() ?? string.Empty;
+        string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
+        string normalizedPreviewBasemapUrlTemplate = previewBasemapUrlTemplate?.Trim() ?? string.Empty;
+        string normalizedPreviewBasemapAttribution = previewBasemapAttribution?.Trim() ?? string.Empty;
+        GeometryRepairOptions normalizedGeometryRepairOptions = geometryRepairOptions ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+
+        if (normalizedRoomCategoryParameterName.Length == 0)
+        {
+            normalizedRoomCategoryParameterName = "Name";
+        }
+
+        if (normalizedPreviewBasemapUrlTemplate.Length == 0)
+        {
+            normalizedPreviewBasemapUrlTemplate = PreviewBasemapSettings.DefaultUrlTemplate;
+        }
+
+        if (normalizedPreviewBasemapAttribution.Length == 0)
+        {
+            normalizedPreviewBasemapAttribution = PreviewBasemapSettings.DefaultAttribution;
+        }
+
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         FeatureTypes = featureTypes;
-        GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+        GeometryRepairOptions = normalizedGeometryRepairOptions.Clone();
         UiLanguage = uiLanguage;
         CoordinateMode = coordinateMode;
         TargetEpsg = targetEpsg;
         SourceEpsg = sourceEpsg;
-        SourceCoordinateSystemId = string.IsNullOrWhiteSpace(sourceCoordinateSystemId) ? string.Empty : sourceCoordinateSystemId.Trim();
-        SourceCoordinateSystemDefinition = string.IsNullOrWhiteSpace(sourceCoordinateSystemDefinition) ? string.Empty : sourceCoordinateSystemDefinition.Trim();
-        UnitSource = unitSource;
-        RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
-        PreviewBasemapUrlTemplate = string.IsNullOrWhiteSpace(previewBasemapUrlTemplate)
-            ? PreviewBasemapSettings.DefaultUrlTemplate
-            : previewBasemapUrlTemplate.Trim();
-        PreviewBasemapAttribution = string.IsNullOrWhiteSpace(previewBasemapAttribution)
-            ? PreviewBasemapSettings.DefaultAttribution
-            : previewBasemapAttribution.Trim();
+        SourceCoordinateSystemId = normalizedSourceCoordinateSystemId;
+        SourceCoordinateSystemDefinition = normalizedSourceCoordinateSystemDefinition;
+        SurveyPointSharedCoordinates = surveyPointSharedCoordinates;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
+        UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
+        RoomCategoryParameterName = normalizedRoomCategoryParameterName;
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        PreviewBasemapUrlTemplate = normalizedPreviewBasemapUrlTemplate;
+        PreviewBasemapAttribution = normalizedPreviewBasemapAttribution;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -62,9 +91,19 @@ public sealed class ExportPreviewRequest
 
     public string SourceCoordinateSystemDefinition { get; }
 
+    public Point2D? SurveyPointSharedCoordinates { get; }
+
     public UnitSource UnitSource { get; }
 
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
     public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
+
+    public SchemaProfile ActiveSchemaProfile { get; }
 
     public string PreviewBasemapUrlTemplate { get; }
 

@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using Autodesk.Revit.DB;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Union;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
 
@@ -12,14 +15,24 @@ public sealed class LevelBoundaryBuilder
     private static readonly GeometryFactory GeometryFactory = new();
 
     public bool TryBuild(
+        Level level,
         string levelId,
-        string levelName,
         int ordinal,
-        double elevationFeet,
         IReadOnlyList<ExportPolygon> unitFeatures,
+        string sourceDocumentKey,
+        string sourceDocumentName,
+        bool hasPersistedExportId,
+        SchemaProfile? schemaProfile,
+        string? viewName,
+        ICollection<string> warnings,
         out ExportPolygon? boundaryFeature)
     {
         boundaryFeature = null;
+        if (level is null)
+        {
+            return false;
+        }
+
         if (string.IsNullOrWhiteSpace(levelId))
         {
             return false;
@@ -52,15 +65,52 @@ public sealed class LevelBoundaryBuilder
 
         boundaryFeature = new ExportPolygon(
             polygons,
-            new Dictionary<string, object?>
-            {
-                ["id"] = levelId,
-                ["level_name"] = levelName,
-                ["ordinal"] = ordinal,
-                ["elevation_m"] = elevationFeet * FeetToMeters,
-            });
+            BuildAttributes(
+                level,
+                levelId,
+                ordinal,
+                sourceDocumentKey,
+                sourceDocumentName,
+                hasPersistedExportId,
+                schemaProfile,
+                viewName,
+                warnings));
 
         return true;
+    }
+
+    private static Dictionary<string, object?> BuildAttributes(
+        Level level,
+        string levelId,
+        int ordinal,
+        string sourceDocumentKey,
+        string sourceDocumentName,
+        bool hasPersistedExportId,
+        SchemaProfile? schemaProfile,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = levelId,
+            ["level_name"] = level.Name,
+            ["ordinal"] = ordinal,
+            ["elevation_m"] = level.Elevation * FeetToMeters,
+            ["source_document_key"] = sourceDocumentKey,
+            ["source_document_name"] = sourceDocumentName,
+            ["has_persisted_export_id"] = hasPersistedExportId,
+            ["is_linked_source"] = false,
+            ["source_link_instance_id"] = null,
+            ["source_link_instance_name"] = null,
+        };
+        SchemaAttributeMapper.ApplyMappings(
+            schemaProfile,
+            SchemaLayerType.Level,
+            attributes,
+            level,
+            viewName,
+            warnings);
+        return attributes;
     }
 
     private static List<Geometry> BuildUnitGeometries(IReadOnlyList<ExportPolygon> unitFeatures)

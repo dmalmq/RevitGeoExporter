@@ -33,112 +33,272 @@ public sealed class ExportPackageService
             throw new ArgumentNullException(nameof(exportResult));
         }
 
-        string packageDirectory = Path.Combine(
-            session.OutputDirectory,
-            $"handoff-package-{DateTime.Now:yyyyMMdd-HHmmss}");
+        string? packageDirectory = session.PackageOptions.Enabled
+            ? Path.Combine(session.OutputDirectory, $"handoff-package-{DateTime.Now:yyyyMMdd-HHmmss}")
+            : null;
+        if (!string.IsNullOrWhiteSpace(packageDirectory))
+        {
+            Directory.CreateDirectory(packageDirectory);
+        }
+
         ExportPackageManifest manifest = BuildManifest(session, exportResult, packageDirectory, report.ExportedAtUtc);
 
-        if (!session.PackageOptions.Enabled)
-        {
-            return new ExportPackageResult(manifest, null, null);
-        }
-
-        Directory.CreateDirectory(packageDirectory);
         if (!string.IsNullOrWhiteSpace(exportResult.DiagnosticsReportPath) && File.Exists(exportResult.DiagnosticsReportPath))
         {
-            File.Copy(
-                exportResult.DiagnosticsReportPath,
-                Path.Combine(packageDirectory, Path.GetFileName(exportResult.DiagnosticsReportPath)),
-                overwrite: true);
+            string diagnosticsOutputPath = exportResult.DiagnosticsReportPath;
+            if (!string.IsNullOrWhiteSpace(packageDirectory))
+            {
+                diagnosticsOutputPath = Path.Combine(packageDirectory, Path.GetFileName(exportResult.DiagnosticsReportPath));
+                File.Copy(exportResult.DiagnosticsReportPath, diagnosticsOutputPath, overwrite: true);
+            }
+
+            manifest.Files.Add(new ExportPackageManifestFile
+            {
+                Kind = "diagnostics",
+                RelativePath = Path.GetFileName(diagnosticsOutputPath),
+                OutputFilePath = diagnosticsOutputPath,
+            });
         }
 
-        foreach (ViewExportResult file in exportResult.ViewResults)
+        if (!string.IsNullOrWhiteSpace(packageDirectory))
         {
-            if (File.Exists(file.OutputFilePath))
+            foreach (ExportPackageManifestFile artifact in manifest.Files.Where(file => file.IsArtifact))
             {
-                File.Copy(file.OutputFilePath, Path.Combine(packageDirectory, Path.GetFileName(file.OutputFilePath)), overwrite: true);
+                ExportArtifactResult? sourceArtifact = exportResult.ArtifactResults.FirstOrDefault(result =>
+                    string.Equals(result.ArtifactKey, artifact.ArtifactKey, StringComparison.Ordinal));
+                if (sourceArtifact != null && !string.IsNullOrWhiteSpace(artifact.OutputFilePath))
+                {
+                    File.Copy(sourceArtifact.OutputFilePath, artifact.OutputFilePath, overwrite: true);
+                }
+            }
+
+            WritePreviewImages(session, manifest, packageDirectory);
+
+            if (session.PackageOptions.IncludeLegendFile)
+            {
+                WriteLegendFile(session, manifest, packageDirectory);
+            }
+
+            if (session.PackageOptions.GenerateQgisArtifacts)
+            {
+                WriteQgisArtifacts(session, manifest, packageDirectory);
             }
         }
 
-        foreach (PreparedViewExportData view in session.Prepared.Views)
+        PackageValidationResult? validationResult = null;
+        if (session.PackageOptions.ValidateAfterWrite)
         {
-            string imagePath = Path.Combine(packageDirectory, $"{Sanitize(view.View.Name)}-preview.png");
-            using Bitmap bitmap = RenderPreviewBitmap(view);
-            bitmap.Save(imagePath);
+            validationResult = new PackageValidationService().Validate(manifest);
+            manifest.ValidationResult = validationResult;
         }
 
-        if (session.PackageOptions.IncludeLegendFile)
+        if (!string.IsNullOrWhiteSpace(packageDirectory) && session.PackageOptions.GenerateQgisArtifacts)
         {
-            File.WriteAllLines(
-                Path.Combine(packageDirectory, "legend.txt"),
-                session.Prepared.Views
-                    .SelectMany(view => view.UnitLayer?.Features.OfType<ExportPolygon>() ?? Array.Empty<ExportPolygon>())
-                    .GroupBy(feature => feature.Attributes.TryGetValue("category", out object? value) ? value?.ToString() ?? "<none>" : "<none>")
-                    .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => $"{group.Key}: {group.Count()}"));
+            WriteReadmeFile(session, manifest, packageDirectory);
         }
 
-        string manifestPath = Path.Combine(packageDirectory, "package-manifest.json");
-        File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, Formatting.Indented));
-        return new ExportPackageResult(manifest, packageDirectory, manifestPath);
+        string? manifestPath = null;
+        if (!string.IsNullOrWhiteSpace(packageDirectory))
+        {
+            manifestPath = Path.Combine(packageDirectory, "package-manifest.json");
+            File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, Formatting.Indented));
+            manifest.Files.Add(new ExportPackageManifestFile
+            {
+                Kind = "manifest",
+                RelativePath = "package-manifest.json",
+                OutputFilePath = manifestPath,
+            });
+            File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, Formatting.Indented));
+        }
+
+        return new ExportPackageResult(manifest, packageDirectory, manifestPath, validationResult);
     }
 
     private static ExportPackageManifest BuildManifest(
         PreparedExportSession session,
         FloorGeoPackageExportResult exportResult,
-        string packageDirectory,
+        string? packageDirectory,
         DateTimeOffset exportedAtUtc)
     {
         ExportPackageManifest manifest = new()
         {
             SourceModelName = session.SourceModelName,
-            PackageDirectory = packageDirectory,
+            SourceDocumentKey = session.SourceDocumentKey,
+            ProfileName = session.ProfileName,
+            SchemaProfileName = session.ActiveSchemaProfile.Name,
+            ValidationPolicyProfileName = session.ActiveValidationPolicyProfile.Name,
+            OperatorName = Environment.UserName ?? string.Empty,
+            CoordinateMode = session.CoordinateMode.ToString(),
+            SourceEpsg = session.SourceEpsg,
+            SourceCoordinateSystemId = session.SourceCoordinateSystemId,
+            SourceCoordinateSystemDefinition = session.SourceCoordinateSystemDefinition,
+            PackagingMode = session.PackageOptions.PackagingMode.ToString(),
+            PackageDirectory = packageDirectory ?? string.Empty,
             TargetEpsg = session.OutputEpsg,
             ExportedAtUtc = exportedAtUtc,
+            IncludedLinks = session.IncludedLinks
+                .Select(link => ExportLinkedModelInfo.Create(
+                    link.LinkInstanceId,
+                    link.LinkInstanceName,
+                    link.SourceDocumentKey,
+                    link.SourceDocumentName))
+                .ToList(),
         };
 
-        foreach (ViewExportResult file in exportResult.ViewResults)
+        foreach (ExportArtifactResult artifact in exportResult.ArtifactResults)
         {
             manifest.Files.Add(new ExportPackageManifestFile
             {
-                Kind = file.FeatureType,
-                RelativePath = Path.GetFileName(file.OutputFilePath),
+                ArtifactKey = artifact.ArtifactKey,
+                Kind = "gpkg",
+                RelativePath = Path.GetFileName(artifact.OutputFilePath),
+                OutputFilePath = string.IsNullOrWhiteSpace(packageDirectory)
+                    ? artifact.OutputFilePath
+                    : Path.Combine(packageDirectory, Path.GetFileName(artifact.OutputFilePath)),
+                PackagingMode = artifact.PackagingMode.ToString(),
+                Disposition = artifact.Disposition.ToString(),
+                FeatureCount = artifact.FeatureCount,
+                ContributingViewIds = artifact.ContributingViewIds.ToList(),
+                ContributingViewNames = artifact.ContributingViewNames.ToList(),
+                ContributingLevelNames = artifact.ContributingLevelNames.ToList(),
+                ContainedLayers = artifact.LayerNames.ToList(),
+                MandatoryLayers = artifact.LayerNames.ToList(),
+                IsArtifact = true,
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(exportResult.DiagnosticsReportPath))
-        {
-            manifest.Files.Add(new ExportPackageManifestFile
-            {
-                Kind = "diagnostics",
-                RelativePath = Path.GetFileName(exportResult.DiagnosticsReportPath),
-            });
-        }
+        return manifest;
+    }
 
+    private static void WritePreviewImages(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)
+    {
         foreach (PreparedViewExportData view in session.Prepared.Views)
         {
+            string imagePath = Path.Combine(packageDirectory, $"{Sanitize(view.View.Name)}-preview.png");
+            using Bitmap bitmap = RenderPreviewBitmap(view);
+            bitmap.Save(imagePath);
             manifest.Files.Add(new ExportPackageManifestFile
             {
                 Kind = "preview-image",
-                RelativePath = $"{Sanitize(view.View.Name)}-preview.png",
+                RelativePath = Path.GetFileName(imagePath),
+                OutputFilePath = imagePath,
+            });
+        }
+    }
+
+    private static void WriteLegendFile(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)
+    {
+        string legendPath = Path.Combine(packageDirectory, "legend.txt");
+        File.WriteAllLines(
+            legendPath,
+            session.Prepared.Views
+                .SelectMany(view => view.UnitLayer?.Features.OfType<ExportPolygon>() ?? Array.Empty<ExportPolygon>())
+                .GroupBy(feature => feature.Attributes.TryGetValue("category", out object? value) ? value?.ToString() ?? "<none>" : "<none>")
+                .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(group => $"{group.Key}: {group.Count()}"));
+        manifest.Files.Add(new ExportPackageManifestFile
+        {
+            Kind = "legend",
+            RelativePath = "legend.txt",
+            OutputFilePath = legendPath,
+        });
+    }
+
+    private static void WriteQgisArtifacts(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)
+    {
+        HashSet<string> layerNames = manifest.Files
+            .Where(file => file.IsArtifact)
+            .SelectMany(file => file.ContainedLayers)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string layerName in layerNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        {
+            string styleFileName = $"{layerName}.qml";
+            string stylePath = Path.Combine(packageDirectory, styleFileName);
+            File.WriteAllText(stylePath, BuildQgisStyleTemplate(layerName));
+            manifest.Files.Add(new ExportPackageManifestFile
+            {
+                Kind = "qgis-style",
+                RelativePath = styleFileName,
+                OutputFilePath = stylePath,
             });
         }
 
-        if (session.PackageOptions.IncludeLegendFile)
+        string metadataPath = Path.Combine(packageDirectory, "layer-groups.json");
+        File.WriteAllText(
+            metadataPath,
+            JsonConvert.SerializeObject(
+                manifest.Files
+                    .Where(file => file.IsArtifact)
+                    .Select(file => new
+                    {
+                        file.ArtifactKey,
+                        file.ContributingViewNames,
+                        file.ContributingLevelNames,
+                        file.ContainedLayers,
+                    }),
+                Formatting.Indented));
+        manifest.Files.Add(new ExportPackageManifestFile
+        {
+            Kind = "qgis-metadata",
+            RelativePath = "layer-groups.json",
+            OutputFilePath = metadataPath,
+        });
+    }
+
+    private static void WriteReadmeFile(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)
+    {
+        string readmePath = Path.Combine(packageDirectory, "README.txt");
+        File.WriteAllLines(readmePath, BuildReadmeLines(session, manifest));
+
+        ExportPackageManifestFile? existing = manifest.Files.FirstOrDefault(file =>
+            string.Equals(file.Kind, "readme", StringComparison.OrdinalIgnoreCase));
+        if (existing == null)
         {
             manifest.Files.Add(new ExportPackageManifestFile
             {
-                Kind = "legend",
-                RelativePath = "legend.txt",
+                Kind = "readme",
+                RelativePath = "README.txt",
+                OutputFilePath = readmePath,
             });
+            return;
         }
 
-        manifest.Files.Add(new ExportPackageManifestFile
+        existing.RelativePath = "README.txt";
+        existing.OutputFilePath = readmePath;
+    }
+
+    private static IEnumerable<string> BuildReadmeLines(PreparedExportSession session, ExportPackageManifest manifest)
+    {
+        yield return $"Source model: {session.SourceModelName}";
+        yield return $"Packaging mode: {session.PackageOptions.PackagingMode}";
+        yield return $"Output CRS: EPSG:{session.OutputEpsg}";
+        yield return $"Coordinate mode: {session.CoordinateMode}";
+        yield return $"Profile: {session.ProfileName ?? "<none>"}";
+        yield return $"Schema profile: {session.ActiveSchemaProfile.Name}";
+        yield return $"Validation policy: {session.ActiveValidationPolicyProfile.Name}";
+        yield return string.Empty;
+        yield return "Artifacts:";
+        foreach (ExportPackageManifestFile file in manifest.Files.Where(file => file.IsArtifact))
         {
-            Kind = "manifest",
-            RelativePath = "package-manifest.json",
-        });
-        return manifest;
+            yield return $"- {file.RelativePath} [{string.Join(", ", file.ContainedLayers)}]";
+        }
+
+        if (manifest.ValidationResult != null)
+        {
+            yield return string.Empty;
+            yield return $"Validation errors: {manifest.ValidationResult.Issues.Count(issue => issue.Severity == PackageValidationSeverity.Error)}";
+            yield return $"Validation warnings: {manifest.ValidationResult.Issues.Count(issue => issue.Severity == PackageValidationSeverity.Warning)}";
+        }
+    }
+
+    private static string BuildQgisStyleTemplate(string layerName)
+    {
+        return
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<qgis styleCategories=\"AllStyleCategories\" version=\"3.34\">\n" +
+            $"  <renderer-v2 type=\"singleSymbol\" symbollevels=\"0\" referencescale=\"-1\" forceraster=\"0\" enableorderby=\"0\" attr=\"{layerName}\"/>\n" +
+            "</qgis>\n";
     }
 
     private static Bitmap RenderPreviewBitmap(PreparedViewExportData view)
@@ -284,11 +444,16 @@ public sealed class ExportPackageService
 
 public sealed class ExportPackageResult
 {
-    public ExportPackageResult(ExportPackageManifest manifest, string? packageDirectory, string? manifestPath)
+    public ExportPackageResult(
+        ExportPackageManifest manifest,
+        string? packageDirectory,
+        string? manifestPath,
+        PackageValidationResult? validationResult)
     {
         Manifest = manifest ?? throw new ArgumentNullException(nameof(manifest));
         PackageDirectory = packageDirectory;
         ManifestPath = manifestPath;
+        ValidationResult = validationResult;
     }
 
     public ExportPackageManifest Manifest { get; }
@@ -296,4 +461,6 @@ public sealed class ExportPackageResult
     public string? PackageDirectory { get; }
 
     public string? ManifestPath { get; }
+
+    public PackageValidationResult? ValidationResult { get; }
 }

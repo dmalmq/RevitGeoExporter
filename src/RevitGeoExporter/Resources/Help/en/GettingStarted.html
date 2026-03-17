@@ -1,35 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>Getting Started</title>
   <style>
-    body { font-family: "Segoe UI", sans-serif; margin: 24px; line-height: 1.55; color: #2a2a2a; }
-    h1, h2 { color: #16324f; }
-    code { background: #f3f5f7; padding: 1px 4px; border-radius: 3px; }
-    a { color: #145da0; }
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ol, ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    .badge { display: inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border-radius: 999px; background: #eef3f9; border: 1px solid #d7e2ef; color: #27486a; font-size: 12px; font-weight: 600; }
+    .note { color: #617182; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #eef2f6; border-radius: 4px; padding: 1px 5px; }
   </style>
 </head>
 <body>
-  <h1>Getting Started</h1>
-  <p>RevitGeoExporter is a Revit 2024 add-in for exporting selected plan views to IMDF-style GeoPackages and previewing the result before writing files.</p>
-  <h2>Before you export</h2>
-  <ul>
-    <li>Open a Revit project that contains exportable plan views.</li>
-    <li>Confirm the default output folder and CRS from the settings entry inside <strong>Export GeoPackage</strong>.</li>
-    <li>Use the export dialog to choose views and feature layers.</li>
-  </ul>
-  <h2>Main workflow</h2>
-  <ol>
-    <li>Open <a href="help:ExportWorkflow">Export Workflow</a> from the help viewer or click <strong>Export GeoPackage</strong> on the ribbon.</li>
-    <li>Preview units, openings, details, and levels before export when needed.</li>
-    <li>Review validation results and diagnostics warnings before writing files.</li>
-  </ol>
-  <h2>Related topics</h2>
-  <ul>
-    <li><a href="help:SettingsAndProfiles">Settings and Profiles</a></li>
-    <li><a href="help:ValidationAndDiagnostics">Validation and Diagnostics</a></li>
-    <li><a href="help:TroubleshootingFaq">Troubleshooting / FAQ</a></li>
-  </ul>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Quick Start</p>
+      <h1>Getting Started</h1>
+      <p>RevitGeoExporter now guides most users through a simple path: select plan views, choose an output folder, choose what to include, preview when needed, and export.</p>
+      <div>
+        <span class="badge">Plan views</span>
+        <span class="badge">Output folder</span>
+        <span class="badge">Preview</span>
+        <span class="badge">Validation</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Before you export</h2>
+      <ul>
+        <li>Open a Revit model that contains the floor or ceiling plan views you want to publish.</li>
+        <li>Review project mappings or accepted opening families in <a href="help:SettingsAndProfiles">Settings and Profiles</a> if the project uses custom naming.</li>
+        <li>Confirm that the output folder and coordinate assumptions match the needs of the receiving GIS team.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Guided workflow</h2>
+      <ol>
+        <li>In <strong>Plan views</strong>, select one or more views to export.</li>
+        <li>In <strong>Export to</strong>, confirm the folder or use <strong>Browse...</strong> to choose a new one.</li>
+        <li>In <strong>Include in export</strong>, choose the layers you want to write: <code>unit</code>, <code>detail</code>, <code>opening</code>, and <code>level</code>.</li>
+        <li>In <strong>Coordinate system</strong>, keep shared coordinates for the default path or expand the settings if you need to convert to a target CRS or EPSG.</li>
+        <li>Use <strong>Preview</strong> to inspect geometry, warnings, and floor-category assignments before files are written.</li>
+        <li>Run <strong>Export</strong>, resolve any blocking validation issues, and then review the results summary.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <h2>Where to go next</h2>
+      <p class="note">For more detail on each step, continue with the workflow topics below.</p>
+      <ul>
+        <li><a href="help:ExportWorkflow">Export Workflow</a></li>
+        <li><a href="help:PreviewAndAssignments">Preview and Assignments</a></li>
+        <li><a href="help:ValidationAndDiagnostics">Validation and Diagnostics</a></li>
+      </ul>
+    </div>
+  </div>
 </body>
 </html>

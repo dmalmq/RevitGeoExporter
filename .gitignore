@@ -43,3 +43,5 @@ package-lock.json
 install/dist/
 install/output*/
 install/*.zip
+tmp/
+tmp_*.cs

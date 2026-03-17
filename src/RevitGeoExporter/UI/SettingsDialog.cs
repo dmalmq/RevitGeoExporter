@@ -1,7 +1,10 @@
 using System;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -56,7 +59,14 @@ public sealed class SettingsDialog : Form
             GeometryRepairOptions = _original.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = _language,
             UnitSource = _original.UnitSource,
+            UnitGeometrySource = _original.UnitGeometrySource,
+            UnitAttributeSource = _original.UnitAttributeSource,
             RoomCategoryParameterName = _original.RoomCategoryParameterName,
+            LinkExportOptions = _original.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
+            SchemaProfiles = SchemaProfile.NormalizeProfiles(_original.SchemaProfiles).Select(profile => profile.Clone()).ToList(),
+            ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(_original.SchemaProfiles, _original.ActiveSchemaProfileName),
+            ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(_original.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_original.ValidationPolicyProfiles, _original.ActiveValidationPolicyProfileName),
         };
     }
 
@@ -136,10 +146,7 @@ public sealed class SettingsDialog : Form
         {
             using FolderBrowserDialog folderDialog = new()
             {
-                Description = UiLanguageText.Select(
-                    _language,
-                    "Select default output directory",
-                    "既定の出力フォルダを選択してください"),
+                Description = UiLanguageText.Get(_language, "SettingsDialog.SelectDefaultOutputDirectory", "Select default output directory"),
                 ShowNewFolderButton = true,
                 SelectedPath = _outputDirectoryTextBox.Text,
             };
@@ -212,10 +219,7 @@ public sealed class SettingsDialog : Form
             {
                 MessageBox.Show(
                     this,
-                    UiLanguageText.Select(
-                        _language,
-                        "Enter a valid EPSG code.",
-                        "有効なEPSGコードを入力してください。"),
+                    UiLanguageText.Get(_language, "ExportDialog.Message.EnterValidEpsg", "Enter a valid EPSG code."),
                     ProjectInfo.Name,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -257,14 +261,14 @@ public sealed class SettingsDialog : Form
 
     private void ApplyLanguage()
     {
-        Text = UiLanguageText.Select(_language, "GeoExporter Settings", "GeoExporter 設定");
-        _languageLabel.Text = UiLanguageText.Select(_language, "Language", "言語");
-        _outputDirectoryLabel.Text = UiLanguageText.Select(_language, "Output Directory", "出力フォルダ");
-        _presetLabel.Text = UiLanguageText.Select(_language, "CRS Preset", "CRSプリセット");
-        _epsgLabel.Text = UiLanguageText.Select(_language, "Target EPSG", "対象EPSG");
-        _browseButton.Text = UiLanguageText.Select(_language, "Browse...", "参照...");
-        _cancelButton.Text = UiLanguageText.Select(_language, "Cancel", "キャンセル");
-        _saveButton.Text = UiLanguageText.Select(_language, "Save", "保存");
+        Text = UiLanguageText.Get(_language, "SettingsHub.Title", "GeoExporter Settings");
+        _languageLabel.Text = UiLanguageText.Get(_language, "Common.Language", "Language");
+        _outputDirectoryLabel.Text = UiLanguageText.Get(_language, "Common.OutputDirectory", "Output Directory");
+        _presetLabel.Text = UiLanguageText.Get(_language, "Common.CrsPreset", "CRS Preset");
+        _epsgLabel.Text = UiLanguageText.Get(_language, "Common.TargetEpsg", "Target EPSG");
+        _browseButton.Text = UiLanguageText.Get(_language, "Common.Browse", "Browse...");
+        _cancelButton.Text = UiLanguageText.Get(_language, "Common.Cancel", "Cancel");
+        _saveButton.Text = UiLanguageText.Get(_language, "Common.Save", "Save");
     }
 
     private void SelectLanguage(UiLanguage language)

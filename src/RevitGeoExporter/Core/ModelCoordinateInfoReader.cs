@@ -1,14 +1,16 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Models;
 
 namespace RevitGeoExporter.Core;
 
 public sealed class ModelCoordinateInfoReader
 {
-    private static readonly Regex WktAuthorityRegex = new("(?:AUTHORITY\\[\\\"EPSG\\\",\\\"(\\d+)\\\"\\]|ID\\[\\\"EPSG\\\",\\s*(\\d+)\\s*\\])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex WktAuthorityRegex = new(@"(?:AUTHORITY\[""EPSG"",""(\d+)""\]|ID\[""EPSG"",\s*(\d+)\s*\])", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public ModelCoordinateInfo Read(Document document)
     {
@@ -33,6 +35,7 @@ public sealed class ModelCoordinateInfoReader
             SiteCoordinateSystemDefinition = siteCoordinateSystemDefinition,
             ResolvedSourceEpsg = resolvedSourceEpsg,
             ResolvedSourceLabel = BuildResolvedSourceLabel(siteCoordinateSystemId, resolvedSourceEpsg),
+            SurveyPointSharedCoordinates = ReadSurveyPointSharedCoordinates(document, location),
         };
     }
 
@@ -65,7 +68,7 @@ public sealed class ModelCoordinateInfoReader
         double angleDegrees = position.Angle * (180d / Math.PI);
         return string.Format(
             CultureInfo.InvariantCulture,
-            "EW {0:0.###} m, NS {1:0.###} m, Elev {2:0.###} m, Angle {3:0.###}°",
+            "EW {0:0.###} m, NS {1:0.###} m, Elev {2:0.###} m, Angle {3:0.###}ﾂｰ",
             eastWestMeters,
             northSouthMeters,
             elevationMeters,
@@ -104,5 +107,32 @@ public sealed class ModelCoordinateInfoReader
         }
 
         return "Not resolved";
+    }
+
+    private static Point2D? ReadSurveyPointSharedCoordinates(Document document, ProjectLocation? location)
+    {
+        if (location == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            BasePoint? surveyPoint = new FilteredElementCollector(document)
+                .OfClass(typeof(BasePoint))
+                .Cast<BasePoint>()
+                .FirstOrDefault(basePoint => basePoint.IsShared);
+            if (surveyPoint == null)
+            {
+                return null;
+            }
+
+            SharedCoordinateProjector projector = new(location);
+            return projector.ProjectPoint(surveyPoint.Position);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

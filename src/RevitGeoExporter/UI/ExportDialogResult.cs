@@ -4,6 +4,8 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -14,28 +16,48 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
+        IncrementalExportMode incrementalExportMode,
         bool generateDiagnosticsReport,
         bool generatePackageOutput,
         bool includePackageLegend,
+        PackagingMode packagingMode,
+        bool validateAfterWrite,
+        bool generateQgisArtifacts,
+        PostExportActionOptions? postExportActions,
         GeometryRepairOptions geometryRepairOptions,
         string? selectedProfileName,
         UiLanguage uiLanguage,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null)
         : this(
             selectedViews,
             outputDirectory,
             targetEpsg,
             featureTypes,
+            incrementalExportMode,
             generateDiagnosticsReport,
             generatePackageOutput,
             includePackageLegend,
+            packagingMode,
+            validateAfterWrite,
+            generateQgisArtifacts,
+            postExportActions,
             geometryRepairOptions,
             selectedProfileName,
             uiLanguage,
             CoordinateExportMode.SharedCoordinates,
             unitSource,
-            roomCategoryParameterName)
+            unitGeometrySource,
+            unitAttributeSource,
+            roomCategoryParameterName,
+            linkExportOptions,
+            activeSchemaProfile,
+            activeValidationPolicyProfile)
     {
     }
 
@@ -44,29 +66,63 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
+        IncrementalExportMode incrementalExportMode,
         bool generateDiagnosticsReport,
         bool generatePackageOutput,
         bool includePackageLegend,
+        PackagingMode packagingMode,
+        bool validateAfterWrite,
+        bool generateQgisArtifacts,
+        PostExportActionOptions? postExportActions,
         GeometryRepairOptions geometryRepairOptions,
         string? selectedProfileName,
         UiLanguage uiLanguage,
         CoordinateExportMode coordinateMode,
         UnitSource unitSource,
-        string roomCategoryParameterName)
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
+        string roomCategoryParameterName,
+        LinkExportOptions? linkExportOptions = null,
+        SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null)
     {
+        string? normalizedSelectedProfileName = selectedProfileName?.Trim();
+        string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
+        GeometryRepairOptions normalizedGeometryRepairOptions = geometryRepairOptions ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
+
+        if (string.IsNullOrEmpty(normalizedSelectedProfileName))
+        {
+            normalizedSelectedProfileName = null;
+        }
+
+        if (normalizedRoomCategoryParameterName.Length == 0)
+        {
+            normalizedRoomCategoryParameterName = "Name";
+        }
+
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
         TargetEpsg = targetEpsg;
         FeatureTypes = featureTypes;
+        IncrementalExportMode = incrementalExportMode;
         GenerateDiagnosticsReport = generateDiagnosticsReport;
         GeneratePackageOutput = generatePackageOutput;
         IncludePackageLegend = includePackageLegend;
-        GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
-        SelectedProfileName = string.IsNullOrWhiteSpace(selectedProfileName) ? null : selectedProfileName.Trim();
+        PackagingMode = packagingMode;
+        ValidateAfterWrite = validateAfterWrite;
+        GenerateQgisArtifacts = generateQgisArtifacts;
+        PostExportActions = postExportActions?.Clone() ?? new PostExportActionOptions();
+        GeometryRepairOptions = normalizedGeometryRepairOptions.Clone();
+        SelectedProfileName = normalizedSelectedProfileName;
         UiLanguage = uiLanguage;
         CoordinateMode = coordinateMode;
-        UnitSource = unitSource;
-        RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
+        UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
+        RoomCategoryParameterName = normalizedRoomCategoryParameterName;
+        LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
+        ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        ActiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -77,11 +133,21 @@ public sealed class ExportDialogResult
 
     public ExportFeatureType FeatureTypes { get; }
 
+    public IncrementalExportMode IncrementalExportMode { get; }
+
     public bool GenerateDiagnosticsReport { get; }
 
     public bool GeneratePackageOutput { get; }
 
     public bool IncludePackageLegend { get; }
+
+    public PackagingMode PackagingMode { get; }
+
+    public bool ValidateAfterWrite { get; }
+
+    public bool GenerateQgisArtifacts { get; }
+
+    public PostExportActionOptions PostExportActions { get; }
 
     public GeometryRepairOptions GeometryRepairOptions { get; }
 
@@ -93,5 +159,15 @@ public sealed class ExportDialogResult
 
     public UnitSource UnitSource { get; }
 
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
     public string RoomCategoryParameterName { get; }
+
+    public LinkExportOptions LinkExportOptions { get; }
+
+    public SchemaProfile ActiveSchemaProfile { get; }
+
+    public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
 }

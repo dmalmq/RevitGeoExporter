@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.Export;
 
@@ -20,7 +22,17 @@ public sealed class FloorExportPreparationOptions
 
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;
 
+    public UnitGeometrySource UnitGeometrySource { get; set; } = UnitGeometrySource.Unset;
+
+    public UnitAttributeSource UnitAttributeSource { get; set; } = UnitAttributeSource.Unset;
+
     public string RoomCategoryParameterName { get; set; } = "Name";
+
+    public LinkExportOptions LinkExportOptions { get; set; } = new();
+
+    public SchemaProfile ActiveSchemaProfile { get; set; } = SchemaProfile.CreateCoreProfile();
+
+    public ValidationPolicyProfile ActiveValidationPolicyProfile { get; set; } = ValidationPolicyProfile.CreateRecommendedProfile();
 
     internal IReadOnlyList<ViewExportContext>? ViewContexts { get; set; }
 }

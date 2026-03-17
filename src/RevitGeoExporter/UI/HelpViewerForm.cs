@@ -229,19 +229,9 @@ public sealed class HelpViewerForm : Form
 
     private void OnBrowserNavigating(object? sender, WebBrowserNavigatingEventArgs e)
     {
-        if (e.Url == null)
+        if (HelpTopicLinkParser.TryParse(e.Url, out HelpTopic topic))
         {
-            return;
-        }
-
-        if (!string.Equals(e.Url.Scheme, "help", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        e.Cancel = true;
-        if (Enum.TryParse(e.Url.Host, ignoreCase: true, out HelpTopic topic))
-        {
+            e.Cancel = true;
             LoadTopic(topic);
         }
     }

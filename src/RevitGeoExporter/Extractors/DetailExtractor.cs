@@ -8,6 +8,9 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Utilities;
+using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
 
@@ -20,12 +23,24 @@ public sealed class DetailExtractor
     private readonly Document _document;
     private readonly SharedCoordinateProjector _sharedCoordinateProjector;
     private readonly GeometryRepairOptions _geometryRepairOptions;
+    private readonly ExportSourceDescriptor _sourceDescriptor;
+    private readonly string _sourceDocumentKey;
+    private readonly string _sourceDocumentName;
+    private readonly SchemaProfile _schemaProfile;
 
-    public DetailExtractor(Document document, GeometryRepairOptions? geometryRepairOptions = null)
+    public DetailExtractor(
+        Document document,
+        GeometryRepairOptions? geometryRepairOptions = null,
+        ExportSourceDescriptor? sourceDescriptor = null,
+        SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
+        _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
+        _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
+        _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
+        _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }
 
     public IReadOnlyList<ExportLineString> ExtractForLevel(
@@ -34,7 +49,9 @@ public sealed class DetailExtractor
         IReadOnlyList<CurveElement> detailCurves,
         IReadOnlyList<Stairs> stairs,
         GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        string? viewName = null,
+        bool skipLevelFilter = false)
     {
         if (level is null)
         {
@@ -74,7 +91,7 @@ public sealed class DetailExtractor
                 continue;
             }
 
-            if (!IsOnLevel(curveElement, level))
+            if (!skipLevelFilter && !IsOnLevel(curveElement, level))
             {
                 continue;
             }
@@ -86,18 +103,17 @@ public sealed class DetailExtractor
             }
 
             features.Add(
-                new ExportLineString(
+                CreateFeature(
+                    curveElement,
                     lineString,
-                    new Dictionary<string, object?>
-                    {
-                        ["id"] = StableIdGenerator.Create("detail", curveElement.Id.Value, levelId),
-                        ["level_id"] = levelId,
-                        ["element_id"] = curveElement.Id.Value,
-                        ["source_label"] = "detail-curve",
-                    }));
+                    BuildSyntheticId("detail", curveElement.Id.Value, levelId),
+                    levelId,
+                    "detail-curve",
+                    viewName,
+                    warnings));
         }
 
-        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings));
+        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings, viewName));
         return features;
     }
 
@@ -176,7 +192,8 @@ public sealed class DetailExtractor
         IReadOnlyList<Stairs> stairs,
         string levelId,
         GeometryRepairResult geometryRepair,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        string? viewName)
     {
         List<ExportLineString> features = new();
         foreach (Stairs stair in stairs)
@@ -188,7 +205,7 @@ public sealed class DetailExtractor
                     continue;
                 }
 
-                if (!TryBuildRunStepLines(run, out List<LineString2D> stepLines, geometryRepair, warnings))
+                if (!TryBuildRunStepLines(stair, run, out List<LineString2D> stepLines, geometryRepair, warnings))
                 {
                     continue;
                 }
@@ -197,15 +214,14 @@ public sealed class DetailExtractor
                 {
                     long syntheticElementId = (run.Id.Value * 1000L) + (i + 1);
                     features.Add(
-                        new ExportLineString(
+                        CreateFeature(
+                            run,
                             stepLines[i],
-                            new Dictionary<string, object?>
-                            {
-                                ["id"] = StableIdGenerator.Create("detail.stair.step", syntheticElementId, levelId),
-                                ["level_id"] = levelId,
-                                ["element_id"] = run.Id.Value,
-                                ["source_label"] = "stair-step",
-                            }));
+                            BuildSyntheticId("detail.stair.step", syntheticElementId, levelId),
+                            levelId,
+                            "stair-step",
+                            viewName,
+                            warnings));
                 }
             }
         }
@@ -214,6 +230,7 @@ public sealed class DetailExtractor
     }
 
     private bool TryBuildRunStepLines(
+        Stairs stair,
         StairsRun run,
         out List<LineString2D> lines,
         GeometryRepairResult geometryRepair,
@@ -229,11 +246,15 @@ public sealed class DetailExtractor
         }
         catch (Exception)
         {
-            warnings.Add($"Stairs run {run.Id.Value} path/boundary could not be read for detail export.");
+            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} path/boundary could not be read for detail export.");
             return false;
         }
 
-        if (!TryCreatePolygonFromCurveLoop(footprintBoundary, out Polygon footprintPolygon))
+        if (!TryCreatePolygonFromCurveLoop(
+                footprintBoundary,
+                out Polygon footprintPolygon,
+                warnings,
+                $"{BuildStairRunWarningPrefix(stair, run)} footprint boundary"))
         {
             return false;
         }
@@ -296,19 +317,49 @@ public sealed class DetailExtractor
         return lines.Count > 0;
     }
 
-    private bool TryCreatePolygonFromCurveLoop(CurveLoop loop, out Polygon polygon)
+    private bool TryCreatePolygonFromCurveLoop(
+        CurveLoop loop,
+        out Polygon polygon,
+        ICollection<string>? warnings = null,
+        string? context = null)
     {
         polygon = null!;
         List<Point2D> points = ProjectCurveLoop(loop, closeLoop: true);
         if (points.Count < 4)
         {
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} could not form a closed polygon for detail export.");
+            }
+
             return false;
         }
 
-        Coordinate[] coordinates = points
+        List<Coordinate> coordinates = points
             .Select(point => new Coordinate(point.X, point.Y))
-            .ToArray();
-        LinearRing shell = GeometryFactory.CreateLinearRing(coordinates);
+            .ToList();
+        Coordinate first = coordinates[0];
+        Coordinate last = coordinates[coordinates.Count - 1];
+        if (!first.Equals2D(last))
+        {
+            coordinates.Add(new Coordinate(first.X, first.Y));
+        }
+
+        LinearRing shell;
+        try
+        {
+            shell = GeometryFactory.CreateLinearRing(coordinates.ToArray());
+        }
+        catch (ArgumentException)
+        {
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} could not form a closed polygon for detail export.");
+            }
+
+            return false;
+        }
+
         Polygon created = GeometryFactory.CreatePolygon(shell);
         if (!created.IsValid)
         {
@@ -317,6 +368,11 @@ public sealed class DetailExtractor
             {
                 polygon = healedPolygon;
                 return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} produced an invalid polygon for detail export.");
             }
 
             return false;
@@ -377,7 +433,55 @@ public sealed class DetailExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        return _sharedCoordinateProjector.ProjectPoint(point);
+        XYZ hostPoint = _sourceDescriptor.TransformToHost.OfPoint(point);
+        return _sharedCoordinateProjector.ProjectPoint(hostPoint);
+    }
+
+    private ExportLineString CreateFeature(
+        Element sourceElement,
+        LineString2D lineString,
+        string id,
+        string levelId,
+        string sourceLabel,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = id,
+            ["level_id"] = levelId,
+            ["element_id"] = sourceElement.Id.Value,
+            ["source_label"] = sourceLabel,
+            ["source_document_key"] = _sourceDocumentKey,
+            ["source_document_name"] = _sourceDocumentName,
+            ["has_persisted_export_id"] = false,
+            ["is_linked_source"] = _sourceDescriptor.IsLinkedSource,
+            ["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId,
+            ["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName,
+        };
+        SchemaAttributeMapper.ApplyMappings(
+            _schemaProfile,
+            SchemaLayerType.Detail,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings);
+        return new ExportLineString(lineString, attributes);
+    }
+
+    private string BuildSyntheticId(string scope, long elementId, string levelId)
+    {
+        if (!_sourceDescriptor.IsLinkedSource || !_sourceDescriptor.LinkInstanceId.HasValue)
+        {
+            return StableIdGenerator.Create(scope, elementId, levelId);
+        }
+
+        return DeterministicIdGenerator.CreateGuid(
+            scope,
+            _sourceDocumentKey,
+            _sourceDescriptor.LinkInstanceId.Value.ToString(),
+            elementId.ToString(),
+            levelId);
     }
 
     private static bool TryInterpolateOnPolyline(
@@ -525,6 +629,14 @@ public sealed class DetailExtractor
         }
 
         return total;
+    }
+
+    private string BuildStairRunWarningPrefix(Stairs stair, StairsRun run)
+    {
+        string prefix = $"Stairs {stair.Id.Value} run {run.Id.Value}";
+        return _sourceDescriptor.IsLinkedSource
+            ? $"{prefix} in source '{_sourceDocumentName}'"
+            : prefix;
     }
 
     private static bool IsSamePoint(Point2D left, Point2D right)

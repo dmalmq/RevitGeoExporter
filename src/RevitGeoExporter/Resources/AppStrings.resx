@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <resheader name="resmimetype">
     <value>text/microsoft-resx</value>
@@ -29,15 +29,6 @@
   </data>
   <data name="Ribbon.Export.Description" xml:space="preserve">
     <value>Select floor or ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.</value>
-  </data>
-  <data name="Ribbon.Settings.Text" xml:space="preserve">
-    <value>Settings</value>
-  </data>
-  <data name="Ribbon.Settings.ToolTip" xml:space="preserve">
-    <value>Manage global and project export settings.</value>
-  </data>
-  <data name="Ribbon.Settings.Description" xml:space="preserve">
-    <value>Opens the settings hub for defaults, profiles, mappings, and configuration diagnostics.</value>
   </data>
   <data name="Ribbon.Help.Text" xml:space="preserve">
     <value>Help</value>
@@ -71,6 +62,12 @@
   </data>
   <data name="Common.View" xml:space="preserve">
     <value>View</value>
+  </data>
+  <data name="Common.Rooms" xml:space="preserve">
+    <value>Rooms</value>
+  </data>
+  <data name="Common.Floors" xml:space="preserve">
+    <value>Floors</value>
   </data>
   <data name="Common.OutputDirectory" xml:space="preserve">
     <value>Output Directory</value>
@@ -195,6 +192,9 @@
   <data name="ExportDialog.FeatureTypes" xml:space="preserve">
     <value>Feature Types</value>
   </data>
+  <data name="ExportDialog.CrsLabel" xml:space="preserve">
+    <value>CRS (EPSG)</value>
+  </data>
   <data name="ExportDialog.SelectAll" xml:space="preserve">
     <value>Select All</value>
   </data>
@@ -218,6 +218,21 @@
   </data>
   <data name="ExportDialog.IncludeLegend" xml:space="preserve">
     <value>Include legend file</value>
+  </data>
+  <data name="ExportDialog.UnitSource" xml:space="preserve">
+    <value>Unit Source</value>
+  </data>
+  <data name="ExportDialog.RoomCategoryParameter" xml:space="preserve">
+    <value>Room Category Parameter</value>
+  </data>
+  <data name="ExportDialog.CurrentSettings" xml:space="preserve">
+    <value>(Current settings)</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.ConvertToTargetCrs" xml:space="preserve">
+    <value>Convert to target CRS</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.SharedCoordinatesDefault" xml:space="preserve">
+    <value>Shared coordinates (default)</value>
   </data>
   <data name="ExportDialog.GeometryRepair" xml:space="preserve">
     <value>Geometry Repair</value>
@@ -312,11 +327,23 @@
   <data name="Command.SettingsSaved" xml:space="preserve">
     <value>Settings saved.</value>
   </data>
-  <data name="Command.OpenSettingsFailed" xml:space="preserve">
-    <value>Unable to open settings.</value>
-  </data>
   <data name="Command.ExportFailed" xml:space="preserve">
     <value>Export failed.</value>
+  </data>
+  <data name="Command.ExportFailed.Body" xml:space="preserve">
+    <value>The export could not be completed. You can save an error report as a text file.</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReport" xml:space="preserve">
+    <value>Save Error Report</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReportTitle" xml:space="preserve">
+    <value>Save Export Error Report</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaved" xml:space="preserve">
+    <value>Error report saved.{0}{1}</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaveFailed" xml:space="preserve">
+    <value>Failed to save error report.{0}{0}{1}</value>
   </data>
   <data name="Help.Command.OpenFailed" xml:space="preserve">
     <value>Unable to open help.</value>
@@ -326,6 +353,27 @@
   </data>
   <data name="Help.Viewer.LanguageLabel" xml:space="preserve">
     <value>Language</value>
+  </data>
+  <data name="Help.Viewer.HeaderDescription" xml:space="preserve">
+    <value>Offline guidance for export, preview, settings, and troubleshooting.</value>
+  </data>
+  <data name="Help.Viewer.NavigationTitle" xml:space="preserve">
+    <value>Topics</value>
+  </data>
+  <data name="Help.Viewer.NavigationDescription" xml:space="preserve">
+    <value>Choose a topic to review the current workflow and related guidance.</value>
+  </data>
+  <data name="Help.Viewer.ArticleDescription" xml:space="preserve">
+    <value>Articles open inside this viewer, including links to related help topics.</value>
+  </data>
+  <data name="Help.Viewer.FooterSummary" xml:space="preserve">
+    <value>Offline bilingual help</value>
+  </data>
+  <data name="Help.Viewer.ContextLabel" xml:space="preserve">
+    <value>Opened from: {0}</value>
+  </data>
+  <data name="Help.Viewer.FallbackNotice" xml:space="preserve">
+    <value>Showing fallback content because this topic is not available in the selected language.</value>
   </data>
   <data name="Help.Viewer.TopicUnavailableTitle" xml:space="preserve">
     <value>Help topic unavailable</value>
@@ -363,6 +411,13 @@
   <data name="Preview.ShowBasemap" xml:space="preserve">
     <value>Show basemap</value>
   </data>
+  
+  <data name="Preview.ShowSurveyPoint" xml:space="preserve">
+    <value>Show survey point</value>
+  </data>
+  <data name="Preview.SurveyPoint" xml:space="preserve">
+    <value>Survey point</value>
+  </data>
   <data name="Preview.BasemapSourceMissing" xml:space="preserve">
     <value>No basemap tile source is configured.</value>
   </data>
@@ -380,5 +435,14 @@
   </data>
   <data name="Preview.MapProjectionFailed" xml:space="preserve">
     <value>Map preview projection failed.</value>
+  </data>
+  <data name="SettingsDialog.SelectDefaultOutputDirectory" xml:space="preserve">
+    <value>Select default output directory</value>
+  </data>
+  <data name="Validation.ResolveWarnings" xml:space="preserve">
+    <value>Some issues were encountered while applying validation fixes.</value>
+  </data>
+  <data name="Validation.ResolveWarnings.Body" xml:space="preserve">
+    <value>{0}{1}{1}{2}</value>
   </data>
 </root>

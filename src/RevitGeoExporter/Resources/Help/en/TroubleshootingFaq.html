@@ -1,12 +1,58 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>Troubleshooting / FAQ</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}a{color:#145da0}</style></head><body>
-<h1>Troubleshooting / FAQ</h1>
-<h2>Why is something missing in QGIS?</h2>
-<p>Use the preview window and validation dialog first. Missing vertical units, unsnapped openings, and unsupported families should appear there before export completes.</p>
-<h2>Why did a floor export as unspecified?</h2>
-<p>The floor type name did not resolve to a known category. Use the preview assignment workflow or project mappings to add an exporter-side override.</p>
-<h2>Where are settings stored?</h2>
-<p>Global defaults and project mappings are stored in the RevitGeoExporter application data area. The settings hub can import, export, and reset each scope.</p>
-<h2>Can the add-in modify the Revit model?</h2>
-<p>Preview mappings and help content are exporter-side only. They do not rename families, rename floor types, or write category decisions back into the Revit model.</p>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Troubleshooting / FAQ</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Support</p>
+      <h1>Troubleshooting / FAQ</h1>
+      <p>Use this page when export behavior is technically correct but still unexpected for the current project or receiving workflow.</p>
+    </div>
+
+    <div class="section">
+      <h2>Why is something missing in QGIS?</h2>
+      <p>Start with <a href="help:PreviewAndAssignments">Preview and Assignments</a> and the validation dialog. Missing vertical units, unsnapped openings, unsupported families, and filtered-out layers usually appear there before export completes.</p>
+    </div>
+
+    <div class="section">
+      <h2>Why did a floor export as unspecified?</h2>
+      <p>The floor type name did not resolve to a known category. Use preview assignments or the project mappings area in <a href="help:SettingsAndProfiles">Settings and Profiles</a> to add an exporter-side override.</p>
+    </div>
+
+    <div class="section">
+      <h2>Where are settings stored?</h2>
+      <p>Global defaults and project mappings are stored in the RevitGeoExporter application data area. The settings hub can import, export, and reset each scope independently.</p>
+    </div>
+
+    <div class="section">
+      <h2>Can the add-in modify the Revit model?</h2>
+      <p>No. Preview assignments, mappings, diagnostics, and help content are exporter-side only. They do not rename Revit elements or write category decisions back into the model.</p>
+    </div>
+
+    <div class="callout">
+      <h2>Still blocked?</h2>
+      <ul>
+        <li>Review <a href="help:ValidationAndDiagnostics">Validation and Diagnostics</a> for issues that can stop the export.</li>
+        <li>Review <a href="help:ExportWorkflow">Export Workflow</a> to confirm the selected layers, folder, and coordinate mode.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

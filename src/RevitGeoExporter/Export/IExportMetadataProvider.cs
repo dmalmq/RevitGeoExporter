@@ -5,9 +5,9 @@ namespace RevitGeoExporter.Export;
 
 public interface IExportMetadataProvider
 {
-    string GetElementId(Element element, ICollection<string> warnings);
+    ExportElementMetadata GetElementMetadata(Element element, ICollection<string> warnings);
 
-    string GetLevelId(Level level, ICollection<string> warnings);
+    ExportLevelMetadata GetLevelMetadata(Level level, ICollection<string> warnings);
 
     string? GetOptionalStringParameter(Element element, string parameterName);
 }

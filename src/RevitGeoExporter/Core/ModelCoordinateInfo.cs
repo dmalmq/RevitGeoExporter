@@ -1,3 +1,5 @@
+using RevitGeoExporter.Core.Models;
+
 namespace RevitGeoExporter.Core;
 
 public sealed class ModelCoordinateInfo
@@ -15,6 +17,8 @@ public sealed class ModelCoordinateInfo
     public int? ResolvedSourceEpsg { get; init; }
 
     public string ResolvedSourceLabel { get; init; } = string.Empty;
+
+    public Point2D? SurveyPointSharedCoordinates { get; init; }
 
     public bool CanConvert => ResolvedSourceEpsg.HasValue || SiteCoordinateSystemDefinition.Length > 0;
 }

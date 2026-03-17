@@ -47,10 +47,12 @@ public sealed class ExportResultForm : IDisposable
 
     private UIElement BuildLayout()
     {
-        int viewCount = _result.ViewResults.Select(x => x.ViewName).Distinct(StringComparer.Ordinal).Count();
-        int fileCount = _result.ViewResults.Count;
+        int viewCount = _result.ArtifactResults.SelectMany(x => x.ContributingViewNames).Distinct(StringComparer.Ordinal).Count();
+        int fileCount = _result.ArtifactResults.Count;
         int warningCount = _result.Warnings.Count;
-        int featureCount = _result.ViewResults.Sum(x => x.FeatureCount);
+        int featureCount = _result.ArtifactResults.Sum(x => x.FeatureCount);
+        int writtenArtifacts = _result.ArtifactResults.Count(x => x.Disposition == ArtifactDisposition.Written);
+        int reusedArtifacts = _result.ArtifactResults.Count(x => x.Disposition == ArtifactDisposition.ReusedFromBaseline);
 
         Grid root = new() { Margin = new Thickness(12) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -75,7 +77,7 @@ public sealed class ExportResultForm : IDisposable
             Margin = new Thickness(0, 6, 0, 0),
             Text = _language == UiLanguage.Japanese
                 ? $"出力ビュー: {viewCount}    出力ファイル: {fileCount}    総フィーチャ数: {featureCount}    警告: {warningCount}"
-                : $"Views exported: {viewCount}    Files exported: {fileCount}    Total features: {featureCount}    Warnings: {warningCount}",
+                : $"Views: {viewCount}    Artifacts: {fileCount}    Written: {writtenArtifacts}    Reused: {reusedArtifacts}    Features: {featureCount}    Warnings: {warningCount}",
         });
         labels.Children.Add(new TextBlock
         {
@@ -124,6 +126,13 @@ public sealed class ExportResultForm : IDisposable
         if (!string.IsNullOrWhiteSpace(_result.PackageManifestPath))
         {
             packageLines.Add($"Manifest: {_result.PackageManifestPath}");
+        }
+
+        if (_result.PackageValidationResult != null)
+        {
+            int errorCount = _result.PackageValidationResult.Issues.Count(issue => issue.Severity == RevitGeoExporter.Core.Diagnostics.PackageValidationSeverity.Error);
+            int packageWarningCount = _result.PackageValidationResult.Issues.Count(issue => issue.Severity == RevitGeoExporter.Core.Diagnostics.PackageValidationSeverity.Warning);
+            packageLines.Add($"Validation: {errorCount} error(s), {packageWarningCount} warning(s)");
         }
 
         if (packageLines.Count == 0)

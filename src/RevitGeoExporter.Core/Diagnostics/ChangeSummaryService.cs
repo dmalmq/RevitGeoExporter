@@ -7,10 +7,17 @@ namespace RevitGeoExporter.Core.Diagnostics;
 public sealed class ChangeSummaryService
 {
     public ExportChangeSummary Compare(
+        ExportBaselineSnapshot? previousSnapshot,
         ExportDiagnosticsReport? previousReport,
         ExportDiagnosticsReport currentReport,
         ExportPackageManifest? previousManifest,
-        ExportPackageManifest currentManifest)
+        ExportPackageManifest currentManifest,
+        int changedViewCount,
+        int reusedViewCount,
+        int writtenArtifactCount,
+        int reusedArtifactCount,
+        int missingBaselineArtifactCount,
+        string? fullRewriteReason)
     {
         if (currentReport == null)
         {
@@ -22,7 +29,29 @@ public sealed class ChangeSummaryService
             throw new ArgumentNullException(nameof(currentManifest));
         }
 
-        ExportChangeSummary summary = new();
+        ExportChangeSummary summary = new()
+        {
+            ChangedViewCount = changedViewCount,
+            ReusedViewCount = reusedViewCount,
+            WrittenArtifactCount = writtenArtifactCount,
+            ReusedArtifactCount = reusedArtifactCount,
+            BaselineStatus = previousSnapshot == null
+                ? ExportBaselineStatus.Unavailable
+                : string.IsNullOrWhiteSpace(fullRewriteReason)
+                    ? ExportBaselineStatus.Loaded
+                    : ExportBaselineStatus.ConfigurationChanged,
+        };
+
+        if (!string.IsNullOrWhiteSpace(fullRewriteReason))
+        {
+            summary.Lines.Add($"Full rewrite: {fullRewriteReason}");
+        }
+
+        if (missingBaselineArtifactCount > 0)
+        {
+            summary.Lines.Add($"Missing baseline artifacts forced rewrites: {missingBaselineArtifactCount}");
+        }
+
         if (previousReport == null || previousManifest == null)
         {
             summary.Lines.Add("No previous export baseline was found. This export is now the baseline.");

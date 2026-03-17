@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -18,9 +18,10 @@ public static class CoordinateSystemCatalog
         "PROJCS[\"WGS 84 / Pseudo-Mercator\"," +
         "GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]]," +
         "PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433]]," +
-        "PROJECTION[\"Mercator_1SP\"]," +
+        // OSM tiles use EPSG:3857 pseudo-Mercator, not ellipsoidal Mercator_1SP.
+        "PROJECTION[\"Popular_Visualisation_Pseudo_Mercator\"]," +
+        "PARAMETER[\"latitude_of_origin\",0]," +
         "PARAMETER[\"central_meridian\",0]," +
-        "PARAMETER[\"scale_factor\",1]," +
         "PARAMETER[\"false_easting\",0]," +
         "PARAMETER[\"false_northing\",0]," +
         "UNIT[\"metre\",1]," +
@@ -94,6 +95,8 @@ public static class CoordinateSystemCatalog
         out CoordinateSystem? coordinateSystem,
         out string failureReason)
     {
+        // Prefer numeric CRS identifiers over raw Revit WKT because the site WKT can parse
+        // successfully while still drifting from the model's resolved shared-coordinate CRS.
         if (resolvedSourceEpsg.HasValue && TryCreateFromEpsg(resolvedSourceEpsg.Value, out coordinateSystem))
         {
             failureReason = string.Empty;
@@ -118,7 +121,7 @@ public static class CoordinateSystemCatalog
             }
             catch
             {
-                // Fall through to the generic failure reason below.
+                // Fall through to the shared failure reason below.
             }
         }
 
@@ -184,6 +187,27 @@ public static class CoordinateSystemCatalog
         }
 
         return ReprojectFeature(feature, transformation.MathTransform);
+    }
+
+    public static Point2D ReprojectPoint(Point2D point, CoordinateSystem source, CoordinateSystem target)
+    {
+        if (source is null)
+        {
+            throw new ArgumentNullException(nameof(source));
+        }
+
+        if (target is null)
+        {
+            throw new ArgumentNullException(nameof(target));
+        }
+
+        var transformation = TransformationFactory.CreateFromCoordinateSystems(source, target);
+        if (transformation == null)
+        {
+            throw new InvalidOperationException("A coordinate transformation could not be created for the requested CRS conversion.");
+        }
+
+        return TransformPoint(point, transformation.MathTransform);
     }
 
     private static IExportFeature ReprojectFeature(IExportFeature feature, MathTransform mathTransform)

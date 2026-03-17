@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Diagnostics;
@@ -44,22 +45,48 @@ public sealed class ExportDiagnosticsReportBuilder
         return new ExportDiagnosticsReport
         {
             SourceModelName = session.SourceModelName,
+            SourceDocumentKey = session.SourceDocumentKey,
             TargetEpsg = session.OutputEpsg,
+            SourceEpsg = session.SourceEpsg,
+            SourceCoordinateSystemId = session.SourceCoordinateSystemId,
+            SourceCoordinateSystemDefinition = session.SourceCoordinateSystemDefinition,
             ProfileName = session.ProfileName,
+            SchemaProfileName = session.ActiveSchemaProfile.Name,
+            ValidationPolicyProfileName = session.ActiveValidationPolicyProfile.Name,
+            OperatorName = Environment.UserName ?? string.Empty,
+            CoordinateMode = session.CoordinateMode.ToString(),
+            PackagingMode = session.PackageOptions.PackagingMode.ToString(),
             ExportedAtUtc = exportedAtUtc,
             DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),
             Views = views,
             ValidationIssues = validationResult.Issues.ToList(),
             ExportWarnings = exportResult.Warnings.ToList(),
-            OutputFiles = exportResult.ViewResults
+            IncludedLinks = session.IncludedLinks
+                .Select(link => ExportLinkedModelInfo.Create(
+                    link.LinkInstanceId,
+                    link.LinkInstanceName,
+                    link.SourceDocumentKey,
+                    link.SourceDocumentName))
+                .ToList(),
+            OutputFiles = exportResult.ArtifactResults
                 .Select(result => new ExportDiagnosticsOutputFile
                 {
-                    ViewName = result.ViewName,
-                    FeatureType = result.FeatureType,
+                    ViewName = result.ContributingViewNames.FirstOrDefault() ?? string.Empty,
+                    ViewId = result.ContributingViewIds.FirstOrDefault(),
+                    FeatureType = result.LayerSummary,
                     Path = result.OutputFilePath,
                     FeatureCount = result.FeatureCount,
+                    ArtifactKey = result.ArtifactKey,
+                    RelativePath = Path.GetFileName(result.OutputFilePath),
+                    PackagingMode = result.PackagingMode.ToString(),
+                    Disposition = result.Disposition.ToString(),
+                    ContributingViewIds = result.ContributingViewIds.ToList(),
+                    ContributingViewNames = result.ContributingViewNames.ToList(),
+                    ContributingLevelNames = result.ContributingLevelNames.ToList(),
+                    LayerNames = result.LayerNames.ToList(),
                 })
                 .ToList(),
+            PackageValidationResult = exportResult.PackageValidationResult,
         };
     }
 
@@ -73,6 +100,7 @@ public sealed class ExportDiagnosticsReportBuilder
             ViewName = context.View.Name,
             LevelName = context.Level.Name,
             UnsupportedOpeningFamilies = context.UnsupportedOpenings
+                .Concat(context.LinkedSources.SelectMany(source => source.UnsupportedOpenings))
                 .GroupBy(opening => OpeningFamilyClassifier.GetFamilyName(opening), StringComparer.OrdinalIgnoreCase)
                 .Select(group => new ExportDiagnosticsFamilyOccurrence
                 {

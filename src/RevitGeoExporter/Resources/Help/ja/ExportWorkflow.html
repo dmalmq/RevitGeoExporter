@@ -1,14 +1,84 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8" /><title>エクスポートの流れ</title><style>body{font-family:"Segoe UI",sans-serif;margin:24px;line-height:1.55;color:#2a2a2a}h1,h2{color:#16324f}code{background:#f3f5f7;padding:1px 4px;border-radius:3px}a{color:#145da0}</style></head><body>
-<h1>エクスポートの流れ</h1>
-<p>エクスポートダイアログでは、ビュー、フィーチャレイヤー、CRS、パッケージ出力、ジオメトリ補正をまとめて設定できます。</p>
-<h2>一般的な手順</h2>
-<ol>
-<li>平面ビューを1つ以上選択します。</li>
-<li><code>unit</code>、<code>detail</code>、<code>opening</code>、<code>level</code> の出力対象を選びます。</li>
-<li>出力フォルダー、EPSG、診断、パッケージ、補正設定を確認します。</li>
-<li>必要であれば <strong>プレビュー</strong> で書き出し結果を確認します。</li>
-<li>書き出しを実行し、検証ダイアログを確認します。</li>
-<li>書き出し後にファイル、警告、パッケージ、変更サマリーを確認します。</li>
-</ol>
-</body></html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>エクスポートの流れ</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.7; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ol, ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    .badge { display: inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border-radius: 999px; background: #eef3f9; border: 1px solid #d7e2ef; color: #27486a; font-size: 12px; font-weight: 600; }
+    .note { color: #617182; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #eef2f6; border-radius: 4px; padding: 1px 5px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Export Dialog</p>
+      <h1>エクスポートの流れ</h1>
+      <p>新しいエクスポート画面では、標準的な操作を先に見せ、技術的な設定は展開式にまとめています。初めてのユーザーでも、通常のエクスポートなら迷わず進める構成です。</p>
+      <div>
+        <span class="badge">Export to</span>
+        <span class="badge">Include in export</span>
+        <span class="badge">Coordinate system</span>
+        <span class="badge">Advanced options</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Export to</h2>
+      <ul>
+        <li>出力フォルダーは必須項目です。ダイアログ上部で早い段階に確認できます。</li>
+        <li><strong>Browse...</strong> を使って保存先を変更できます。</li>
+        <li>ビュー、フィーチャータイプ、出力先がそろうまで <strong>Export</strong> は有効になりません。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Include in export</h2>
+      <ul>
+        <li><strong>Units</strong>、<strong>Details</strong>、<strong>Openings</strong>、<strong>Levels</strong> を選択します。</li>
+        <li>画面上のラベルは分かりやすい表現ですが、GeoPackage には <code>unit</code> や <code>opening</code> など既定のレイヤー名で出力されます。</li>
+        <li>少なくとも 1 つのビューと 1 つのフィーチャータイプを選ぶと、<strong>Preview</strong> を開けます。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Coordinate system</h2>
+      <ul>
+        <li>状態カードに、現在の共有座標と解決された EPSG が要約表示されます。</li>
+        <li>共有座標ではなく変換出力が必要な場合だけ、<strong>Change coordinate settings</strong> を開いて CRS や EPSG を変更します。</li>
+        <li>より詳細なモデル座標の情報が必要なときは、<strong>View technical details</strong> を展開します。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Advanced options</h2>
+      <ul>
+        <li>Advanced options は初期状態で折りたたまれており、主な作業を邪魔しません。</li>
+        <li><strong>Unit source</strong> は Units を有効にしたときだけ表示され、Rooms を選んだ場合のみ部屋カテゴリパラメータが表示されます。</li>
+        <li>プロジェクトマッピング、診断レポート、GIS パッケージ、凡例ファイルの設定も、必要なときにだけ確認できます。</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <h2>書き出し前の確認</h2>
+      <p class="note">フッターには現在の選択内容が要約表示され、実際の書き出し前には検証が実行されます。</p>
+      <ul>
+        <li>ジオメトリや警告、カテゴリ割り当てを確認したい場合は <a href="help:PreviewAndAssignments">プレビューと割り当て</a> を開きます。</li>
+        <li>どのような項目がエクスポートを止めるかは <a href="help:ValidationAndDiagnostics">検証と診断</a> を参照してください。</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

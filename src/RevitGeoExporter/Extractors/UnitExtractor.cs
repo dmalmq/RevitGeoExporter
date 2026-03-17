@@ -15,6 +15,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.Extractors;
@@ -43,12 +44,14 @@ public sealed class UnitExtractor
 
     private readonly Document _document;
     private readonly SharedCoordinateProjector _sharedCoordinateProjector;
+    private readonly ExportSourceDescriptor _sourceDescriptor;
     private readonly ZoneCatalog _zoneCatalog;
     private readonly IExportMetadataProvider _metadataProvider;
     private readonly FloorCategoryResolver _floorCategoryResolver;
     private readonly RoomCategoryResolver _roomCategoryResolver;
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
+    private readonly SchemaProfile _schemaProfile;
 
     public UnitExtractor(
         Document document,
@@ -57,10 +60,13 @@ public sealed class UnitExtractor
         string source,
         FloorCategoryResolver floorCategoryResolver,
         RoomCategoryResolver roomCategoryResolver,
-        IReadOnlyDictionary<string, string>? familyCategoryOverrides = null)
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides = null,
+        ExportSourceDescriptor? sourceDescriptor = null,
+        SchemaProfile? schemaProfile = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
-        _sharedCoordinateProjector = new SharedCoordinateProjector(_document.ActiveProjectLocation);
+        _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
+        _sharedCoordinateProjector = new SharedCoordinateProjector(_sourceDescriptor.ProjectionProjectLocation);
         _zoneCatalog = zoneCatalog ?? throw new ArgumentNullException(nameof(zoneCatalog));
         _metadataProvider = metadataProvider ?? throw new ArgumentNullException(nameof(metadataProvider));
         _floorCategoryResolver =
@@ -70,11 +76,13 @@ public sealed class UnitExtractor
         _familyCategoryOverrides = familyCategoryOverrides ??
             new Dictionary<string, string>(StringComparer.Ordinal);
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
+        _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
     }
 
     public bool TryCreateFloorUnits(
         Floor floor,
         string levelId,
+        string? viewName,
         ICollection<string> warnings,
         out IReadOnlyList<ExportPolygon> features)
     {
@@ -143,7 +151,8 @@ public sealed class UnitExtractor
                 $"Floor {elementId} zone '{zoneName}' was not found in catalog. Default category/restriction applied.");
         }
 
-        string baseId = _metadataProvider.GetElementId(floor, warnings);
+        ExportElementMetadata floorMetadata = _metadataProvider.GetElementMetadata(floor, warnings);
+        string baseId = floorMetadata.ExportId;
         string? name = _metadataProvider.GetOptionalStringParameter(floor, SharedParameterManager.ImdfNameParameterName);
         string? altName = _metadataProvider.GetOptionalStringParameter(floor, SharedParameterManager.ImdfAltNameParameterName);
 
@@ -161,9 +170,12 @@ public sealed class UnitExtractor
                     zoneInfo,
                     name,
                     altName,
+                    floor,
                     floor.Id.Value,
+                    floorMetadata,
                     resolvedCategory,
-                    rawFloorTypeName),
+                    rawFloorTypeName,
+                    viewName),
             };
             return true;
         }
@@ -186,9 +198,12 @@ public sealed class UnitExtractor
                     zoneInfo,
                     name,
                     altName,
+                    floor,
                     floor.Id.Value,
+                    floorMetadata,
                     resolvedCategory,
-                    rawFloorTypeName));
+                    rawFloorTypeName,
+                    viewName));
         }
 
         features = created;
@@ -198,11 +213,12 @@ public sealed class UnitExtractor
     public bool TryCreateFloorUnit(
         Floor floor,
         string levelId,
+        string? viewName,
         ICollection<string> warnings,
         out ExportPolygon? feature)
     {
         feature = null;
-        if (!TryCreateFloorUnits(floor, levelId, warnings, out IReadOnlyList<ExportPolygon> features) ||
+        if (!TryCreateFloorUnits(floor, levelId, viewName, warnings, out IReadOnlyList<ExportPolygon> features) ||
             features.Count == 0)
         {
             return false;
@@ -217,6 +233,7 @@ public sealed class UnitExtractor
         Room room,
         string levelId,
         string roomCategoryParameterName,
+        string? viewName,
         ICollection<string> warnings,
         out ExportPolygon? feature)
     {
@@ -240,22 +257,25 @@ public sealed class UnitExtractor
             return false;
         }
 
-        string id = _metadataProvider.GetElementId(room, warnings);
+        ExportElementMetadata roomMetadata = _metadataProvider.GetElementMetadata(room, warnings);
         string? imdfName = _metadataProvider.GetOptionalStringParameter(room, SharedParameterManager.ImdfNameParameterName);
         string? imdfAltName = _metadataProvider.GetOptionalStringParameter(room, SharedParameterManager.ImdfAltNameParameterName);
         string? name = string.IsNullOrWhiteSpace(imdfName) ? room.Name : imdfName;
         string? altName = string.IsNullOrWhiteSpace(imdfAltName) ? room.Number : imdfAltName;
 
         feature = CreateFeature(
-            id,
+            roomMetadata.ExportId,
             polygons,
             levelId,
             resolvedCategory.ZoneInfo,
             name,
             altName,
+            room,
             room.Id.Value,
+            roomMetadata,
             resolvedCategory,
-            sourceLabel: roomCategoryParameterName);
+            sourceLabel: roomCategoryParameterName,
+            viewName: viewName);
         return true;
     }
 
@@ -285,6 +305,7 @@ public sealed class UnitExtractor
             levelId: levelId,
             zoneInfo: _zoneCatalog.StairsDefault,
             sourceLabel: "stairs",
+            viewName: view?.Name,
             warnings: warnings);
         return true;
     }
@@ -318,6 +339,7 @@ public sealed class UnitExtractor
                     levelId: levelId,
                     zoneInfo: zoneInfo,
                     sourceLabel: familyName,
+                    viewName: view?.Name,
                     warnings: warnings);
                 return true;
             }
@@ -339,6 +361,7 @@ public sealed class UnitExtractor
             levelId: levelId,
             zoneInfo: zoneInfo,
             sourceLabel: familyName,
+            viewName: view?.Name,
             warnings: warnings);
         return true;
     }
@@ -349,12 +372,13 @@ public sealed class UnitExtractor
         string levelId,
         ZoneInfo zoneInfo,
         string? sourceLabel,
+        string? viewName,
         ICollection<string> warnings)
     {
-        string id = _metadataProvider.GetElementId(sourceElement, warnings);
+        ExportElementMetadata metadata = _metadataProvider.GetElementMetadata(sourceElement, warnings);
         string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
         string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygon, levelId, zoneInfo, name, altName, sourceElement.Id.Value, null, sourceLabel);
+        return CreateFeature(metadata.ExportId, polygon, levelId, zoneInfo, name, altName, sourceElement, sourceElement.Id.Value, metadata, null, sourceLabel, viewName, warnings);
     }
 
     private ExportPolygon CreateFeature(
@@ -363,12 +387,13 @@ public sealed class UnitExtractor
         string levelId,
         ZoneInfo zoneInfo,
         string? sourceLabel,
+        string? viewName,
         ICollection<string> warnings)
     {
-        string id = _metadataProvider.GetElementId(sourceElement, warnings);
+        ExportElementMetadata metadata = _metadataProvider.GetElementMetadata(sourceElement, warnings);
         string? name = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfNameParameterName);
         string? altName = _metadataProvider.GetOptionalStringParameter(sourceElement, SharedParameterManager.ImdfAltNameParameterName);
-        return CreateFeature(id, polygons, levelId, zoneInfo, name, altName, sourceElement.Id.Value, null, sourceLabel);
+        return CreateFeature(metadata.ExportId, polygons, levelId, zoneInfo, name, altName, sourceElement, sourceElement.Id.Value, metadata, null, sourceLabel, viewName, warnings);
     }
 
     private ExportPolygon CreateFeature(
@@ -378,9 +403,13 @@ public sealed class UnitExtractor
         ZoneInfo zoneInfo,
         string? name,
         string? altName,
+        Element? sourceElement,
         long? sourceElementId,
+        ExportElementMetadata? metadata,
         ResolvedMappingCategory? resolvedCategory = null,
-        string? sourceLabel = null)
+        string? sourceLabel = null,
+        string? viewName = null,
+        ICollection<string>? warnings = null)
     {
         Point2D centroid = DisplayPointCalculator.CalculateCentroid(polygon);
         string displayPoint = DisplayPointCalculator.ToWktPoint(centroid);
@@ -399,7 +428,15 @@ public sealed class UnitExtractor
             ["preview_fill_color"] = zoneInfo.FillColor,
             ["source_label"] = sourceLabel,
         };
+        AddSourceMetadata(attributes, metadata);
         AddResolvedCategoryAttributes(attributes, resolvedCategory);
+        SchemaAttributeMapper.ApplyMappings(
+            _schemaProfile,
+            SchemaLayerType.Unit,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings ?? new List<string>());
 
         return new ExportPolygon(polygon, attributes);
     }
@@ -411,9 +448,13 @@ public sealed class UnitExtractor
         ZoneInfo zoneInfo,
         string? name,
         string? altName,
+        Element? sourceElement,
         long? sourceElementId,
+        ExportElementMetadata? metadata,
         ResolvedMappingCategory? resolvedCategory = null,
-        string? sourceLabel = null)
+        string? sourceLabel = null,
+        string? viewName = null,
+        ICollection<string>? warnings = null)
     {
         if (polygons == null || polygons.Count == 0)
         {
@@ -440,9 +481,40 @@ public sealed class UnitExtractor
             ["preview_fill_color"] = zoneInfo.FillColor,
             ["source_label"] = sourceLabel,
         };
+        AddSourceMetadata(attributes, metadata);
         AddResolvedCategoryAttributes(attributes, resolvedCategory);
+        SchemaAttributeMapper.ApplyMappings(
+            _schemaProfile,
+            SchemaLayerType.Unit,
+            attributes,
+            sourceElement,
+            viewName,
+            warnings ?? new List<string>());
 
         return new ExportPolygon(polygons, attributes);
+    }
+
+    private void AddSourceMetadata(IDictionary<string, object?> attributes, ExportElementMetadata? metadata)
+    {
+        if (attributes is null)
+        {
+            throw new ArgumentNullException(nameof(attributes));
+        }
+
+        if (metadata == null)
+        {
+            attributes["is_linked_source"] = _sourceDescriptor.IsLinkedSource;
+            attributes["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId;
+            attributes["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName;
+            return;
+        }
+
+        attributes["source_document_key"] = metadata.SourceDocumentKey;
+        attributes["source_document_name"] = metadata.SourceDocumentName;
+        attributes["has_persisted_export_id"] = metadata.HasPersistedId;
+        attributes["is_linked_source"] = _sourceDescriptor.IsLinkedSource;
+        attributes["source_link_instance_id"] = _sourceDescriptor.LinkInstanceId;
+        attributes["source_link_instance_name"] = _sourceDescriptor.LinkInstanceName;
     }
 
     private static void AddResolvedCategoryAttributes(
@@ -553,6 +625,7 @@ public sealed class UnitExtractor
         if (footprintPolygons.Count == 0)
         {
             if (view != null &&
+                ReferenceEquals(view.Document, _document) &&
                 TryExtractElementPolygonsInView(stairs, view, out List<Polygon2D> viewPolygons) &&
                 viewPolygons.Count > 0)
             {
@@ -1080,7 +1153,8 @@ public sealed class UnitExtractor
 
     private Point2D ProjectPoint(XYZ point)
     {
-        return _sharedCoordinateProjector.ProjectPoint(point);
+        XYZ hostPoint = _sourceDescriptor.TransformToHost.OfPoint(point);
+        return _sharedCoordinateProjector.ProjectPoint(hostPoint);
     }
 
     private static string BuildSplitId(string baseId, int splitOrdinal)
@@ -1646,7 +1720,8 @@ public sealed class UnitExtractor
 
     private Point2D ProjectVector(XYZ vector)
     {
-        return _sharedCoordinateProjector.ProjectVector(vector);
+        XYZ hostVector = _sourceDescriptor.TransformToHost.OfVector(vector);
+        return _sharedCoordinateProjector.ProjectVector(hostVector);
     }
 
     private static Point2D ToWorldPoint(

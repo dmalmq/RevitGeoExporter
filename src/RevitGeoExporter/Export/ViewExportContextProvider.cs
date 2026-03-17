@@ -21,7 +21,8 @@ public sealed class ViewExportContextProvider
         IReadOnlyList<ViewPlan> selectedViews,
         ZoneCatalog zoneCatalog,
         IReadOnlyDictionary<string, string>? familyCategoryOverrides = null,
-        IReadOnlyList<string>? acceptedOpeningFamilies = null)
+        IReadOnlyList<string>? acceptedOpeningFamilies = null,
+        LinkExportOptions? linkExportOptions = null)
     {
         if (selectedViews is null)
         {
@@ -58,10 +59,23 @@ public sealed class ViewExportContextProvider
                     CollectFamilyUnitsInView(view.Id, zoneCatalog, familyCategoryOverrides),
                     CollectOpeningInstancesInView(view.Id, acceptedOpeningFamilies),
                     CollectUnsupportedOpeningInstancesInView(view.Id, acceptedOpeningFamilies),
-                    CollectDetailCurvesInView(view.Id)));
+                    CollectDetailCurvesInView(view.Id),
+                    CollectLinkedSourcesInView(view.Id, zoneCatalog, familyCategoryOverrides, acceptedOpeningFamilies, linkExportOptions)));
         }
 
         return contexts;
+    }
+
+    public IReadOnlyList<RevitLinkInstance> GetLoadedLinkInstances()
+    {
+        return new FilteredElementCollector(_document)
+            .OfClass(typeof(RevitLinkInstance))
+            .WhereElementIsNotElementType()
+            .Cast<RevitLinkInstance>()
+            .Where(instance => instance.GetLinkDocument() != null)
+            .OrderBy(instance => GetLinkDisplayName(instance), StringComparer.OrdinalIgnoreCase)
+            .ThenBy(instance => instance.Id.Value)
+            .ToList();
     }
 
     private List<Floor> CollectFloorsInView(ElementId viewId)
@@ -143,6 +157,161 @@ public sealed class ViewExportContextProvider
             .WhereElementIsNotElementType()
             .Cast<CurveElement>()
             .ToList();
+    }
+
+    private List<LinkedViewSourceContext> CollectLinkedSourcesInView(
+        ElementId viewId,
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides,
+        IReadOnlyList<string>? acceptedOpeningFamilies,
+        LinkExportOptions? linkExportOptions)
+    {
+        if (linkExportOptions == null || !linkExportOptions.IncludeLinkedModels)
+        {
+            return new List<LinkedViewSourceContext>();
+        }
+
+        HashSet<long> selectedLinkIds = new(
+            linkExportOptions.SelectedLinkInstanceIds ?? new List<long>());
+        if (selectedLinkIds.Count == 0)
+        {
+            return new List<LinkedViewSourceContext>();
+        }
+
+        List<LinkedViewSourceContext> linkedSources = new();
+        foreach (RevitLinkInstance linkInstance in GetLoadedLinkInstances())
+        {
+            if (!selectedLinkIds.Contains(linkInstance.Id.Value))
+            {
+                continue;
+            }
+
+            Document? linkedDocument = linkInstance.GetLinkDocument();
+            if (linkedDocument == null)
+            {
+                continue;
+            }
+
+            linkedSources.Add(
+                new LinkedViewSourceContext(
+                    linkInstance,
+                    linkedDocument,
+                    linkInstance.GetTotalTransform(),
+                    DocumentProjectKeyBuilder.Create(linkedDocument),
+                    DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument),
+                    CollectFloorsInLinkView(viewId, linkInstance.Id),
+                    CollectRoomsInLinkView(viewId, linkInstance.Id),
+                    CollectStairsInLinkView(viewId, linkInstance.Id),
+                    CollectFamilyUnitsInLinkView(viewId, linkInstance.Id, zoneCatalog, familyCategoryOverrides),
+                    CollectOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies),
+                    CollectUnsupportedOpeningInstancesInLinkView(viewId, linkInstance.Id, acceptedOpeningFamilies),
+                    CollectDetailCurvesInLinkView(viewId, linkInstance.Id)));
+        }
+
+        return linkedSources;
+    }
+
+    private List<Floor> CollectFloorsInLinkView(ElementId viewId, ElementId linkInstanceId)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(Floor))
+            .WhereElementIsNotElementType()
+            .Cast<Floor>()
+            .ToList();
+    }
+
+    private List<Room> CollectRoomsInLinkView(ElementId viewId, ElementId linkInstanceId)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfCategory(BuiltInCategory.OST_Rooms)
+            .WhereElementIsNotElementType()
+            .Cast<Room>()
+            .Where(room => room.Area > 0d)
+            .ToList();
+    }
+
+    private List<Stairs> CollectStairsInLinkView(ElementId viewId, ElementId linkInstanceId)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(Stairs))
+            .WhereElementIsNotElementType()
+            .Cast<Stairs>()
+            .ToList();
+    }
+
+    private List<FamilyInstance> CollectFamilyUnitsInLinkView(
+        ElementId viewId,
+        ElementId linkInstanceId,
+        ZoneCatalog zoneCatalog,
+        IReadOnlyDictionary<string, string>? familyCategoryOverrides)
+    {
+        IReadOnlyDictionary<string, string> overrides = familyCategoryOverrides ??
+            new Dictionary<string, string>(StringComparer.Ordinal);
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(instance =>
+            {
+                string familyName = UnitExtractor.GetFamilyName(instance);
+                return zoneCatalog.TryGetFamilyInfo(familyName, out _) ||
+                       overrides.ContainsKey(familyName);
+            })
+            .ToList();
+    }
+
+    private List<FamilyInstance> CollectOpeningInstancesInLinkView(
+        ElementId viewId,
+        ElementId linkInstanceId,
+        IReadOnlyList<string>? acceptedOpeningFamilies)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(instance => OpeningFamilyClassifier.IsAcceptedOpening(instance, acceptedOpeningFamilies))
+            .ToList();
+    }
+
+    private List<FamilyInstance> CollectUnsupportedOpeningInstancesInLinkView(
+        ElementId viewId,
+        ElementId linkInstanceId,
+        IReadOnlyList<string>? acceptedOpeningFamilies)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(FamilyInstance))
+            .WhereElementIsNotElementType()
+            .Cast<FamilyInstance>()
+            .Where(instance => IsUnsupportedOpening(instance, acceptedOpeningFamilies))
+            .ToList();
+    }
+
+    private List<CurveElement> CollectDetailCurvesInLinkView(ElementId viewId, ElementId linkInstanceId)
+    {
+        return new FilteredElementCollector(_document, viewId, linkInstanceId)
+            .OfClass(typeof(CurveElement))
+            .WhereElementIsNotElementType()
+            .Cast<CurveElement>()
+            .ToList();
+    }
+
+    private static string GetLinkDisplayName(RevitLinkInstance linkInstance)
+    {
+        if (linkInstance == null)
+        {
+            return string.Empty;
+        }
+
+        string name = linkInstance.Name?.Trim() ?? string.Empty;
+        if (name.Length > 0)
+        {
+            return name;
+        }
+
+        Document? linkedDocument = linkInstance.GetLinkDocument();
+        return linkedDocument == null
+            ? $"Link {linkInstance.Id.Value}"
+            : DocumentProjectKeyBuilder.CreateDisplayName(linkedDocument);
     }
 
     private static bool IsUnsupportedOpening(FamilyInstance instance, IReadOnlyList<string>? acceptedOpeningFamilies)
