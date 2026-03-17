@@ -21,11 +21,23 @@ public sealed class ExportProfile
 
     public ExportFeatureType FeatureTypes { get; set; } = ExportFeatureType.All;
 
+    public List<long> SelectedViewIds { get; set; } = new();
+
+    public IncrementalExportMode IncrementalExportMode { get; set; } = IncrementalExportMode.AllSelectedViews;
+
     public bool GenerateDiagnosticsReport { get; set; } = true;
 
     public bool GeneratePackageOutput { get; set; }
 
     public bool IncludePackageLegend { get; set; } = true;
+
+    public PackagingMode PackagingMode { get; set; } = PackagingMode.PerViewPerFeatureFiles;
+
+    public bool ValidateAfterWrite { get; set; } = true;
+
+    public bool GenerateQgisArtifacts { get; set; }
+
+    public PostExportActionOptions PostExportActions { get; set; } = new();
 
     public GeometryRepairOptions GeometryRepairOptions { get; set; } = new();
 
@@ -62,9 +74,15 @@ public sealed class ExportProfile
             OutputDirectory = OutputDirectory,
             TargetEpsg = TargetEpsg,
             FeatureTypes = FeatureTypes,
+            SelectedViewIds = SelectedViewIds?.Distinct().OrderBy(id => id).ToList() ?? new List<long>(),
+            IncrementalExportMode = IncrementalExportMode,
             GenerateDiagnosticsReport = GenerateDiagnosticsReport,
             GeneratePackageOutput = GeneratePackageOutput,
             IncludePackageLegend = IncludePackageLegend,
+            PackagingMode = PackagingMode,
+            ValidateAfterWrite = ValidateAfterWrite,
+            GenerateQgisArtifacts = GenerateQgisArtifacts,
+            PostExportActions = PostExportActions?.Clone() ?? new PostExportActionOptions(),
             GeometryRepairOptions = GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = UiLanguage,
             CoordinateMode = CoordinateMode,
@@ -99,9 +117,15 @@ public sealed class ExportProfile
             OutputDirectory = settings.OutputDirectory,
             TargetEpsg = settings.TargetEpsg,
             FeatureTypes = settings.FeatureTypes,
+            SelectedViewIds = (settings.SelectedViewIds ?? new List<long>()).Distinct().OrderBy(id => id).ToList(),
+            IncrementalExportMode = settings.IncrementalExportMode,
             GenerateDiagnosticsReport = settings.GenerateDiagnosticsReport,
             GeneratePackageOutput = settings.GeneratePackageOutput,
             IncludePackageLegend = settings.IncludePackageLegend,
+            PackagingMode = settings.PackagingMode,
+            ValidateAfterWrite = settings.ValidateAfterWrite,
+            GenerateQgisArtifacts = settings.GenerateQgisArtifacts,
+            PostExportActions = settings.PostExportActions?.Clone() ?? new PostExportActionOptions(),
             GeometryRepairOptions = settings.GeometryRepairOptions?.Clone() ?? new GeometryRepairOptions(),
             UiLanguage = settings.UiLanguage,
             CoordinateMode = settings.CoordinateMode,

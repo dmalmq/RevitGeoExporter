@@ -24,11 +24,12 @@ public sealed class ExportBaselineStore
             : rootDirectory!.Trim();
     }
 
-    public (ExportDiagnosticsReport? Report, ExportPackageManifest? Manifest, IReadOnlyList<string> Warnings) Load(string baselineKey)
+    public ExportBaselineLoadResult Load(string baselineKey)
     {
         string sanitized = SanitizeKey(baselineKey);
         string diagnosticsPath = Path.Combine(_rootDirectory, $"{sanitized}-diagnostics.json");
         string manifestPath = Path.Combine(_rootDirectory, $"{sanitized}-manifest.json");
+        string snapshotPath = Path.Combine(_rootDirectory, $"{sanitized}-snapshot.json");
         LoadResult<ExportDiagnosticsReport> report = JsonFileLoadHelper.Load(
             diagnosticsPath,
             () => new ExportDiagnosticsReport(),
@@ -39,13 +40,25 @@ public sealed class ExportBaselineStore
             () => new ExportPackageManifest(),
             json => JsonConvert.DeserializeObject<ExportPackageManifest>(json),
             "Export baseline manifest");
+        LoadResult<ExportBaselineSnapshot> snapshot = JsonFileLoadHelper.Load(
+            snapshotPath,
+            () => new ExportBaselineSnapshot(),
+            json => JsonConvert.DeserializeObject<ExportBaselineSnapshot>(json),
+            "Export baseline snapshot");
 
         bool hasReport = File.Exists(diagnosticsPath) && report.Value.OutputFiles.Count > 0;
         bool hasManifest = File.Exists(manifestPath) && manifest.Value.Files.Count > 0;
-        return (hasReport ? report.Value : null, hasManifest ? manifest.Value : null, report.Warnings.Concat(manifest.Warnings).ToList());
+        bool hasSnapshot = File.Exists(snapshotPath) && snapshot.Value.Views.Count > 0;
+        return new ExportBaselineLoadResult
+        {
+            Report = hasReport ? report.Value : null,
+            Manifest = hasManifest ? manifest.Value : null,
+            Snapshot = hasSnapshot ? snapshot.Value : null,
+            Warnings = report.Warnings.Concat(manifest.Warnings).Concat(snapshot.Warnings).ToList(),
+        };
     }
 
-    public void Save(string baselineKey, ExportDiagnosticsReport report, ExportPackageManifest manifest)
+    public void Save(string baselineKey, ExportDiagnosticsReport report, ExportPackageManifest manifest, ExportBaselineSnapshot snapshot)
     {
         if (report == null)
         {
@@ -57,12 +70,19 @@ public sealed class ExportBaselineStore
             throw new ArgumentNullException(nameof(manifest));
         }
 
+        if (snapshot == null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
         Directory.CreateDirectory(_rootDirectory);
         string sanitized = SanitizeKey(baselineKey);
         string diagnosticsPath = Path.Combine(_rootDirectory, $"{sanitized}-diagnostics.json");
         string manifestPath = Path.Combine(_rootDirectory, $"{sanitized}-manifest.json");
+        string snapshotPath = Path.Combine(_rootDirectory, $"{sanitized}-snapshot.json");
         File.WriteAllText(diagnosticsPath, JsonConvert.SerializeObject(report, JsonSettings), new UTF8Encoding(false));
         File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, JsonSettings), new UTF8Encoding(false));
+        File.WriteAllText(snapshotPath, JsonConvert.SerializeObject(snapshot, JsonSettings), new UTF8Encoding(false));
     }
 
     private static string SanitizeKey(string baselineKey)

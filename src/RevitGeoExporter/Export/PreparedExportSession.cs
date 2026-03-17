@@ -17,8 +17,11 @@ public sealed class PreparedExportSession
         IReadOnlyList<ViewPlan> selectedViews,
         IReadOnlyList<ViewExportContext> contexts,
         FloorExportPreparationResult prepared,
+        IncrementalExportMode incrementalExportMode,
         IReadOnlyDictionary<string, string> floorCategoryOverrides,
         IReadOnlyDictionary<string, string> roomCategoryOverrides,
+        IReadOnlyDictionary<string, string> familyCategoryOverrides,
+        IReadOnlyList<string> acceptedOpeningFamilies,
         GeometryRepairOptions geometryRepairOptions,
         ExportPackageOptions packageOptions,
         string? profileName,
@@ -46,8 +49,11 @@ public sealed class PreparedExportSession
         SelectedViews = selectedViews ?? throw new ArgumentNullException(nameof(selectedViews));
         Contexts = contexts ?? throw new ArgumentNullException(nameof(contexts));
         Prepared = prepared ?? throw new ArgumentNullException(nameof(prepared));
+        IncrementalExportMode = incrementalExportMode;
         FloorCategoryOverrides = floorCategoryOverrides ?? throw new ArgumentNullException(nameof(floorCategoryOverrides));
         RoomCategoryOverrides = roomCategoryOverrides ?? throw new ArgumentNullException(nameof(roomCategoryOverrides));
+        FamilyCategoryOverrides = familyCategoryOverrides ?? throw new ArgumentNullException(nameof(familyCategoryOverrides));
+        AcceptedOpeningFamilies = acceptedOpeningFamilies ?? throw new ArgumentNullException(nameof(acceptedOpeningFamilies));
         GeometryRepairOptions = geometryRepairOptions?.Clone() ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
         PackageOptions = packageOptions ?? throw new ArgumentNullException(nameof(packageOptions));
         ProfileName = string.IsNullOrWhiteSpace(profileName) ? null : profileName.Trim();
@@ -85,9 +91,15 @@ public sealed class PreparedExportSession
 
     public FloorExportPreparationResult Prepared { get; }
 
+    public IncrementalExportMode IncrementalExportMode { get; }
+
     public IReadOnlyDictionary<string, string> FloorCategoryOverrides { get; }
 
     public IReadOnlyDictionary<string, string> RoomCategoryOverrides { get; }
+
+    public IReadOnlyDictionary<string, string> FamilyCategoryOverrides { get; }
+
+    public IReadOnlyList<string> AcceptedOpeningFamilies { get; }
 
     public GeometryRepairOptions GeometryRepairOptions { get; }
 

@@ -16,9 +16,14 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
+        IncrementalExportMode incrementalExportMode,
         bool generateDiagnosticsReport,
         bool generatePackageOutput,
         bool includePackageLegend,
+        PackagingMode packagingMode,
+        bool validateAfterWrite,
+        bool generateQgisArtifacts,
+        PostExportActionOptions? postExportActions,
         GeometryRepairOptions geometryRepairOptions,
         string? selectedProfileName,
         UiLanguage uiLanguage,
@@ -34,9 +39,14 @@ public sealed class ExportDialogResult
             outputDirectory,
             targetEpsg,
             featureTypes,
+            incrementalExportMode,
             generateDiagnosticsReport,
             generatePackageOutput,
             includePackageLegend,
+            packagingMode,
+            validateAfterWrite,
+            generateQgisArtifacts,
+            postExportActions,
             geometryRepairOptions,
             selectedProfileName,
             uiLanguage,
@@ -56,9 +66,14 @@ public sealed class ExportDialogResult
         string outputDirectory,
         int targetEpsg,
         ExportFeatureType featureTypes,
+        IncrementalExportMode incrementalExportMode,
         bool generateDiagnosticsReport,
         bool generatePackageOutput,
         bool includePackageLegend,
+        PackagingMode packagingMode,
+        bool validateAfterWrite,
+        bool generateQgisArtifacts,
+        PostExportActionOptions? postExportActions,
         GeometryRepairOptions geometryRepairOptions,
         string? selectedProfileName,
         UiLanguage uiLanguage,
@@ -89,9 +104,14 @@ public sealed class ExportDialogResult
         OutputDirectory = outputDirectory ?? throw new ArgumentNullException(nameof(outputDirectory));
         TargetEpsg = targetEpsg;
         FeatureTypes = featureTypes;
+        IncrementalExportMode = incrementalExportMode;
         GenerateDiagnosticsReport = generateDiagnosticsReport;
         GeneratePackageOutput = generatePackageOutput;
         IncludePackageLegend = includePackageLegend;
+        PackagingMode = packagingMode;
+        ValidateAfterWrite = validateAfterWrite;
+        GenerateQgisArtifacts = generateQgisArtifacts;
+        PostExportActions = postExportActions?.Clone() ?? new PostExportActionOptions();
         GeometryRepairOptions = normalizedGeometryRepairOptions.Clone();
         SelectedProfileName = normalizedSelectedProfileName;
         UiLanguage = uiLanguage;
@@ -113,11 +133,21 @@ public sealed class ExportDialogResult
 
     public ExportFeatureType FeatureTypes { get; }
 
+    public IncrementalExportMode IncrementalExportMode { get; }
+
     public bool GenerateDiagnosticsReport { get; }
 
     public bool GeneratePackageOutput { get; }
 
     public bool IncludePackageLegend { get; }
+
+    public PackagingMode PackagingMode { get; }
+
+    public bool ValidateAfterWrite { get; }
+
+    public bool GenerateQgisArtifacts { get; }
+
+    public PostExportActionOptions PostExportActions { get; }
 
     public GeometryRepairOptions GeometryRepairOptions { get; }
 

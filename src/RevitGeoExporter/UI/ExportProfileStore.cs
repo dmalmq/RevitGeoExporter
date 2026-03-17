@@ -190,9 +190,15 @@ public sealed class ExportProfileStore
             FeatureTypes = profile.FeatureTypes == RevitGeoExporter.Export.ExportFeatureType.None
                 ? RevitGeoExporter.Export.ExportFeatureType.All
                 : profile.FeatureTypes,
+            SelectedViewIds = (profile.SelectedViewIds ?? new List<long>()).Distinct().OrderBy(id => id).ToList(),
+            IncrementalExportMode = profile.IncrementalExportMode,
             GenerateDiagnosticsReport = profile.GenerateDiagnosticsReport,
             GeneratePackageOutput = profile.GeneratePackageOutput,
             IncludePackageLegend = profile.IncludePackageLegend,
+            PackagingMode = profile.PackagingMode,
+            ValidateAfterWrite = profile.ValidateAfterWrite,
+            GenerateQgisArtifacts = profile.GenerateQgisArtifacts,
+            PostExportActions = profile.PostExportActions?.Clone() ?? new RevitGeoExporter.Export.PostExportActionOptions(),
             GeometryRepairOptions = profile.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = profile.UiLanguage,
             CoordinateMode = profile.CoordinateMode,

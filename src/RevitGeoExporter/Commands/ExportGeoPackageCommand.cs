@@ -95,6 +95,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             workflow.RenameProfile,
             workflow.DeleteProfile,
             workflow.OpenMappings,
+            owner => workflow.ShowBatchExport(coordinateInfo, owner),
             workflow.ShowPreview,
             coordinateInfo);
 
@@ -125,6 +126,7 @@ public sealed class ExportGeoPackageCommand : IExternalCommand
             workflow.RenameProfile,
             workflow.DeleteProfile,
             workflow.OpenMappings,
+            owner => workflow.ShowBatchExport(coordinateInfo, owner),
             previewRequest => workflow.ShowPreview(previewRequest),
             coordinateInfo);
 
