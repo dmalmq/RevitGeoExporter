@@ -62,6 +62,24 @@ public sealed class ValidationIssue
 
     public bool CanNavigateInRevit { get; }
 
+    public ValidationIssue WithSeverity(ValidationSeverity severity)
+    {
+        return new ValidationIssue(
+            severity,
+            Code,
+            Message,
+            ViewName,
+            LevelName,
+            FeatureType,
+            Category,
+            SourceElementId,
+            OwningViewId,
+            SourceDocumentKey,
+            ActionKind,
+            RecommendedAction,
+            CanNavigateInRevit);
+    }
+
     private static string? Normalize(string? value)
     {
         string trimmed = value?.Trim() ?? string.Empty;

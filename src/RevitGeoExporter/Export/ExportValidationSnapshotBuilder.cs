@@ -75,7 +75,10 @@ public sealed class ExportValidationSnapshotBuilder
             views,
             session.UnitSource,
             session.RoomCategoryParameterName,
-            session.SourceDocumentKey);
+            session.SourceDocumentKey,
+            session.UnitGeometrySource,
+            session.UnitAttributeSource,
+            session.ActiveValidationPolicyProfile);
     }
 
     private static void AddLayerFeatures(

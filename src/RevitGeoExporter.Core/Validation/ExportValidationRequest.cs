@@ -15,7 +15,10 @@ public sealed class ExportValidationRequest
         IReadOnlyList<ValidationViewSnapshot> views,
         UnitSource unitSource,
         string roomCategoryParameterName,
-        string? sourceDocumentKey = null)
+        string? sourceDocumentKey = null,
+        UnitGeometrySource unitGeometrySource = UnitGeometrySource.Unset,
+        UnitAttributeSource unitAttributeSource = UnitAttributeSource.Unset,
+        ValidationPolicyProfile? validationPolicyProfile = null)
     {
         TargetEpsg = targetEpsg;
         IncludeUnits = includeUnits;
@@ -24,9 +27,12 @@ public sealed class ExportValidationRequest
         IncludeLevels = includeLevels;
         Views = views ?? throw new ArgumentNullException(nameof(views));
         UnitSource = unitSource;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         string normalizedSourceDocumentKey = sourceDocumentKey?.Trim() ?? string.Empty;
         SourceDocumentKey = normalizedSourceDocumentKey.Length == 0 ? null : normalizedSourceDocumentKey;
+        ActiveValidationPolicyProfile = validationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     public int TargetEpsg { get; }
@@ -43,7 +49,13 @@ public sealed class ExportValidationRequest
 
     public UnitSource UnitSource { get; }
 
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
     public string RoomCategoryParameterName { get; }
 
     public string? SourceDocumentKey { get; }
+
+    public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
 }

@@ -27,7 +27,7 @@ public sealed class ExportReadinessSummaryBuilderTests
                         new ExportFeatureValidationSnapshot(
                             "unit",
                             "unit-1",
-                            "retail",
+                            "walkway",
                             101,
                             hasGeometry: true,
                             geometryValid: true,
@@ -149,5 +149,52 @@ public sealed class ExportReadinessSummaryBuilderTests
         ValidationMappingSuggestion suggestion = Assert.Single(summary.MappingSuggestions);
         Assert.Equal("office", suggestion.MappingKey);
         Assert.Equal("office", suggestion.SuggestedCategory);
+    }
+
+    [Fact]
+    public void Build_IncludesAdditionalGeoreferenceIssueCounts()
+    {
+        ExportValidationRequest request = new(
+            6677,
+            includeUnits: true,
+            includeDetails: false,
+            includeOpenings: false,
+            includeLevels: false,
+            new[]
+            {
+                new ValidationViewSnapshot(
+                    1,
+                    "View A",
+                    "L1",
+                    new[]
+                    {
+                        new ExportFeatureValidationSnapshot(
+                            "unit",
+                            "unit-1",
+                            "retail",
+                            101,
+                            hasGeometry: true,
+                            geometryValid: true,
+                            name: "Retail A"),
+                    }),
+            },
+            UnitSource.Floors,
+            "Name",
+            "TestModel");
+
+        ExportValidationResult validationResult = new ExportValidationService().Validate(request);
+        ExportReadinessSummary summary = new ExportReadinessSummaryBuilder().Build(
+            request,
+            validationResult,
+            ZoneCatalog.CreateDefault(),
+            additionalBlockingIssueCount: 2,
+            additionalWarningIssueCount: 3);
+
+        Assert.Equal(
+            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Error) + 2,
+            summary.BlockingIssueCount);
+        Assert.Equal(
+            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Warning) + 3,
+            summary.WarningIssueCount);
     }
 }

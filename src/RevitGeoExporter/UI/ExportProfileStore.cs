@@ -5,6 +5,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Utilities;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -189,17 +190,27 @@ public sealed class ExportProfileStore
             FeatureTypes = profile.FeatureTypes == RevitGeoExporter.Export.ExportFeatureType.None
                 ? RevitGeoExporter.Export.ExportFeatureType.All
                 : profile.FeatureTypes,
+            SelectedViewIds = (profile.SelectedViewIds ?? new List<long>()).Distinct().OrderBy(id => id).ToList(),
+            IncrementalExportMode = profile.IncrementalExportMode,
             GenerateDiagnosticsReport = profile.GenerateDiagnosticsReport,
             GeneratePackageOutput = profile.GeneratePackageOutput,
             IncludePackageLegend = profile.IncludePackageLegend,
+            PackagingMode = profile.PackagingMode,
+            ValidateAfterWrite = profile.ValidateAfterWrite,
+            GenerateQgisArtifacts = profile.GenerateQgisArtifacts,
+            PostExportActions = profile.PostExportActions?.Clone() ?? new RevitGeoExporter.Export.PostExportActionOptions(),
             GeometryRepairOptions = profile.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = profile.UiLanguage,
             CoordinateMode = profile.CoordinateMode,
             UnitSource = profile.UnitSource,
+            UnitGeometrySource = profile.UnitGeometrySource,
+            UnitAttributeSource = profile.UnitAttributeSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
             SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
+            ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(profile.ValidationPolicyProfiles, profile.ActiveValidationPolicyProfileName),
         };
     }
 

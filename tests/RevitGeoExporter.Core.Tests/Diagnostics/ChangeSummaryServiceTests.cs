@@ -14,10 +14,21 @@ public sealed class ChangeSummaryServiceTests
         ExportDiagnosticsReport currentReport = CreateReport(3, 1);
         ExportPackageManifest currentManifest = CreateManifest("unit.gpkg");
 
-        ExportChangeSummary summary = service.Compare(null, currentReport, null, currentManifest);
+        ExportChangeSummary summary = service.Compare(
+            null,
+            null,
+            currentReport,
+            null,
+            currentManifest,
+            changedViewCount: 1,
+            reusedViewCount: 0,
+            writtenArtifactCount: 1,
+            reusedArtifactCount: 0,
+            missingBaselineArtifactCount: 0,
+            fullRewriteReason: "No previous baseline.");
 
-        Assert.Single(summary.Lines);
-        Assert.Contains("baseline", summary.Lines[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ExportBaselineStatus.Unavailable, summary.BaselineStatus);
+        Assert.Contains(summary.Lines, line => line.Contains("baseline", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -28,12 +39,30 @@ public sealed class ChangeSummaryServiceTests
         ExportDiagnosticsReport currentReport = CreateReport(5, 2);
         ExportPackageManifest previousManifest = CreateManifest("unit.gpkg");
         ExportPackageManifest currentManifest = CreateManifest("unit.gpkg", "opening.gpkg");
+        ExportBaselineSnapshot previousSnapshot = new()
+        {
+            ConfigurationFingerprint = "same",
+            Views = { new ExportBaselineViewSnapshot { ViewId = 1, ViewName = "Level 1", ContentFingerprint = "abc" } },
+        };
 
-        ExportChangeSummary summary = service.Compare(previousReport, currentReport, previousManifest, currentManifest);
+        ExportChangeSummary summary = service.Compare(
+            previousSnapshot,
+            previousReport,
+            currentReport,
+            previousManifest,
+            currentManifest,
+            changedViewCount: 1,
+            reusedViewCount: 0,
+            writtenArtifactCount: 2,
+            reusedArtifactCount: 0,
+            missingBaselineArtifactCount: 0,
+            fullRewriteReason: null);
 
         Assert.Contains(summary.Lines, line => line.Contains("Layer count changed", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(summary.Lines, line => line.Contains("Warning count changed", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(summary.Lines, line => line.Contains("Output file added", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, summary.ChangedViewCount);
+        Assert.Equal(2, summary.WrittenArtifactCount);
     }
 
     private static ExportDiagnosticsReport CreateReport(int unitCount, int warningCount)

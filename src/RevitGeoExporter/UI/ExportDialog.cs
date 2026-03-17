@@ -11,6 +11,7 @@ using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -25,6 +26,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly ComboBox _crsPresetComboBox = new();
     private readonly TextBox _targetEpsgTextBox = new();
     private readonly ComboBox _profileComboBox = new();
+    private readonly ComboBox _incrementalModeComboBox = new();
+    private readonly ComboBox _packagingModeComboBox = new();
     private readonly CheckBox _unitCheckBox = new();
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
@@ -32,6 +35,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly Label _unitSourceInlineLabel = new();
     private readonly ComboBox _unitSourceComboBox = new();
+    private readonly Label _unitAttributeSourceInlineLabel = new();
+    private readonly ComboBox _unitAttributeSourceComboBox = new();
     private readonly Label _roomParameterInlineLabel = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly Label _linkedModelsLabel = new();
@@ -40,8 +45,15 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Label _schemaProfileInlineLabel = new();
     private readonly ComboBox _schemaProfileComboBox = new();
     private readonly Button _manageSchemaProfilesButton = new();
+    private readonly Label _validationPolicyInlineLabel = new();
+    private readonly ComboBox _validationPolicyComboBox = new();
+    private readonly Button _manageValidationPoliciesButton = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
+    private readonly CheckBox _validateAfterWriteCheckBox = new();
+    private readonly CheckBox _generateQgisArtifactsCheckBox = new();
+    private readonly CheckBox _openOutputFolderCheckBox = new();
+    private readonly CheckBox _launchQgisCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
     private readonly TextBox _minPolygonAreaTextBox = new();
     private readonly TextBox _minOpeningLengthTextBox = new();
@@ -57,6 +69,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
+    private readonly Button _batchButton = new();
     private readonly Button _helpButton = new();
     private readonly Label _versionLabel = new();
     private readonly Label _profilesLabel = new();
@@ -71,6 +84,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Action<ExportProfile, string>? _renameProfileRequested;
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action? _openMappingsRequested;
+    private readonly Action<IWin32Window?>? _batchRequested;
     private readonly IReadOnlyList<LinkSelectionItem> _availableLinks;
     private readonly List<ExportProfile> _profiles;
     private readonly PreviewBasemapSettings _previewBasemapSettings;
@@ -79,10 +93,14 @@ public sealed class ExportDialog : WinFormsForm
     private bool _isApplyingProfile;
     private CoordinateExportMode _coordinateMode = CoordinateExportMode.SharedCoordinates;
     private UnitSource _unitSource = UnitSource.Floors;
+    private UnitGeometrySource _unitGeometrySource = UnitGeometrySource.Unset;
+    private UnitAttributeSource _unitAttributeSource = UnitAttributeSource.Unset;
     private string _roomCategoryParameterName = "Name";
     private LinkExportOptions _linkExportOptions = new();
     private List<SchemaProfile> _schemaProfiles = new() { SchemaProfile.CreateCoreProfile() };
     private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
+    private List<ValidationPolicyProfile> _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(null);
+    private string _activeValidationPolicyProfileName = ValidationPolicyProfile.RecommendedProfileName;
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
@@ -93,6 +111,7 @@ public sealed class ExportDialog : WinFormsForm
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
+        Action<IWin32Window?>? batchRequested = null,
         Action<ExportPreviewRequest>? previewRequested = null,
         ModelCoordinateInfo? coordinateInfo = null)
     {
@@ -119,6 +138,7 @@ public sealed class ExportDialog : WinFormsForm
         _renameProfileRequested = renameProfileRequested;
         _deleteProfileRequested = deleteProfileRequested;
         _openMappingsRequested = openMappingsRequested;
+        _batchRequested = batchRequested;
         _previewRequested = previewRequested;
 
         InitializeComponents();
@@ -272,6 +292,9 @@ public sealed class ExportDialog : WinFormsForm
             {
                 _language = selected.Language;
                 ViewSelectionItem.DisplayLanguage = _language;
+                UnitSourceItem.DisplayLanguage = _language;
+                UnitAttributeSourceItem.DisplayLanguage = _language;
+                ProfileItem.DisplayLanguage = _language;
                 _viewList.Refresh();
                 ApplyLanguage();
                 UpdateProfileText();
@@ -305,11 +328,15 @@ public sealed class ExportDialog : WinFormsForm
         _diagnosticsCheckBox.AutoSize = true;
         _packageCheckBox.AutoSize = true;
         _packageLegendCheckBox.AutoSize = true;
-        _unitCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _unitCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateUnitOptionVisibility();
+            UpdatePreviewButtonEnabled();
+        };
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
-        _packageCheckBox.CheckedChanged += (_, _) => _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        _packageCheckBox.CheckedChanged += (_, _) => UpdatePackagingState();
         _unitSourceInlineLabel.AutoSize = true;
         _unitSourceComboBox.Width = 180;
         _unitSourceComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -317,7 +344,32 @@ public sealed class ExportDialog : WinFormsForm
         _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Rooms));
         _unitSourceComboBox.SelectedIndexChanged += (_, _) =>
         {
-            _unitSource = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+            UnitSource source = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+            _unitGeometrySource = source == UnitSource.Rooms
+                ? UnitGeometrySource.Rooms
+                : UnitGeometrySource.Floors;
+            if (_unitGeometrySource == UnitGeometrySource.Rooms &&
+                _unitAttributeSource == UnitAttributeSource.Hybrid)
+            {
+                _unitAttributeSource = UnitAttributeSource.Rooms;
+                SelectUnitAttributeSource(_unitAttributeSource);
+            }
+
+            SyncLegacyUnitSource();
+            UpdateUnitOptionVisibility();
+        };
+
+        _unitAttributeSourceInlineLabel.AutoSize = true;
+        _unitAttributeSourceComboBox.Width = 220;
+        _unitAttributeSourceComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Floors));
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Rooms));
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Hybrid));
+        _unitAttributeSourceComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            _unitAttributeSource = (_unitAttributeSourceComboBox.SelectedItem as UnitAttributeSourceItem)?.Source ?? UnitAttributeSource.Hybrid;
+            SyncLegacyUnitSource();
+            UpdateUnitOptionVisibility();
         };
 
         _roomParameterInlineLabel.AutoSize = true;
@@ -340,6 +392,19 @@ public sealed class ExportDialog : WinFormsForm
         _manageSchemaProfilesButton.Width = 120;
         _manageSchemaProfilesButton.Height = 26;
         _manageSchemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
+        _validationPolicyInlineLabel.AutoSize = true;
+        _validationPolicyComboBox.Width = 220;
+        _validationPolicyComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _validationPolicyComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            if (_validationPolicyComboBox.SelectedItem is ValidationPolicyProfileItem selected)
+            {
+                _activeValidationPolicyProfileName = selected.Profile.Name;
+            }
+        };
+        _manageValidationPoliciesButton.Width = 120;
+        _manageValidationPoliciesButton.Height = 26;
+        _manageValidationPoliciesButton.Click += (_, _) => EditValidationPolicies();
 
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
@@ -350,11 +415,16 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_packageLegendCheckBox);
         featuresPanel.Controls.Add(_unitSourceInlineLabel);
         featuresPanel.Controls.Add(_unitSourceComboBox);
+        featuresPanel.Controls.Add(_unitAttributeSourceInlineLabel);
+        featuresPanel.Controls.Add(_unitAttributeSourceComboBox);
         featuresPanel.Controls.Add(_roomParameterInlineLabel);
         featuresPanel.Controls.Add(_roomCategoryParameterTextBox);
         featuresPanel.Controls.Add(_schemaProfileInlineLabel);
         featuresPanel.Controls.Add(_schemaProfileComboBox);
         featuresPanel.Controls.Add(_manageSchemaProfilesButton);
+        featuresPanel.Controls.Add(_validationPolicyInlineLabel);
+        featuresPanel.Controls.Add(_validationPolicyComboBox);
+        featuresPanel.Controls.Add(_manageValidationPoliciesButton);
         panel.Controls.Add(featuresPanel, 0, 5);
 
         _linkedModelsLabel.Dock = DockStyle.Fill;
@@ -480,13 +550,42 @@ public sealed class ExportDialog : WinFormsForm
     }
     private WinFormsControl BuildPackagingPanel()
     {
-        Label label = new()
+        TableLayoutPanel panel = new()
         {
             Dock = DockStyle.Fill,
-            Text = "When enabled, export also writes a package folder with preview images, a manifest, and optional legend.",
-            AutoEllipsis = false,
+            ColumnCount = 2,
         };
-        return label;
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+        _incrementalModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        if (_incrementalModeComboBox.Items.Count == 0)
+        {
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.AllSelectedViews));
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.ChangedViewsOnly));
+        }
+
+        _packagingModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        if (_packagingModeComboBox.Items.Count == 0)
+        {
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewPerFeatureFiles));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerLevelGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerBuildingGeoPackage));
+        }
+
+        _validateAfterWriteCheckBox.AutoSize = true;
+        _generateQgisArtifactsCheckBox.AutoSize = true;
+        _openOutputFolderCheckBox.AutoSize = true;
+        _launchQgisCheckBox.AutoSize = true;
+
+        AddRepairRow(panel, 0, "Incremental mode", _incrementalModeComboBox);
+        AddRepairRow(panel, 1, "Packaging mode", _packagingModeComboBox);
+        AddRepairRow(panel, 2, "Validate after write", _validateAfterWriteCheckBox);
+        AddRepairRow(panel, 3, "Generate QGIS artifacts", _generateQgisArtifactsCheckBox);
+        AddRepairRow(panel, 4, "Open output folder", _openOutputFolderCheckBox);
+        AddRepairRow(panel, 5, "Launch QGIS", _launchQgisCheckBox);
+        return panel;
     }
 
     private WinFormsControl BuildRepairPanel()
@@ -601,6 +700,10 @@ public sealed class ExportDialog : WinFormsForm
         _previewButton.Height = 30;
         _previewButton.Click += (_, _) => ShowPreview();
 
+        _batchButton.Width = 90;
+        _batchButton.Height = 30;
+        _batchButton.Click += (_, _) => _batchRequested?.Invoke(this);
+
         _helpButton.Width = 90;
         _helpButton.Height = 30;
         _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
@@ -609,6 +712,7 @@ public sealed class ExportDialog : WinFormsForm
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_exportButton);
         actions.Controls.Add(_previewButton);
+        actions.Controls.Add(_batchButton);
         actions.Controls.Add(_helpButton);
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
@@ -624,6 +728,7 @@ public sealed class ExportDialog : WinFormsForm
             : UiLanguage.English;
         ViewSelectionItem.DisplayLanguage = _language;
         UnitSourceItem.DisplayLanguage = _language;
+        UnitAttributeSourceItem.DisplayLanguage = _language;
         ProfileItem.DisplayLanguage = _language;
 
         foreach (ViewSelectionItem item in _viewItems)
@@ -661,18 +766,30 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
-        _unitSource = settings.UnitSource;
+        _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
+        _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
         _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
         _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
         _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_validationPolicyProfiles, settings.ActiveValidationPolicyProfileName);
         SelectUnitSource(_unitSource);
+        SelectUnitAttributeSource(_unitAttributeSource);
         _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
         PopulateSchemaProfiles();
+        PopulateValidationPolicies();
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
         _packageCheckBox.Checked = settings.GeneratePackageOutput;
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
-        _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        SelectIncrementalMode(settings.IncrementalExportMode);
+        SelectPackagingMode(settings.PackagingMode);
+        _validateAfterWriteCheckBox.Checked = settings.ValidateAfterWrite;
+        _generateQgisArtifactsCheckBox.Checked = settings.GenerateQgisArtifacts;
+        _openOutputFolderCheckBox.Checked = settings.PostExportActions?.OpenOutputFolder == true;
+        _launchQgisCheckBox.Checked = settings.PostExportActions?.LaunchQgis == true;
+        UpdatePackagingState();
         LoadGeometryRepairOptions(settings.GeometryRepairOptions);
         PopulateLinkList();
 
@@ -686,6 +803,7 @@ public sealed class ExportDialog : WinFormsForm
         UpdateProfileText();
         UpdateDiagnosticsText();
         UpdateVersionLabel();
+        UpdateUnitOptionVisibility();
         UpdatePreviewButtonEnabled();
     }
 
@@ -704,17 +822,27 @@ public sealed class ExportDialog : WinFormsForm
         _cancelButton.Text = UiLanguageText.Get(_language, "Common.Cancel", "Cancel");
         _previewButton.Text = UiLanguageText.Get(_language, "ExportDialog.Preview", "Preview...");
         _exportButton.Text = UiLanguageText.Get(_language, "ExportDialog.ExportButton", "Export");
+        _batchButton.Text = UiLanguageText.Select(_language, "Batch...", "バッチ...");
         _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
         _packageCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.WritePackage", "Write GIS package");
         _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
-        _unitSourceInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.UnitSource", "Unit Source");
+        _validateAfterWriteCheckBox.Text = UiLanguageText.Select(_language, "Validate package outputs after write", "書き出し後にパッケージを検証");
+        _generateQgisArtifactsCheckBox.Text = UiLanguageText.Select(_language, "Generate QGIS handoff files", "QGIS 引き継ぎファイルを生成");
+        _openOutputFolderCheckBox.Text = UiLanguageText.Select(_language, "Open output folder after export", "出力後にフォルダーを開く");
+        _launchQgisCheckBox.Text = UiLanguageText.Select(_language, "Launch QGIS after export", "出力後に QGIS を起動");
+        _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Geometry Source", "ユニット形状の取得元");
+        _unitAttributeSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Attribute Source", "ユニット属性の取得元");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
         _schemaProfileInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.SchemaProfile", "Schema Profile");
         _manageSchemaProfilesButton.Text = UiLanguageText.Get(_language, "ExportDialog.ManageSchemas", "Schemas...");
+        _validationPolicyInlineLabel.Text = UiLanguageText.Select(_language, "Validation Policy", "検証ポリシー");
+        _manageValidationPoliciesButton.Text = UiLanguageText.Select(_language, "Policies...", "ポリシー...");
         _linkedModelsLabel.Text = UiLanguageText.Get(_language, "ExportDialog.LinkedModels", "Linked Models");
         _includeLinkedModelsCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLinkedModels", "Include selected linked models");
         _unitSourceComboBox.Refresh();
+        _unitAttributeSourceComboBox.Refresh();
         _schemaProfileComboBox.Refresh();
+        _validationPolicyComboBox.Refresh();
         if (_availableLinks.Count == 0)
         {
             PopulateLinkList();
@@ -751,6 +879,7 @@ public sealed class ExportDialog : WinFormsForm
 
     private void ConfirmExport()
     {
+        SyncLegacyUnitSource();
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
@@ -803,17 +932,25 @@ public sealed class ExportDialog : WinFormsForm
             outputDirectory,
             epsg,
             featureTypes,
+            GetSelectedIncrementalMode(),
             _diagnosticsCheckBox.Checked,
             _packageCheckBox.Checked,
             _packageLegendCheckBox.Checked,
+            GetSelectedPackagingMode(),
+            _validateAfterWriteCheckBox.Checked,
+            _generateQgisArtifactsCheckBox.Checked,
+            BuildPostExportActions(),
             BuildGeometryRepairOptions(),
             (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name,
             _language,
             _coordinateMode,
             _unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             _roomCategoryParameterName,
             BuildLinkExportOptions(),
-            GetActiveSchemaProfile());
+            GetActiveSchemaProfile(),
+            GetActiveValidationPolicyProfile());
         DialogResult = DialogResult.OK;
         Close();
     }
@@ -824,6 +961,7 @@ public sealed class ExportDialog : WinFormsForm
             return;
         }
 
+        SyncLegacyUnitSource();
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
@@ -860,6 +998,8 @@ public sealed class ExportDialog : WinFormsForm
             _coordinateInfo?.SiteCoordinateSystemDefinition,
             _coordinateInfo?.SurveyPointSharedCoordinates,
             _unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             _roomCategoryParameterName,
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
@@ -941,9 +1081,44 @@ public sealed class ExportDialog : WinFormsForm
         _schemaProfileComboBox.SelectedIndex = _schemaProfileComboBox.Items.Count > 0 ? 0 : -1;
     }
 
+    private void PopulateValidationPolicies()
+    {
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+
+        _validationPolicyComboBox.Items.Clear();
+        foreach (ValidationPolicyProfile profile in _validationPolicyProfiles.OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _validationPolicyComboBox.Items.Add(new ValidationPolicyProfileItem(profile));
+        }
+
+        for (int i = 0; i < _validationPolicyComboBox.Items.Count; i++)
+        {
+            if (_validationPolicyComboBox.Items[i] is ValidationPolicyProfileItem item &&
+                string.Equals(item.Profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _validationPolicyComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _validationPolicyComboBox.SelectedIndex = _validationPolicyComboBox.Items.Count > 0 ? 0 : -1;
+    }
+
     private SchemaProfile GetActiveSchemaProfile()
     {
         return SchemaProfile.ResolveActive(_schemaProfiles, _activeSchemaProfileName);
+    }
+
+    private ValidationPolicyProfile GetActiveValidationPolicyProfile()
+    {
+        return ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .FirstOrDefault(profile => string.Equals(profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            ?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     private void EditSchemaProfiles()
@@ -957,6 +1132,23 @@ public sealed class ExportDialog : WinFormsForm
         _schemaProfiles = SchemaProfile.NormalizeProfiles(form.Profiles).Select(profile => profile.Clone()).ToList();
         _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
         PopulateSchemaProfiles();
+    }
+
+    private void EditValidationPolicies()
+    {
+        using ValidationPolicyManagerForm form = new(_validationPolicyProfiles, _language);
+        if (form.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(form.Profiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+        PopulateValidationPolicies();
     }
 
     private LinkExportOptions BuildLinkExportOptions()
@@ -1056,6 +1248,38 @@ public sealed class ExportDialog : WinFormsForm
         _unitSourceComboBox.SelectedIndex = 0;
     }
 
+    private void SelectUnitAttributeSource(UnitAttributeSource source)
+    {
+        for (int i = 0; i < _unitAttributeSourceComboBox.Items.Count; i++)
+        {
+            if (_unitAttributeSourceComboBox.Items[i] is UnitAttributeSourceItem item && item.Source == source)
+            {
+                _unitAttributeSourceComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _unitAttributeSourceComboBox.SelectedIndex = 0;
+    }
+
+    private void SyncLegacyUnitSource()
+    {
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
+    }
+
+    private void UpdateUnitOptionVisibility()
+    {
+        bool unitsEnabled = _unitCheckBox.Checked;
+        bool usesRoomAssignments = UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource);
+
+        _unitSourceInlineLabel.Visible = unitsEnabled;
+        _unitSourceComboBox.Visible = unitsEnabled;
+        _unitAttributeSourceInlineLabel.Visible = unitsEnabled;
+        _unitAttributeSourceComboBox.Visible = unitsEnabled;
+        _roomParameterInlineLabel.Visible = unitsEnabled && usesRoomAssignments;
+        _roomCategoryParameterTextBox.Visible = unitsEnabled && usesRoomAssignments;
+    }
+
     private void SelectPresetIfAvailable(int targetEpsg)
     {
         for (int i = 0; i < _crsPresetComboBox.Items.Count; i++)
@@ -1072,6 +1296,7 @@ public sealed class ExportDialog : WinFormsForm
 
     public ExportDialogSettings BuildSettings()
     {
+        SyncLegacyUnitSource();
         int targetEpsg = int.TryParse(_targetEpsgTextBox.Text, out int epsg)
             ? epsg
             : ProjectInfo.DefaultTargetEpsg;
@@ -1082,17 +1307,26 @@ public sealed class ExportDialog : WinFormsForm
             TargetEpsg = targetEpsg,
             FeatureTypes = GetSelectedFeatureTypes(),
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
+            IncrementalExportMode = GetSelectedIncrementalMode(),
             GenerateDiagnosticsReport = _diagnosticsCheckBox.Checked,
             GeneratePackageOutput = _packageCheckBox.Checked,
             IncludePackageLegend = _packageLegendCheckBox.Checked,
+            PackagingMode = GetSelectedPackagingMode(),
+            ValidateAfterWrite = _validateAfterWriteCheckBox.Checked,
+            GenerateQgisArtifacts = _generateQgisArtifactsCheckBox.Checked,
+            PostExportActions = BuildPostExportActions(),
             GeometryRepairOptions = BuildGeometryRepairOptions(),
             UiLanguage = _language,
             CoordinateMode = _coordinateMode,
             UnitSource = _unitSource,
+            UnitGeometrySource = _unitGeometrySource,
+            UnitAttributeSource = _unitAttributeSource,
             RoomCategoryParameterName = _roomCategoryParameterName,
             LinkExportOptions = BuildLinkExportOptions(),
             SchemaProfiles = _schemaProfiles.Select(profile => profile.Clone()).ToList(),
             ActiveSchemaProfileName = _activeSchemaProfileName,
+            ValidationPolicyProfiles = _validationPolicyProfiles.Select(profile => profile.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = _activeValidationPolicyProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
         };
@@ -1147,14 +1381,20 @@ public sealed class ExportDialog : WinFormsForm
             _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
-            _unitSource = settings.UnitSource;
+            _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
+            _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
+            _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
             _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
             _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
             _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
             _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+            _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList();
+            _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_validationPolicyProfiles, settings.ActiveValidationPolicyProfileName);
             SelectUnitSource(_unitSource);
+            SelectUnitAttributeSource(_unitAttributeSource);
             _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
             PopulateSchemaProfiles();
+            PopulateValidationPolicies();
             _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.Checked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -1163,6 +1403,7 @@ public sealed class ExportDialog : WinFormsForm
             SelectPresetIfAvailable(settings.TargetEpsg);
             SelectLanguage(settings.UiLanguage);
             PopulateLinkList();
+            UpdateUnitOptionVisibility();
         }
         finally
         {
@@ -1309,6 +1550,61 @@ public sealed class ExportDialog : WinFormsForm
         return double.TryParse(value, out double parsed) ? parsed : fallback;
     }
 
+    private void UpdatePackagingState()
+    {
+        bool packageEnabled = _packageCheckBox.Checked;
+        _packageLegendCheckBox.Enabled = packageEnabled;
+        _generateQgisArtifactsCheckBox.Enabled = packageEnabled;
+        _launchQgisCheckBox.Enabled = packageEnabled;
+    }
+
+    private IncrementalExportMode GetSelectedIncrementalMode()
+    {
+        return (_incrementalModeComboBox.SelectedItem as IncrementalModeItem)?.Mode ?? IncrementalExportMode.AllSelectedViews;
+    }
+
+    private PackagingMode GetSelectedPackagingMode()
+    {
+        return (_packagingModeComboBox.SelectedItem as PackagingModeItem)?.Mode ?? PackagingMode.PerViewPerFeatureFiles;
+    }
+
+    private void SelectIncrementalMode(IncrementalExportMode mode)
+    {
+        for (int i = 0; i < _incrementalModeComboBox.Items.Count; i++)
+        {
+            if (_incrementalModeComboBox.Items[i] is IncrementalModeItem item && item.Mode == mode)
+            {
+                _incrementalModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _incrementalModeComboBox.SelectedIndex = 0;
+    }
+
+    private void SelectPackagingMode(PackagingMode mode)
+    {
+        for (int i = 0; i < _packagingModeComboBox.Items.Count; i++)
+        {
+            if (_packagingModeComboBox.Items[i] is PackagingModeItem item && item.Mode == mode)
+            {
+                _packagingModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _packagingModeComboBox.SelectedIndex = 0;
+    }
+
+    private PostExportActionOptions BuildPostExportActions()
+    {
+        return new PostExportActionOptions
+        {
+            OpenOutputFolder = _openOutputFolderCheckBox.Checked,
+            LaunchQgis = _launchQgisCheckBox.Checked,
+        };
+    }
+
     private sealed class ViewSelectionItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -1361,6 +1657,44 @@ public sealed class ExportDialog : WinFormsForm
         }
     }
 
+    private sealed class IncrementalModeItem
+    {
+        public IncrementalModeItem(IncrementalExportMode mode)
+        {
+            Mode = mode;
+        }
+
+        public IncrementalExportMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode == IncrementalExportMode.ChangedViewsOnly
+                ? "Changed views only"
+                : "All selected views";
+        }
+    }
+
+    private sealed class PackagingModeItem
+    {
+        public PackagingModeItem(PackagingMode mode)
+        {
+            Mode = mode;
+        }
+
+        public PackagingMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode switch
+            {
+                PackagingMode.PerViewGeoPackage => "Per view GeoPackage",
+                PackagingMode.PerLevelGeoPackage => "Per level GeoPackage",
+                PackagingMode.PerBuildingGeoPackage => "Per building GeoPackage",
+                _ => "Per view / feature files",
+            };
+        }
+    }
+
 
     private sealed class UnitSourceItem
     {
@@ -1378,6 +1712,28 @@ public sealed class ExportDialog : WinFormsForm
             return Source == UnitSource.Rooms
                 ? UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms")
                 : UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors");
+        }
+    }
+
+    private sealed class UnitAttributeSourceItem
+    {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
+        public UnitAttributeSourceItem(UnitAttributeSource source)
+        {
+            Source = source;
+        }
+
+        public UnitAttributeSource Source { get; }
+
+        public override string ToString()
+        {
+            return Source switch
+            {
+                UnitAttributeSource.Rooms => UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms"),
+                UnitAttributeSource.Hybrid => UiLanguageText.Select(DisplayLanguage, "Hybrid (Rooms + Floor fallback)", "ハイブリッド (部屋 + 床フォールバック)"),
+                _ => UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors"),
+            };
         }
     }
 
@@ -1420,6 +1776,18 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         public SchemaProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
+    }
+
+    private sealed class ValidationPolicyProfileItem
+    {
+        public ValidationPolicyProfileItem(ValidationPolicyProfile profile)
+        {
+            Profile = profile?.Clone() ?? throw new ArgumentNullException(nameof(profile));
+        }
+
+        public ValidationPolicyProfile Profile { get; }
 
         public override string ToString() => Profile.Name;
     }
