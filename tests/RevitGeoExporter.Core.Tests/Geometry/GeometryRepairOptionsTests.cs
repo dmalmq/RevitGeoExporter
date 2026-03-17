@@ -17,6 +17,7 @@ public sealed class GeometryRepairOptionsTests
             OpeningSnapDistanceMeters = 9d,
             ElevatorOpeningSnapDistanceMeters = 9d,
             MergeNearbyBoundaryThresholdMeters = 9d,
+            MaxHoleSizeMeters = 9d,
         };
 
         GeometryRepairOptions effective = options.GetEffectiveOptions();
@@ -27,5 +28,20 @@ public sealed class GeometryRepairOptionsTests
         Assert.Equal(0.20d, effective.OpeningSnapDistanceMeters);
         Assert.Equal(0.20d, effective.ElevatorOpeningSnapDistanceMeters);
         Assert.Equal(0.15d, effective.MergeNearbyBoundaryThresholdMeters);
+        Assert.Equal(0.05d, effective.MaxHoleSizeMeters);
+    }
+
+    [Fact]
+    public void GetEffectiveOptions_ClampsNegativeHoleSizeToZero()
+    {
+        GeometryRepairOptions options = new()
+        {
+            Enabled = true,
+            MaxHoleSizeMeters = -0.2d,
+        };
+
+        GeometryRepairOptions effective = options.GetEffectiveOptions();
+
+        Assert.Equal(0d, effective.MaxHoleSizeMeters);
     }
 }
