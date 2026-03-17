@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Union;
+using NetTopologySuite.Precision;
+using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
@@ -19,6 +21,7 @@ public sealed class LevelBoundaryBuilder
         string levelId,
         int ordinal,
         IReadOnlyList<ExportPolygon> unitFeatures,
+        GeometryRepairOptions geometryRepairOptions,
         string sourceDocumentKey,
         string sourceDocumentName,
         bool hasPersistedExportId,
@@ -55,9 +58,8 @@ public sealed class LevelBoundaryBuilder
             return false;
         }
 
-        // Heal minor topology artifacts produced by overlapping/touching polygons.
-        Geometry normalized = unioned.Buffer(0d);
-        List<Polygon2D> polygons = ExtractPolygons(normalized);
+        Geometry repaired = HealLevelGeometry(unioned, geometryRepairOptions, viewName, warnings);
+        List<Polygon2D> polygons = ExtractPolygons(repaired);
         if (polygons.Count == 0)
         {
             return false;
@@ -77,6 +79,55 @@ public sealed class LevelBoundaryBuilder
                 warnings));
 
         return true;
+    }
+
+    private static Geometry HealLevelGeometry(
+        Geometry unioned,
+        GeometryRepairOptions geometryRepairOptions,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        Geometry normalized = unioned.Buffer(0d);
+        double threshold = geometryRepairOptions?.MergeNearbyBoundaryThresholdMeters ?? 0d;
+        if (threshold <= 0d)
+        {
+            return normalized;
+        }
+
+        try
+        {
+            Geometry healed = ApplyCloseOpen(normalized, threshold);
+            if (!healed.IsEmpty)
+            {
+                return healed;
+            }
+
+            warnings.Add($"Level boundary topology healing produced empty geometry for view '{viewName ?? "(unknown)"}'; using normalized union geometry.");
+            return normalized;
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reduced = reducer.Reduce(normalized);
+                Geometry healedReduced = ApplyCloseOpen(reduced, threshold);
+                warnings.Add($"Level boundary topology healing required reduced precision for view '{viewName ?? "(unknown)"}'.");
+                return healedReduced.IsEmpty ? normalized : healedReduced;
+            }
+            catch (TopologyException)
+            {
+                warnings.Add($"Level boundary topology healing failed for view '{viewName ?? "(unknown)"}'; using normalized union geometry.");
+                return normalized;
+            }
+        }
+    }
+
+    private static Geometry ApplyCloseOpen(Geometry geometry, double threshold)
+    {
+        Geometry closed = geometry.Buffer(threshold).Buffer(-threshold);
+        Geometry opened = closed.Buffer(-threshold).Buffer(threshold);
+        return opened.Buffer(0d);
     }
 
     private static Dictionary<string, object?> BuildAttributes(

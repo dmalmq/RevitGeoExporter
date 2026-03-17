@@ -280,6 +280,7 @@ public sealed class FloorExportDataPreparer
                         levelId,
                         ordinal,
                         unitFeatures,
+                        geometryRepairOptions,
                         hostSourceDocumentKey,
                         hostSourceDocumentName,
                         levelMetadata.HasPersistedId,
