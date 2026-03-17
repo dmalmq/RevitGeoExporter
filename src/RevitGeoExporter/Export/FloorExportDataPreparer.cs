@@ -632,17 +632,105 @@ public sealed class FloorExportDataPreparer
             UnitGeometryRecord record = converted[i];
             if (!IsVerticalFillCategory(record.Category) && !globalVertical.IsEmpty)
             {
+                Geometry removed = SafeOverlay(
+                    record.Geometry,
+                    globalVertical,
+                    (a, b) => a.Intersection(b).Buffer(0d),
+                    warnings);
                 Geometry trimmed = SafeOverlay(
                     record.Geometry,
                     globalVertical,
                     (a, b) => a.Difference(b).Buffer(0d),
                     warnings);
-                converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, trimmed);
+                converted[i] = new UnitGeometryRecord(record.Attributes, record.Category, trimmed, removed);
             }
         }
 
         CloseSmallGaps(converted, geometryRepairOptions.MergeNearbyBoundaryThresholdMeters);
-        return BuildExportPolygons(converted, geometryRepairOptions.MinimumPolygonAreaSquareMeters, geometryRepairOptions.MaxHoleSizeMeters, geometryRepair);
+
+        List<ExportPolygon> exported = BuildExportPolygons(
+            converted,
+            geometryRepairOptions.MinimumPolygonAreaSquareMeters,
+            geometryRepairOptions.MaxHoleSizeMeters,
+            geometryRepair);
+        ApplyVerticalDifferenceConsistencyCheck(
+            converted,
+            exported,
+            geometryRepairOptions.MinimumPolygonAreaSquareMeters,
+            geometryRepairOptions.MaxHoleSizeMeters,
+            geometryRepair,
+            warnings);
+
+        return exported;
+    }
+
+    private static void ApplyVerticalDifferenceConsistencyCheck(
+        List<UnitGeometryRecord> records,
+        List<ExportPolygon> exported,
+        double minimumPolygonAreaSquareMeters,
+        double maxHoleSizeMeters,
+        GeometryRepairResult geometryRepair,
+        ICollection<string> warnings)
+    {
+        List<Geometry> removedByVertical = records
+            .Where(r => !IsVerticalFillCategory(r.Category) && r.RemovedByVertical != null && !r.RemovedByVertical.IsEmpty)
+            .Select(r => r.RemovedByVertical!)
+            .ToList();
+        if (removedByVertical.Count == 0)
+        {
+            return;
+        }
+
+        Geometry removedUnion = SafeUnion(removedByVertical, warnings);
+        if (removedUnion.IsEmpty)
+        {
+            return;
+        }
+
+        List<Geometry> survivingVertical = exported
+            .Where(f => IsVerticalFillCategory(GetCategory(f)))
+            .Select(ToMultiPolygonGeometry)
+            .Where(g => !g.IsEmpty)
+            .ToList();
+        Geometry survivingVerticalUnion = survivingVertical.Count == 0
+            ? GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>())
+            : SafeUnion(survivingVertical, warnings);
+
+        Geometry orphanRemoved = survivingVerticalUnion.IsEmpty
+            ? removedUnion
+            : SafeOverlay(removedUnion, survivingVerticalUnion, (a, b) => a.Difference(b).Buffer(0d), warnings);
+        if (orphanRemoved.IsEmpty || orphanRemoved.Area <= 1e-8d)
+        {
+            return;
+        }
+
+        Dictionary<string, int> sourceCategoryCounts = CountCategories(records.Select(r => r.Category));
+        Dictionary<string, int> exportedCategoryCounts = CountCategories(exported.Select(GetCategory));
+        warnings.Add(
+            $"Vertical subtraction mismatch detected (source features: {FormatCategoryCounts(sourceCategoryCounts)}; " +
+            $"surviving features: {FormatCategoryCounts(exportedCategoryCounts)}). " +
+            "Restoring dropped vertical void regions to keep boundaries consistent.");
+
+        for (int i = 0; i < records.Count; i++)
+        {
+            UnitGeometryRecord record = records[i];
+            if (IsVerticalFillCategory(record.Category) || record.RemovedByVertical == null || record.RemovedByVertical.IsEmpty)
+            {
+                continue;
+            }
+
+            Geometry restore = SafeOverlay(record.RemovedByVertical, orphanRemoved, (a, b) => a.Intersection(b).Buffer(0d), warnings);
+            if (restore.IsEmpty)
+            {
+                continue;
+            }
+
+            Geometry restoredGeometry = SafeOverlay(record.Geometry, restore, (a, b) => a.Union(b).Buffer(0d), warnings);
+            records[i] = new UnitGeometryRecord(record.Attributes, record.Category, restoredGeometry);
+        }
+
+        exported.Clear();
+        exported.AddRange(BuildExportPolygons(records, minimumPolygonAreaSquareMeters, maxHoleSizeMeters, geometryRepair));
     }
 
     private static List<ExportPolygon> BuildExportPolygons(
@@ -691,7 +779,49 @@ public sealed class FloorExportDataPreparer
             if (!buffered.IsEmpty)
             {
                 UnitGeometryRecord current = records[i];
-                records[i] = new UnitGeometryRecord(current.Attributes, current.Category, buffered);
+                records[i] = new UnitGeometryRecord(current.Attributes, current.Category, buffered, current.RemovedByVertical);
+            }
+        }
+    }
+
+    private static Dictionary<string, int> CountCategories(IEnumerable<string> categories)
+    {
+        Dictionary<string, int> counts = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string category in categories)
+        {
+            string key = string.IsNullOrWhiteSpace(category) ? "(uncategorized)" : category.Trim();
+            counts[key] = counts.TryGetValue(key, out int count) ? count + 1 : 1;
+        }
+
+        return counts;
+    }
+
+    private static string FormatCategoryCounts(IReadOnlyDictionary<string, int> counts)
+    {
+        return string.Join(", ", counts
+            .OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(kvp => $"{kvp.Key}={kvp.Value}"));
+    }
+
+    private static Geometry SafeUnion(IReadOnlyList<Geometry> geometries, ICollection<string> warnings)
+    {
+        try
+        {
+            return UnaryUnionOp.Union(geometries).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = geometries.Select(g => reducer.Reduce(g)).ToList();
+                warnings.Add("A geometry union required reduced precision and may be slightly approximated.");
+                return UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                warnings.Add("A geometry union failed; keeping original geometry set.");
+                return GeometryFactory.CreateGeometryCollection(Array.Empty<Geometry>());
             }
         }
     }
@@ -1072,11 +1202,13 @@ public sealed class FloorExportDataPreparer
         public UnitGeometryRecord(
             IReadOnlyDictionary<string, object?> attributes,
             string category,
-            Geometry geometry)
+            Geometry geometry,
+            Geometry? removedByVertical = null)
         {
             Attributes = attributes;
             Category = category;
             Geometry = geometry;
+            RemovedByVertical = removedByVertical;
         }
 
         public IReadOnlyDictionary<string, object?> Attributes { get; }
@@ -1084,5 +1216,7 @@ public sealed class FloorExportDataPreparer
         public string Category { get; }
 
         public Geometry Geometry { get; }
+
+        public Geometry? RemovedByVertical { get; }
     }
 }
