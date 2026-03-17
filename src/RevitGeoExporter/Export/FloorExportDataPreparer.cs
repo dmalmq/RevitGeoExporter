@@ -642,18 +642,19 @@ public sealed class FloorExportDataPreparer
         }
 
         CloseSmallGaps(converted, geometryRepairOptions.MergeNearbyBoundaryThresholdMeters);
-        return BuildExportPolygons(converted, geometryRepairOptions.MinimumPolygonAreaSquareMeters, geometryRepair);
+        return BuildExportPolygons(converted, geometryRepairOptions.MinimumPolygonAreaSquareMeters, geometryRepairOptions.MaxHoleSizeMeters, geometryRepair);
     }
 
     private static List<ExportPolygon> BuildExportPolygons(
         IReadOnlyList<UnitGeometryRecord> records,
         double minimumPolygonAreaSquareMeters,
+        double maxHoleSizeMeters,
         GeometryRepairResult geometryRepair)
     {
         List<ExportPolygon> exported = new(records.Count);
         for (int i = 0; i < records.Count; i++)
         {
-            ExportPolygon? feature = ToExportPolygon(records[i].Geometry, records[i].Attributes, minimumPolygonAreaSquareMeters, geometryRepair);
+            ExportPolygon? feature = ToExportPolygon(records[i].Geometry, records[i].Attributes, minimumPolygonAreaSquareMeters, maxHoleSizeMeters, geometryRepair);
             if (feature != null)
             {
                 exported.Add(feature);
@@ -699,6 +700,7 @@ public sealed class FloorExportDataPreparer
         Geometry geometry,
         IReadOnlyDictionary<string, object?> attributes,
         double minimumPolygonAreaSquareMeters,
+        double maxHoleSizeMeters,
         GeometryRepairResult geometryRepair)
     {
         if (geometry == null || geometry.IsEmpty)
@@ -706,7 +708,7 @@ public sealed class FloorExportDataPreparer
             return null;
         }
 
-        List<Polygon2D> polygons = ExtractPolygons(geometry, minimumPolygonAreaSquareMeters, geometryRepair);
+        List<Polygon2D> polygons = ExtractPolygons(geometry, minimumPolygonAreaSquareMeters, geometryRepair, maxHoleSizeMeters);
         if (polygons.Count == 0)
         {
             return null;
@@ -866,20 +868,21 @@ public sealed class FloorExportDataPreparer
     private static List<Polygon2D> ExtractPolygons(
         Geometry geometry,
         double minimumPolygonAreaSquareMeters,
-        GeometryRepairResult geometryRepair)
+        GeometryRepairResult geometryRepair,
+        double maxHoleSizeMeters)
     {
         List<Polygon2D> polygons = new();
         switch (geometry)
         {
             case Polygon polygon:
-                AddPolygonIfValid(polygons, polygon, minimumPolygonAreaSquareMeters, geometryRepair);
+                AddPolygonIfValid(polygons, polygon, minimumPolygonAreaSquareMeters, geometryRepair, maxHoleSizeMeters);
                 break;
             case MultiPolygon multiPolygon:
                 for (int i = 0; i < multiPolygon.NumGeometries; i++)
                 {
                     if (multiPolygon.GetGeometryN(i) is Polygon child)
                     {
-                        AddPolygonIfValid(polygons, child, minimumPolygonAreaSquareMeters, geometryRepair);
+                        AddPolygonIfValid(polygons, child, minimumPolygonAreaSquareMeters, geometryRepair, maxHoleSizeMeters);
                     }
                 }
 
@@ -887,7 +890,7 @@ public sealed class FloorExportDataPreparer
             case GeometryCollection collection:
                 for (int i = 0; i < collection.NumGeometries; i++)
                 {
-                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i), minimumPolygonAreaSquareMeters, geometryRepair));
+                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i), minimumPolygonAreaSquareMeters, geometryRepair, maxHoleSizeMeters));
                 }
 
                 break;
@@ -900,7 +903,8 @@ public sealed class FloorExportDataPreparer
         ICollection<Polygon2D> target,
         Polygon polygon,
         double minimumPolygonAreaSquareMeters,
-        GeometryRepairResult geometryRepair)
+        GeometryRepairResult geometryRepair,
+        double maxHoleSizeMeters)
     {
         if (polygon.IsEmpty || polygon.Area < minimumPolygonAreaSquareMeters)
         {
@@ -908,14 +912,14 @@ public sealed class FloorExportDataPreparer
             return;
         }
 
-        Polygon2D? converted = ToPolygon2D(polygon);
+        Polygon2D? converted = ToPolygon2D(polygon, maxHoleSizeMeters);
         if (converted != null)
         {
             target.Add(converted);
         }
     }
 
-    private static Polygon2D? ToPolygon2D(Polygon polygon)
+    private static Polygon2D? ToPolygon2D(Polygon polygon, double maxHoleSizeMeters)
     {
         IReadOnlyList<Point2D>? exterior = ToPointList(polygon.ExteriorRing.Coordinates);
         if (exterior == null)
@@ -926,7 +930,13 @@ public sealed class FloorExportDataPreparer
         List<IReadOnlyList<Point2D>> interior = new();
         for (int i = 0; i < polygon.NumInteriorRings; i++)
         {
-            IReadOnlyList<Point2D>? ring = ToPointList(polygon.GetInteriorRingN(i).Coordinates);
+            LinearRing holeRing = polygon.GetInteriorRingN(i);
+            if (maxHoleSizeMeters > 0d && IsSmallHole(holeRing, maxHoleSizeMeters))
+            {
+                continue;
+            }
+
+            IReadOnlyList<Point2D>? ring = ToPointList(holeRing.Coordinates);
             if (ring != null)
             {
                 interior.Add(ring);
@@ -934,6 +944,17 @@ public sealed class FloorExportDataPreparer
         }
 
         return new Polygon2D(exterior, interior);
+    }
+
+    private static bool IsSmallHole(LinearRing ring, double maxHoleSizeMeters)
+    {
+        Envelope envelope = ring.EnvelopeInternal;
+        if (envelope == null || envelope.IsNull)
+        {
+            return false;
+        }
+
+        return Math.Max(envelope.Width, envelope.Height) <= maxHoleSizeMeters;
     }
 
     private static IReadOnlyList<Point2D>? ToPointList(Coordinate[] coordinates)

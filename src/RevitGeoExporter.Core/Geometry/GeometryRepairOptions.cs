@@ -18,6 +18,8 @@ public sealed class GeometryRepairOptions
 
     public double MergeNearbyBoundaryThresholdMeters { get; set; } = 0.15d;
 
+    public double MaxHoleSizeMeters { get; set; } = 0.05d;
+
     public GeometryRepairOptions Clone()
     {
         return new GeometryRepairOptions
@@ -29,6 +31,7 @@ public sealed class GeometryRepairOptions
             OpeningSnapDistanceMeters = OpeningSnapDistanceMeters,
             ElevatorOpeningSnapDistanceMeters = ElevatorOpeningSnapDistanceMeters,
             MergeNearbyBoundaryThresholdMeters = MergeNearbyBoundaryThresholdMeters,
+            MaxHoleSizeMeters = MaxHoleSizeMeters,
         };
     }
 
@@ -43,6 +46,7 @@ public sealed class GeometryRepairOptions
             clone.OpeningSnapDistanceMeters = 0.20d;
             clone.ElevatorOpeningSnapDistanceMeters = 0.20d;
             clone.MergeNearbyBoundaryThresholdMeters = 0.15d;
+            clone.MaxHoleSizeMeters = 0.05d;
         }
 
         clone.MinimumPolygonAreaSquareMeters = Math.Max(0d, clone.MinimumPolygonAreaSquareMeters);
@@ -51,6 +55,7 @@ public sealed class GeometryRepairOptions
         clone.OpeningSnapDistanceMeters = Math.Max(0.05d, clone.OpeningSnapDistanceMeters);
         clone.ElevatorOpeningSnapDistanceMeters = Math.Max(0.05d, clone.ElevatorOpeningSnapDistanceMeters);
         clone.MergeNearbyBoundaryThresholdMeters = Math.Max(0d, clone.MergeNearbyBoundaryThresholdMeters);
+        clone.MaxHoleSizeMeters = Math.Max(0d, clone.MaxHoleSizeMeters);
         return clone;
     }
 }

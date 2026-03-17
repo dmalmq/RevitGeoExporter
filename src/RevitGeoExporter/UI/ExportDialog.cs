@@ -61,6 +61,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly TextBox _openingSnapDistanceTextBox = new();
     private readonly TextBox _elevatorSnapDistanceTextBox = new();
     private readonly TextBox _mergeBoundaryThresholdTextBox = new();
+    private readonly TextBox _maxHoleSizeTextBox = new();
     private readonly GroupBox _viewsGroup = new();
     private readonly GroupBox _optionsGroup = new();
     private readonly Button _selectAllButton = new();
@@ -604,6 +605,7 @@ public sealed class ExportDialog : WinFormsForm
         AddRepairRow(panel, 4, "Opening snap distance (m)", _openingSnapDistanceTextBox);
         AddRepairRow(panel, 5, "Elevator snap distance (m)", _elevatorSnapDistanceTextBox);
         AddRepairRow(panel, 6, "Merge gap threshold (m)", _mergeBoundaryThresholdTextBox);
+        AddRepairRow(panel, 7, "Repair holes smaller than (m)", _maxHoleSizeTextBox);
         return panel;
     }
 
@@ -1529,6 +1531,7 @@ public sealed class ExportDialog : WinFormsForm
         _openingSnapDistanceTextBox.Text = value.OpeningSnapDistanceMeters.ToString("0.###");
         _elevatorSnapDistanceTextBox.Text = value.ElevatorOpeningSnapDistanceMeters.ToString("0.###");
         _mergeBoundaryThresholdTextBox.Text = value.MergeNearbyBoundaryThresholdMeters.ToString("0.###");
+        _maxHoleSizeTextBox.Text = value.MaxHoleSizeMeters.ToString("0.###");
     }
 
     private GeometryRepairOptions BuildGeometryRepairOptions()
@@ -1542,6 +1545,7 @@ public sealed class ExportDialog : WinFormsForm
             OpeningSnapDistanceMeters = ParseDouble(_openingSnapDistanceTextBox.Text, 0.20d),
             ElevatorOpeningSnapDistanceMeters = ParseDouble(_elevatorSnapDistanceTextBox.Text, 0.20d),
             MergeNearbyBoundaryThresholdMeters = ParseDouble(_mergeBoundaryThresholdTextBox.Text, 0.15d),
+            MaxHoleSizeMeters = ParseDouble(_maxHoleSizeTextBox.Text, 0.05d),
         };
     }
 
