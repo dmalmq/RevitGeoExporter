@@ -108,6 +108,13 @@ public sealed class FloorExportDataPreparer
         Dictionary<long, int> ordinalByLevelId = BuildLevelOrdinalMap(
             allLevels.Count > 0 ? allLevels : contexts.Select(x => x.Level).ToList());
         SchemaProfile activeSchemaProfile = options?.ActiveSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        UnitGeometrySource unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(
+            options?.UnitSource ?? UnitSource.Floors,
+            options?.UnitGeometrySource ?? UnitGeometrySource.Unset);
+        UnitAttributeSource unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(
+            options?.UnitSource ?? UnitSource.Floors,
+            unitGeometrySource,
+            options?.UnitAttributeSource ?? UnitAttributeSource.Unset);
         string hostSourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         string hostSourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
 
@@ -146,27 +153,40 @@ public sealed class FloorExportDataPreparer
             ExportLayer? unitLayer = null;
             if (NeedsUnitContext(featureTypes))
             {
-                ExportLayer rawUnitLayer = LayerDefinition.CreateUnitLayer(activeSchemaProfile, viewWarnings);
-                if ((options?.UnitSource ?? UnitSource.Floors) == UnitSource.Rooms)
+                bool collectFloorCandidates =
+                    unitGeometrySource == UnitGeometrySource.Floors ||
+                    unitAttributeSource == UnitAttributeSource.Floors ||
+                    (unitAttributeSource == UnitAttributeSource.Hybrid && unitGeometrySource == UnitGeometrySource.Floors);
+                bool collectRoomCandidates =
+                    unitGeometrySource == UnitGeometrySource.Rooms ||
+                    unitAttributeSource == UnitAttributeSource.Rooms ||
+                    unitAttributeSource == UnitAttributeSource.Hybrid;
+
+                ExportLayer rawFloorUnitLayer = LayerDefinition.CreateUnitLayer(activeSchemaProfile, viewWarnings);
+                ExportLayer rawRoomUnitLayer = LayerDefinition.CreateUnitLayer(activeSchemaProfile, viewWarnings);
+                ExportLayer supplementalUnitLayer = LayerDefinition.CreateUnitLayer(activeSchemaProfile, viewWarnings);
+
+                if (collectRoomCandidates)
                 {
                     AddRoomUnits(
                         levelId,
                         context.Rooms,
                         unitExtractor,
-                        rawUnitLayer,
+                        rawRoomUnitLayer,
                         options?.RoomCategoryParameterName ?? "Name",
                         context.View.Name,
                         viewWarnings);
                 }
-                else
+
+                if (collectFloorCandidates)
                 {
-                    AddFloorUnits(levelId, context.Floors, unitExtractor, rawUnitLayer, context.View.Name, viewWarnings);
+                    AddFloorUnits(levelId, context.Floors, unitExtractor, rawFloorUnitLayer, context.View.Name, viewWarnings);
                 }
 
                 if (!RawFloorOnlyDebugMode)
                 {
-                    AddStairsUnits(levelId, context.View, context.Stairs, unitExtractor, rawUnitLayer, viewWarnings);
-                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, rawUnitLayer, viewWarnings);
+                    AddStairsUnits(levelId, context.View, context.Stairs, unitExtractor, supplementalUnitLayer, viewWarnings);
+                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, supplementalUnitLayer, viewWarnings);
                 }
 
                 AddLinkedUnitFeatures(
@@ -176,13 +196,20 @@ public sealed class FloorExportDataPreparer
                     floorCategoryResolver,
                     roomCategoryResolver,
                     familyCategoryOverrides,
-                    options?.UnitSource ?? UnitSource.Floors,
                     options?.RoomCategoryParameterName ?? "Name",
                     activeSchemaProfile,
-                    rawUnitLayer,
+                    collectFloorCandidates ? rawFloorUnitLayer : null,
+                    collectRoomCandidates ? rawRoomUnitLayer : null,
+                    RawFloorOnlyDebugMode ? null : supplementalUnitLayer,
                     viewWarnings);
 
-                List<ExportPolygon> rawUnitFeatures = rawUnitLayer.Features.OfType<ExportPolygon>().ToList();
+                List<ExportPolygon> rawUnitFeatures = UnitFeatureComposer.Compose(
+                        rawFloorUnitLayer.Features.OfType<ExportPolygon>().ToList(),
+                        rawRoomUnitLayer.Features.OfType<ExportPolygon>().ToList(),
+                        unitGeometrySource,
+                        unitAttributeSource)
+                    .ToList();
+                rawUnitFeatures.AddRange(supplementalUnitLayer.Features.OfType<ExportPolygon>());
                 unitFeatures = RawFloorOnlyDebugMode
                     ? rawUnitFeatures
                     : NormalizeUnitFeatures(rawUnitFeatures, geometryRepairOptions, geometryRepair, viewWarnings);
@@ -401,10 +428,11 @@ public sealed class FloorExportDataPreparer
         FloorCategoryResolver floorCategoryResolver,
         RoomCategoryResolver roomCategoryResolver,
         IReadOnlyDictionary<string, string> familyCategoryOverrides,
-        UnitSource unitSource,
         string roomCategoryParameterName,
         SchemaProfile activeSchemaProfile,
-        ExportLayer unitLayer,
+        ExportLayer? floorUnitLayer,
+        ExportLayer? roomUnitLayer,
+        ExportLayer? supplementalUnitLayer,
         ICollection<string> warnings)
     {
         if (context.LinkedSources.Count == 0)
@@ -426,29 +454,30 @@ public sealed class FloorExportDataPreparer
                 sourceDescriptor,
                 activeSchemaProfile);
 
-            if (unitSource == UnitSource.Rooms)
+            if (roomUnitLayer != null)
             {
                 AddRoomUnits(
                     levelId,
                     linkedSource.Rooms,
                     linkedUnitExtractor,
-                    unitLayer,
+                    roomUnitLayer,
                     roomCategoryParameterName,
                     context.View.Name,
                     warnings);
             }
-            else
+
+            if (floorUnitLayer != null)
             {
-                AddFloorUnits(levelId, linkedSource.Floors, linkedUnitExtractor, unitLayer, context.View.Name, warnings);
+                AddFloorUnits(levelId, linkedSource.Floors, linkedUnitExtractor, floorUnitLayer, context.View.Name, warnings);
             }
 
-            if (RawFloorOnlyDebugMode)
+            if (RawFloorOnlyDebugMode || supplementalUnitLayer == null)
             {
                 continue;
             }
 
-            AddStairsUnits(levelId, context.View, linkedSource.Stairs, linkedUnitExtractor, unitLayer, warnings);
-            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, unitLayer, warnings);
+            AddStairsUnits(levelId, context.View, linkedSource.Stairs, linkedUnitExtractor, supplementalUnitLayer, warnings);
+            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, supplementalUnitLayer, warnings);
         }
     }
 

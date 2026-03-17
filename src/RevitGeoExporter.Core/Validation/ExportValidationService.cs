@@ -26,7 +26,7 @@ public sealed class ExportValidationService
         {
             issues.Add(CreateIssue(
                 request,
-                ValidationSeverity.Error,
+                ResolveSeverity(request, ValidationCode.InvalidTargetEpsg, ValidationSeverity.Error),
                 ValidationCode.InvalidTargetEpsg,
                 "A valid EPSG code is required before export."));
         }
@@ -39,7 +39,7 @@ public sealed class ExportValidationService
                 issues.Add(CreateIssue(
                     request,
                     view,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.EmptyViewOutput, ValidationSeverity.Warning),
                     ValidationCode.EmptyViewOutput,
                     $"View '{view.ViewName}' did not produce any exportable features."));
                 continue;
@@ -51,9 +51,7 @@ public sealed class ExportValidationService
                 view,
                 features,
                 globalSeenIds,
-                globalDuplicateIds,
-                request.UnitSource,
-                request.RoomCategoryParameterName);
+                globalDuplicateIds);
             AddUnsupportedOpeningIssues(issues, request, view);
             AddVerticalAuditIssues(issues, request, view);
 
@@ -62,7 +60,7 @@ public sealed class ExportValidationService
                 issues.Add(CreateIssue(
                     request,
                     view,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.EmptyViewOutput, ValidationSeverity.Warning),
                     ValidationCode.EmptyViewOutput,
                     $"View '{view.ViewName}' did not produce any features for the selected export layers."));
             }
@@ -77,9 +75,7 @@ public sealed class ExportValidationService
         ValidationViewSnapshot view,
         IReadOnlyList<ExportFeatureValidationSnapshot> features,
         ISet<string> globalSeenIds,
-        ISet<string> globalDuplicateIds,
-        UnitSource unitSource,
-        string roomCategoryParameterName)
+        ISet<string> globalDuplicateIds)
     {
         foreach (ExportFeatureValidationSnapshot feature in features)
         {
@@ -89,7 +85,7 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Error,
+                    ResolveSeverity(request, ValidationCode.MissingStableId, ValidationSeverity.Error),
                     ValidationCode.MissingStableId,
                     $"A {feature.FeatureType} feature in view '{view.ViewName}' is missing an export ID."));
             }
@@ -102,7 +98,7 @@ public sealed class ExportValidationService
                         request,
                         view,
                         feature,
-                        ValidationSeverity.Error,
+                        ResolveSeverity(request, ValidationCode.DuplicateStableId, ValidationSeverity.Error),
                         ValidationCode.DuplicateStableId,
                         $"Export ID '{exportId}' is duplicated across the selected export set."));
                 }
@@ -114,7 +110,7 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.EmptyGeometry, ValidationSeverity.Warning),
                     ValidationCode.EmptyGeometry,
                     $"A {feature.FeatureType} feature in view '{view.ViewName}' has empty geometry."));
             }
@@ -124,22 +120,34 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.InvalidGeometry, ValidationSeverity.Warning),
                     ValidationCode.InvalidGeometry,
                     $"A {feature.FeatureType} feature in view '{view.ViewName}' has invalid geometry."));
+            }
+
+            if (string.Equals(feature.FeatureType, "unit", StringComparison.OrdinalIgnoreCase) &&
+                string.IsNullOrWhiteSpace(feature.Name))
+            {
+                issues.Add(CreateIssue(
+                    request,
+                    view,
+                    feature,
+                    ResolveSeverity(request, ValidationCode.MissingName, ValidationSeverity.Warning),
+                    ValidationCode.MissingName,
+                    $"Unit {feature.SourceElementId?.ToString() ?? "<unknown>"} in view '{view.ViewName}' is missing a name."));
             }
 
             if (feature.IsUnassigned)
             {
                 string label = feature.AssignmentMappingKey ?? "<unknown mapping value>";
-                string noun = unitSource == UnitSource.Rooms
-                    ? $"Room-based unit value '{label}' for parameter '{roomCategoryParameterName}'"
+                string noun = string.Equals(feature.AssignmentSourceKind, "room", StringComparison.OrdinalIgnoreCase)
+                    ? $"Room-based unit value '{label}' for parameter '{feature.AssignmentParameterName ?? request.RoomCategoryParameterName}'"
                     : $"Floor-derived unit '{label}'";
                 issues.Add(CreateIssue(
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.UnassignedFloorCategory, ValidationSeverity.Warning),
                     ValidationCode.UnassignedFloorCategory,
                     $"{noun} in view '{view.ViewName}' is still unassigned."));
             }
@@ -152,7 +160,7 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.NonStandardUnitCategory, ValidationSeverity.Warning),
                     ValidationCode.NonStandardUnitCategory,
                     $"Unit category '{feature.Category}' in view '{view.ViewName}' is not an official IMDF unit category."));
             }
@@ -164,7 +172,7 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.UnsnappedOpening, ValidationSeverity.Warning),
                     ValidationCode.UnsnappedOpening,
                     $"Opening {feature.SourceElementId?.ToString() ?? "<unknown>"} in view '{view.ViewName}' could not be snapped to a unit outline."));
             }
@@ -176,7 +184,7 @@ public sealed class ExportValidationService
                     request,
                     view,
                     feature,
-                    ValidationSeverity.Warning,
+                    ResolveSeverity(request, ValidationCode.LinkedElementUsingFallbackId, ValidationSeverity.Warning),
                     ValidationCode.LinkedElementUsingFallbackId,
                     $"Linked {feature.FeatureType} element {feature.SourceElementId?.ToString() ?? "<unknown>"} from '{sourceDocument}' is using a deterministic fallback export ID."));
             }
@@ -205,7 +213,7 @@ public sealed class ExportValidationService
                 request,
                 view,
                 feature,
-                ValidationSeverity.Warning,
+                ResolveSeverity(request, code, ValidationSeverity.Warning),
                 code,
                 schemaIssue.Message));
         }
@@ -219,7 +227,7 @@ public sealed class ExportValidationService
         foreach (UnsupportedOpeningFamilySnapshot opening in view.UnsupportedOpenings)
         {
             issues.Add(new ValidationIssue(
-                ValidationSeverity.Warning,
+                ResolveSeverity(request, ValidationCode.UnsupportedOpeningFamily, ValidationSeverity.Warning),
                 ValidationCode.UnsupportedOpeningFamily,
                 $"Unsupported opening family '{opening.FamilyName}' was encountered in view '{view.ViewName}'.",
                 view.ViewName,
@@ -247,7 +255,7 @@ public sealed class ExportValidationService
         foreach (VerticalCirculationAuditResult audit in audits.Where(result => result.HasMissingOutput))
         {
             issues.Add(new ValidationIssue(
-                ValidationSeverity.Warning,
+                ResolveSeverity(request, ValidationCode.MissingVerticalCirculation, ValidationSeverity.Warning),
                 ValidationCode.MissingVerticalCirculation,
                 $"View '{view.ViewName}' contains {audit.SourceCount} {audit.Category} source element(s), but only {audit.OutputCount} {audit.FeatureType} feature(s) were prepared.",
                 view.ViewName,
@@ -327,6 +335,14 @@ public sealed class ExportValidationService
                                 ((sourceElementId ?? feature?.SourceElementId).HasValue || view.ViewId > 0));
     }
 
+    private static ValidationSeverity ResolveSeverity(
+        ExportValidationRequest request,
+        ValidationCode code,
+        ValidationSeverity defaultSeverity)
+    {
+        return request.ActiveValidationPolicyProfile.ResolveSeverity(code, defaultSeverity);
+    }
+
     private static ValidationActionKind GetActionKind(ValidationCode code)
     {
         switch (code)
@@ -340,6 +356,7 @@ public sealed class ExportValidationService
                 return ValidationActionKind.ResolveMappings;
             case ValidationCode.LinkedElementUsingFallbackId:
                 return ValidationActionKind.ReviewElementInRevit;
+            case ValidationCode.MissingName:
             case ValidationCode.MissingSchemaMappedParameter:
             case ValidationCode.SchemaTypeConversionFailed:
                 return ValidationActionKind.ReviewElementInRevit;
@@ -373,6 +390,8 @@ public sealed class ExportValidationService
                 return "Review the unassigned floor or room mapping and save an override if needed.";
             case ValidationCode.LinkedElementUsingFallbackId:
                 return "Review the linked source element and assign a persisted exporter ID in the linked model if a stable cross-export ID is required.";
+            case ValidationCode.MissingName:
+                return "Populate a unit name in Revit or switch to room-driven unit attributes for units that should inherit room metadata.";
             case ValidationCode.MissingSchemaMappedParameter:
                 return "Review the schema mapping and confirm the mapped Revit parameter exists on the affected source element.";
             case ValidationCode.SchemaTypeConversionFailed:

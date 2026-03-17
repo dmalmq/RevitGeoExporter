@@ -9,6 +9,7 @@ using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Help;
 using RevitGeoExporter.Resources;
 using WinForms = System.Windows.Forms;
@@ -41,6 +42,8 @@ public sealed class SettingsHubForm : IDisposable
     private readonly CheckBox _repairEnabledCheckBox = new();
     private readonly Button _schemaProfilesButton = new();
     private readonly TextBlock _schemaProfilesSummary = new();
+    private readonly Button _validationPoliciesButton = new();
+    private readonly TextBlock _validationPoliciesSummary = new();
     private readonly DataGrid _floorGrid = new();
     private readonly DataGrid _roomGrid = new();
     private readonly DataGrid _familyGrid = new();
@@ -196,6 +199,12 @@ public sealed class SettingsHubForm : IDisposable
         toggles.Children.Add(_schemaProfilesButton);
         _schemaProfilesSummary.TextWrapping = TextWrapping.Wrap;
         toggles.Children.Add(_schemaProfilesSummary);
+        _validationPoliciesButton.HorizontalAlignment = HorizontalAlignment.Left;
+        _validationPoliciesButton.Margin = new Thickness(0, 8, 0, 4);
+        _validationPoliciesButton.Click += (_, _) => EditValidationPolicies();
+        toggles.Children.Add(_validationPoliciesButton);
+        _validationPoliciesSummary.TextWrapping = TextWrapping.Wrap;
+        toggles.Children.Add(_validationPoliciesSummary);
         AddFormRow(form, 6, () => L("ExportDialog.Options", "Export Options"), toggles);
 
         return form;
@@ -383,6 +392,7 @@ public sealed class SettingsHubForm : IDisposable
         _language = _snapshot.GlobalSettings.UiLanguage;
         SelectPreset(_snapshot.GlobalSettings.TargetEpsg);
         UpdateSchemaProfileSummary();
+        UpdateValidationPolicySummary();
         PopulateMappings(_snapshot.ProjectMappings);
         PopulateStatuses(_snapshot.StatusEntries);
         ApplyLanguage();
@@ -576,6 +586,36 @@ public sealed class SettingsHubForm : IDisposable
             count,
             activeName);
     }
+
+    private void EditValidationPolicies()
+    {
+        using ValidationPolicyManagerForm form = new(_snapshot.GlobalSettings.ValidationPolicyProfiles, _language);
+        if (form.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        _snapshot.GlobalSettings.ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(form.Profiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _snapshot.GlobalSettings.ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _snapshot.GlobalSettings.ValidationPolicyProfiles,
+            _snapshot.GlobalSettings.ActiveValidationPolicyProfileName);
+        UpdateValidationPolicySummary();
+    }
+
+    private void UpdateValidationPolicySummary()
+    {
+        int count = _snapshot.GlobalSettings?.ValidationPolicyProfiles?.Count ?? 0;
+        string activeName = ValidationPolicyProfile.ResolveActiveName(
+            _snapshot.GlobalSettings?.ValidationPolicyProfiles,
+            _snapshot.GlobalSettings?.ActiveValidationPolicyProfileName);
+        _validationPoliciesSummary.Text = string.Format(
+            UiLanguageText.Select(_language, "Validation policies: {0}    Default active policy: {1}", "検証ポリシー: {0}    既定のアクティブ ポリシー: {1}"),
+            count,
+            activeName);
+    }
+
     private ProjectMappingRules BuildProjectMappings()
     {
         return ProjectMappingRules.Create(
@@ -692,6 +732,8 @@ public sealed class SettingsHubForm : IDisposable
         _repairEnabledCheckBox.Content = L("ExportDialog.GeometryRepair", "Geometry Repair");
         _schemaProfilesButton.Content = L("SettingsHub.SchemaProfilesButton", "Manage Schema Profiles...");
         UpdateSchemaProfileSummary();
+        _validationPoliciesButton.Content = UiLanguageText.Select(_language, "Manage Validation Policies...", "検証ポリシーを管理...");
+        UpdateValidationPolicySummary();
 
         foreach (ScopeButtonSet set in _scopeButtons.Values)
         {
@@ -766,6 +808,12 @@ public sealed class SettingsHubForm : IDisposable
         snapshot.GlobalSettings.ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(
             snapshot.GlobalSettings.SchemaProfiles,
             snapshot.GlobalSettings.ActiveSchemaProfileName);
+        snapshot.GlobalSettings.ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(snapshot.GlobalSettings.ValidationPolicyProfiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        snapshot.GlobalSettings.ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            snapshot.GlobalSettings.ValidationPolicyProfiles,
+            snapshot.GlobalSettings.ActiveValidationPolicyProfileName);
         snapshot.Profiles = (snapshot.Profiles ?? Array.Empty<ExportProfile>())
             .Where(profile => profile != null)
             .ToList();

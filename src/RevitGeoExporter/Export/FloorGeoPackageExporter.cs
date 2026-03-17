@@ -10,6 +10,7 @@ using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using ProjNet.CoordinateSystems;
 
 namespace RevitGeoExporter.Export;
@@ -37,9 +38,12 @@ public sealed class FloorGeoPackageExporter
         string? sourceCoordinateSystemId = null,
         string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
+        UnitGeometrySource unitGeometrySource = UnitGeometrySource.Unset,
+        UnitAttributeSource unitAttributeSource = UnitAttributeSource.Unset,
         string roomCategoryParameterName = "Name",
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
@@ -56,9 +60,12 @@ public sealed class FloorGeoPackageExporter
             sourceCoordinateSystemId,
             sourceCoordinateSystemDefinition,
             unitSource,
+            unitGeometrySource,
+            unitAttributeSource,
             roomCategoryParameterName,
             linkExportOptions,
-            activeSchemaProfile);
+            activeSchemaProfile,
+            activeValidationPolicyProfile);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -76,9 +83,12 @@ public sealed class FloorGeoPackageExporter
         string? sourceCoordinateSystemId = null,
         string? sourceCoordinateSystemDefinition = null,
         UnitSource unitSource = UnitSource.Floors,
+        UnitGeometrySource unitGeometrySource = UnitGeometrySource.Unset,
+        UnitAttributeSource unitAttributeSource = UnitAttributeSource.Unset,
         string roomCategoryParameterName = "Name",
         LinkExportOptions? linkExportOptions = null,
-        SchemaProfile? activeSchemaProfile = null)
+        SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -132,6 +142,7 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions effectivePackageOptions = packageOptions ?? new ExportPackageOptions();
         LinkExportOptions effectiveLinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         SchemaProfile effectiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        ValidationPolicyProfile effectiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
 
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
@@ -156,9 +167,12 @@ public sealed class FloorGeoPackageExporter
                 AcceptedOpeningFamilies = acceptedOpeningLoad.Value,
                 GeometryRepairOptions = effectiveGeometryRepairOptions,
                 UnitSource = unitSource,
+                UnitGeometrySource = unitGeometrySource,
+                UnitAttributeSource = unitAttributeSource,
                 RoomCategoryParameterName = roomCategoryParameterName,
                 LinkExportOptions = effectiveLinkExportOptions,
                 ActiveSchemaProfile = effectiveSchemaProfile,
+                ActiveValidationPolicyProfile = effectiveValidationPolicyProfile,
                 ViewContexts = contexts,
             });
 
@@ -187,9 +201,12 @@ public sealed class FloorGeoPackageExporter
             sourceCoordinateSystemId,
             sourceCoordinateSystemDefinition,
             unitSource,
+            unitGeometrySource,
+            unitAttributeSource,
             roomCategoryParameterName,
             effectiveLinkExportOptions,
             effectiveSchemaProfile,
+            effectiveValidationPolicyProfile,
             BuildIncludedLinks(contexts));
     }
 

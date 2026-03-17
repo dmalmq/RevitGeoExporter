@@ -17,4 +17,5 @@ public enum ValidationCode
     MissingSchemaMappedParameter = 12,
     SchemaTypeConversionFailed = 13,
     DuplicateSchemaField = 14,
+    MissingName = 15,
 }

@@ -150,6 +150,11 @@ public sealed class SharedCoordinateValidationFinding
     public SharedCoordinateValidationCode Code { get; }
 
     public string Message { get; }
+
+    public SharedCoordinateValidationFinding WithSeverity(ValidationSeverity severity)
+    {
+        return new SharedCoordinateValidationFinding(severity, Code, Message);
+    }
 }
 
 public sealed class SharedCoordinateValidationResult
@@ -192,4 +197,20 @@ public sealed class SharedCoordinateValidationResult
         .ToList();
 
     public bool HasWarnings => Warnings.Count > 0;
+
+    public SharedCoordinateValidationResult ApplyPolicy(ValidationPolicyProfile? policyProfile)
+    {
+        ValidationPolicyProfile effectivePolicy = policyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
+        return new SharedCoordinateValidationResult(
+            CoordinateInfo,
+            Findings.Select(finding => finding.WithSeverity(
+                finding.Severity == ValidationSeverity.Info
+                    ? ValidationSeverity.Info
+                    : effectivePolicy.ResolveSeverity(ValidationPolicyTarget.GeoreferenceWarnings, finding.Severity))).ToList(),
+            ActiveProjectLocationName,
+            SharedCoordinateSummary,
+            ResolvedSourceEpsg,
+            ResolvedSourceLabel,
+            SurveyPointSharedCoordinates);
+    }
 }
