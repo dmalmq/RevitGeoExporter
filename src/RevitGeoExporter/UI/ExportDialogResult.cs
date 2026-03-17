@@ -5,6 +5,7 @@ using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -22,9 +23,12 @@ public sealed class ExportDialogResult
         string? selectedProfileName,
         UiLanguage uiLanguage,
         UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions = null,
-        SchemaProfile? activeSchemaProfile = null)
+        SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null)
         : this(
             selectedViews,
             outputDirectory,
@@ -38,9 +42,12 @@ public sealed class ExportDialogResult
             uiLanguage,
             CoordinateExportMode.SharedCoordinates,
             unitSource,
+            unitGeometrySource,
+            unitAttributeSource,
             roomCategoryParameterName,
             linkExportOptions,
-            activeSchemaProfile)
+            activeSchemaProfile,
+            activeValidationPolicyProfile)
     {
     }
 
@@ -57,9 +64,12 @@ public sealed class ExportDialogResult
         UiLanguage uiLanguage,
         CoordinateExportMode coordinateMode,
         UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions = null,
-        SchemaProfile? activeSchemaProfile = null)
+        SchemaProfile? activeSchemaProfile = null,
+        ValidationPolicyProfile? activeValidationPolicyProfile = null)
     {
         string? normalizedSelectedProfileName = selectedProfileName?.Trim();
         string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
@@ -86,10 +96,13 @@ public sealed class ExportDialogResult
         SelectedProfileName = normalizedSelectedProfileName;
         UiLanguage = uiLanguage;
         CoordinateMode = coordinateMode;
-        UnitSource = unitSource;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
+        UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
         RoomCategoryParameterName = normalizedRoomCategoryParameterName;
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        ActiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -116,9 +129,15 @@ public sealed class ExportDialogResult
 
     public UnitSource UnitSource { get; }
 
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
     public string RoomCategoryParameterName { get; }
 
     public LinkExportOptions LinkExportOptions { get; }
 
     public SchemaProfile ActiveSchemaProfile { get; }
+
+    public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
 }

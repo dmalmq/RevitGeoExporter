@@ -5,6 +5,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Utilities;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -196,10 +197,14 @@ public sealed class ExportProfileStore
             UiLanguage = profile.UiLanguage,
             CoordinateMode = profile.CoordinateMode,
             UnitSource = profile.UnitSource,
+            UnitGeometrySource = profile.UnitGeometrySource,
+            UnitAttributeSource = profile.UnitAttributeSource,
             RoomCategoryParameterName = string.IsNullOrWhiteSpace(profile.RoomCategoryParameterName) ? "Name" : profile.RoomCategoryParameterName.Trim(),
             LinkExportOptions = profile.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
             SchemaProfiles = SchemaProfile.NormalizeProfiles(profile.SchemaProfiles).Select(schema => schema.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(profile.SchemaProfiles, profile.ActiveSchemaProfileName),
+            ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(profile.ValidationPolicyProfiles).Select(policy => policy.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(profile.ValidationPolicyProfiles, profile.ActiveValidationPolicyProfileName),
         };
     }
 

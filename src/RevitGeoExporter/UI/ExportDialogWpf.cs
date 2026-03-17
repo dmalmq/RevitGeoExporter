@@ -15,6 +15,7 @@ using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using WinForms = System.Windows.Forms;
 using WpfGrid = System.Windows.Controls.Grid;
@@ -50,7 +51,9 @@ namespace RevitGeoExporter.UI;
     private readonly ComboBox _presetComboBox = new();
     private readonly ComboBox _coordinateModeComboBox = new();
     private readonly ComboBox _unitSourceComboBox = new();
+    private readonly ComboBox _unitAttributeSourceComboBox = new();
     private readonly ComboBox _schemaProfileComboBox = new();
+    private readonly ComboBox _validationPolicyComboBox = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly CheckBox _unitCheckBox = new();
     private readonly CheckBox _detailCheckBox = new();
@@ -69,6 +72,7 @@ namespace RevitGeoExporter.UI;
     private readonly Button _helpButton = new();
     private readonly Button _mappingsButton = new();
     private readonly Button _manageSchemaProfilesButton = new();
+    private readonly Button _manageValidationPoliciesButton = new();
     private readonly TextBlock _viewsTitleText = new();
     private readonly TextBlock _viewSelectionSummaryText = new();
     private readonly TextBlock _exportToTitleText = new();
@@ -89,8 +93,10 @@ namespace RevitGeoExporter.UI;
     private readonly TextBlock _coordinateSettingsHeaderText = new();
     private readonly TextBlock _technicalDetailsHeaderText = new();
     private readonly TextBlock _unitSourceLabel = new();
+    private readonly TextBlock _unitAttributeSourceLabel = new();
     private readonly TextBlock _roomCategoryParameterLabel = new();
     private readonly TextBlock _schemaProfileLabel = new();
+    private readonly TextBlock _validationPolicyLabel = new();
     private readonly TextBlock _linkedModelsLabel = new();
     private readonly TextBlock _displayUnitsInfoText = new();
     private readonly TextBlock _projectLocationInfoText = new();
@@ -107,13 +113,20 @@ namespace RevitGeoExporter.UI;
     private readonly StackPanel _convertSettingsPanel = new();
     private readonly ListBox _linkList = new();
     private FrameworkElement? _unitSourceRow;
+    private FrameworkElement? _unitAttributeSourceRow;
     private FrameworkElement? _roomCategoryParameterRow;
     private FrameworkElement? _schemaProfileRow;
+    private FrameworkElement? _validationPolicyRow;
     private FrameworkElement? _linkedModelsRow;
     private FrameworkElement? _legendOptionRow;
+    private UnitSource _unitSource = UnitSource.Floors;
     private LinkExportOptions _linkExportOptions = new();
     private List<SchemaProfile> _schemaProfiles = new() { SchemaProfile.CreateCoreProfile() };
     private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
+    private UnitGeometrySource _unitGeometrySource = UnitGeometrySource.Unset;
+    private UnitAttributeSource _unitAttributeSource = UnitAttributeSource.Unset;
+    private List<ValidationPolicyProfile> _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(null);
+    private string _activeValidationPolicyProfileName = ValidationPolicyProfile.RecommendedProfileName;
 
     public ExportDialogWpf(
         IReadOnlyList<ViewPlan> views,
@@ -194,11 +207,15 @@ namespace RevitGeoExporter.UI;
             IncludePackageLegend = _packageLegendCheckBox.IsChecked == true,
             UiLanguage = ((_languageComboBox.SelectedItem as LanguageItem)?.Language) ?? UiLanguage.English,
             CoordinateMode = GetSelectedCoordinateMode(),
-            UnitSource = ((_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source) ?? UnitSource.Floors,
+            UnitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource),
+            UnitGeometrySource = _unitGeometrySource,
+            UnitAttributeSource = _unitAttributeSource,
             RoomCategoryParameterName = (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             LinkExportOptions = BuildLinkExportOptions(),
             SchemaProfiles = _schemaProfiles.Select(profile => profile.Clone()).ToList(),
             ActiveSchemaProfileName = _activeSchemaProfileName,
+            ValidationPolicyProfiles = _validationPolicyProfiles.Select(profile => profile.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = _activeValidationPolicyProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
@@ -472,7 +489,29 @@ namespace RevitGeoExporter.UI;
         StackPanel advancedContent = new();
 
         _unitSourceComboBox.MinHeight = 32;
-        _unitSourceComboBox.SelectionChanged += (_, _) => RefreshDialogState();
+        _unitSourceComboBox.SelectionChanged += (_, _) =>
+        {
+            UnitSource source = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+            _unitGeometrySource = source == UnitSource.Rooms
+                ? UnitGeometrySource.Rooms
+                : UnitGeometrySource.Floors;
+            if (_unitGeometrySource == UnitGeometrySource.Rooms &&
+                _unitAttributeSource == UnitAttributeSource.Hybrid)
+            {
+                _unitAttributeSource = UnitAttributeSource.Rooms;
+                SelectUnitAttributeSource(_unitAttributeSource);
+            }
+
+            SyncLegacyUnitSource();
+            RefreshDialogState();
+        };
+        _unitAttributeSourceComboBox.MinHeight = 32;
+        _unitAttributeSourceComboBox.SelectionChanged += (_, _) =>
+        {
+            _unitAttributeSource = (_unitAttributeSourceComboBox.SelectedItem as UnitAttributeSourceItem)?.Source ?? UnitAttributeSource.Hybrid;
+            SyncLegacyUnitSource();
+            RefreshDialogState();
+        };
         _roomCategoryParameterTextBox.MinHeight = 32;
         _roomCategoryParameterTextBox.TextChanged += (_, _) => RefreshDialogState();
         _schemaProfileComboBox.MinHeight = 32;
@@ -485,10 +524,24 @@ namespace RevitGeoExporter.UI;
 
             RefreshDialogState();
         };
+        _validationPolicyComboBox.MinHeight = 32;
+        _validationPolicyComboBox.SelectionChanged += (_, _) =>
+        {
+            if (_validationPolicyComboBox.SelectedItem is ValidationPolicyProfileItem selected)
+            {
+                _activeValidationPolicyProfileName = selected.Profile.Name;
+            }
+
+            RefreshDialogState();
+        };
         _manageSchemaProfilesButton.HorizontalAlignment = HorizontalAlignment.Left;
         _manageSchemaProfilesButton.Padding = new Thickness(12, 6, 12, 6);
         _manageSchemaProfilesButton.Margin = new Thickness(8, 0, 0, 0);
         _manageSchemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
+        _manageValidationPoliciesButton.HorizontalAlignment = HorizontalAlignment.Left;
+        _manageValidationPoliciesButton.Padding = new Thickness(12, 6, 12, 6);
+        _manageValidationPoliciesButton.Margin = new Thickness(8, 0, 0, 0);
+        _manageValidationPoliciesButton.Click += (_, _) => EditValidationPolicies();
         _includeLinkedModelsCheckBox.Margin = new Thickness(0, 0, 0, 8);
         _includeLinkedModelsCheckBox.Padding = new Thickness(2);
         _includeLinkedModelsCheckBox.Checked += (_, _) => RefreshDialogState();
@@ -506,6 +559,7 @@ namespace RevitGeoExporter.UI;
         _linkList.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(OnInputChanged));
 
         _unitSourceRow = CreateFieldBlock(_unitSourceLabel, _unitSourceComboBox);
+        _unitAttributeSourceRow = CreateFieldBlock(_unitAttributeSourceLabel, _unitAttributeSourceComboBox);
         _roomCategoryParameterRow = CreateFieldBlock(_roomCategoryParameterLabel, _roomCategoryParameterTextBox);
         StackPanel schemaProfilePanel = new()
         {
@@ -515,13 +569,23 @@ namespace RevitGeoExporter.UI;
         schemaProfilePanel.Children.Add(_schemaProfileComboBox);
         schemaProfilePanel.Children.Add(_manageSchemaProfilesButton);
         _schemaProfileRow = CreateFieldBlock(_schemaProfileLabel, schemaProfilePanel);
+        StackPanel validationPolicyPanel = new()
+        {
+            Orientation = Orientation.Horizontal,
+        };
+        _validationPolicyComboBox.MinWidth = 200;
+        validationPolicyPanel.Children.Add(_validationPolicyComboBox);
+        validationPolicyPanel.Children.Add(_manageValidationPoliciesButton);
+        _validationPolicyRow = CreateFieldBlock(_validationPolicyLabel, validationPolicyPanel);
         StackPanel linkedModelsPanel = new();
         linkedModelsPanel.Children.Add(_includeLinkedModelsCheckBox);
         linkedModelsPanel.Children.Add(_linkList);
         _linkedModelsRow = CreateFieldBlock(_linkedModelsLabel, linkedModelsPanel);
         advancedContent.Children.Add(_unitSourceRow);
+        advancedContent.Children.Add(_unitAttributeSourceRow);
         advancedContent.Children.Add(_roomCategoryParameterRow);
         advancedContent.Children.Add(_schemaProfileRow);
+        advancedContent.Children.Add(_validationPolicyRow);
         advancedContent.Children.Add(_linkedModelsRow);
 
         _mappingsButton.HorizontalAlignment = HorizontalAlignment.Left;
@@ -683,14 +747,25 @@ namespace RevitGeoExporter.UI;
             _unitSourceComboBox.Items.Clear();
             _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Floors));
             _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Rooms));
-            _unitSourceComboBox.SelectedIndex = settings.UnitSource == UnitSource.Rooms ? 1 : 0;
+            _unitAttributeSourceComboBox.Items.Clear();
+            _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Floors));
+            _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Rooms));
+            _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Hybrid));
+            _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
+            _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
+            _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
+            _unitSourceComboBox.SelectedIndex = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource) == UnitSource.Rooms ? 1 : 0;
+            SelectUnitAttributeSource(_unitAttributeSource);
             _roomCategoryParameterTextBox.Text = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName)
                 ? "Name"
                 : settings.RoomCategoryParameterName.Trim();
             _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
             _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
             _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+            _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList();
+            _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_validationPolicyProfiles, settings.ActiveValidationPolicyProfileName);
             PopulateSchemaProfiles();
+            PopulateValidationPolicies();
             ApplyLinkSelections(_linkExportOptions);
 
             HashSet<long> selectedIds = new(settings.SelectedViewIds ?? new List<long>());
@@ -706,6 +781,7 @@ namespace RevitGeoExporter.UI;
 
             _viewList.Items.Refresh();
             _unitSourceComboBox.Items.Refresh();
+            _unitAttributeSourceComboBox.Items.Refresh();
             _presetComboBox.Items.Refresh();
             _languageComboBox.Items.Refresh();
             _coordinateModeComboBox.Items.Refresh();
@@ -786,7 +862,8 @@ namespace RevitGeoExporter.UI;
         }
 
         UiLanguage uiLanguage = (_languageComboBox.SelectedItem as LanguageItem)?.Language ?? UiLanguage.English;
-        UnitSource unitSource = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+        SyncLegacyUnitSource();
+        UnitSource unitSource = _unitSource;
 
         Result = new ExportDialogResult(
             selectedViews,
@@ -801,9 +878,12 @@ namespace RevitGeoExporter.UI;
             uiLanguage,
             coordinateMode,
             unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             BuildLinkExportOptions(),
-            GetActiveSchemaProfile());
+            GetActiveSchemaProfile(),
+            GetActiveValidationPolicyProfile());
 
         _window.DialogResult = true;
         _window.Close();
@@ -839,6 +919,7 @@ namespace RevitGeoExporter.UI;
             return;
         }
 
+        SyncLegacyUnitSource();
         ExportPreviewRequest previewRequest = new(
             selectedViews,
             GetSelectedFeatureTypes(),
@@ -850,7 +931,9 @@ namespace RevitGeoExporter.UI;
             _coordinateInfo?.SiteCoordinateSystemId,
             _coordinateInfo?.SiteCoordinateSystemDefinition,
             _coordinateInfo?.SurveyPointSharedCoordinates,
-            (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors,
+            _unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
@@ -927,6 +1010,7 @@ namespace RevitGeoExporter.UI;
         UpdateDisplayLanguages();
         _viewList.Items.Refresh();
         _unitSourceComboBox.Items.Refresh();
+        _unitAttributeSourceComboBox.Items.Refresh();
         _presetComboBox.Items.Refresh();
         _languageComboBox.Items.Refresh();
         _coordinateModeComboBox.Items.Refresh();
@@ -961,7 +1045,7 @@ namespace RevitGeoExporter.UI;
     private void UpdateAdvancedOptionsVisibility()
     {
         bool unitsEnabled = _unitCheckBox.IsChecked == true;
-        bool roomsSelected = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source == UnitSource.Rooms;
+        bool usesRoomAssignments = UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource);
         bool packageEnabled = _packageCheckBox.IsChecked == true;
         bool linksEnabled = _includeLinkedModelsCheckBox.IsChecked == true && _links.Count > 0;
 
@@ -970,14 +1054,16 @@ namespace RevitGeoExporter.UI;
             _unitSourceRow.Visibility = unitsEnabled ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
 
-        if (_roomCategoryParameterRow != null)
+        if (_unitAttributeSourceRow != null)
         {
-            _roomCategoryParameterRow.Visibility = unitsEnabled && roomsSelected ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            _unitAttributeSourceRow.Visibility = unitsEnabled ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
 
-        if (_linkedModelsRow != null)
+        if (_roomCategoryParameterRow != null)
         {
-            _linkedModelsRow.Visibility = System.Windows.Visibility.Visible;
+            _roomCategoryParameterRow.Visibility = unitsEnabled && usesRoomAssignments
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
         }
 
         if (_legendOptionRow != null)
@@ -1027,9 +1113,44 @@ namespace RevitGeoExporter.UI;
         _schemaProfileComboBox.SelectedIndex = _schemaProfileComboBox.Items.Count > 0 ? 0 : -1;
     }
 
+    private void PopulateValidationPolicies()
+    {
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+
+        _validationPolicyComboBox.Items.Clear();
+        foreach (ValidationPolicyProfile profile in _validationPolicyProfiles.OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _validationPolicyComboBox.Items.Add(new ValidationPolicyProfileItem(profile));
+        }
+
+        for (int i = 0; i < _validationPolicyComboBox.Items.Count; i++)
+        {
+            if (_validationPolicyComboBox.Items[i] is ValidationPolicyProfileItem item &&
+                string.Equals(item.Profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _validationPolicyComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _validationPolicyComboBox.SelectedIndex = _validationPolicyComboBox.Items.Count > 0 ? 0 : -1;
+    }
+
     private SchemaProfile GetActiveSchemaProfile()
     {
         return SchemaProfile.ResolveActive(_schemaProfiles, _activeSchemaProfileName);
+    }
+
+    private ValidationPolicyProfile GetActiveValidationPolicyProfile()
+    {
+        return ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .FirstOrDefault(profile => string.Equals(profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            ?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     private void EditSchemaProfiles()
@@ -1052,6 +1173,30 @@ namespace RevitGeoExporter.UI;
         PopulateSchemaProfiles();
     }
 
+    private void EditValidationPolicies()
+    {
+        using ValidationPolicyManagerForm form = new(_validationPolicyProfiles, _language);
+        if (TryGetOwnerWindow() is WinForms.IWin32Window owner)
+        {
+            if (form.ShowDialog(owner) != WinForms.DialogResult.OK)
+            {
+                return;
+            }
+        }
+        else if (form.ShowDialog() != WinForms.DialogResult.OK)
+        {
+            return;
+        }
+
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(form.Profiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+        PopulateValidationPolicies();
+    }
+
     private LinkExportOptions BuildLinkExportOptions()
     {
         if (_links.Count == 0 || _includeLinkedModelsCheckBox.IsChecked != true)
@@ -1068,6 +1213,25 @@ namespace RevitGeoExporter.UI;
                 .Distinct()
                 .ToList(),
         };
+    }
+
+    private void SelectUnitAttributeSource(UnitAttributeSource source)
+    {
+        for (int i = 0; i < _unitAttributeSourceComboBox.Items.Count; i++)
+        {
+            if (_unitAttributeSourceComboBox.Items[i] is UnitAttributeSourceItem item && item.Source == source)
+            {
+                _unitAttributeSourceComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _unitAttributeSourceComboBox.SelectedIndex = 0;
+    }
+
+    private void SyncLegacyUnitSource()
+    {
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
     }
 
     private ExportFeatureType GetSelectedFeatureTypes()
@@ -1213,9 +1377,11 @@ namespace RevitGeoExporter.UI;
         _coordinateSettingsHeaderText.Text = T("Change coordinate settings", "座標設定を変更");
         _technicalDetailsHeaderText.Text = T("View technical details", "技術詳細を表示");
         _advancedOptionsHeaderText.Text = T("Show advanced options", "詳細オプションを表示");
-        _unitSourceLabel.Text = T("Unit source", "ユニット取得元");
+        _unitSourceLabel.Text = T("Unit geometry source", "ユニット形状の取得元");
+        _unitAttributeSourceLabel.Text = T("Unit attribute source", "ユニット属性の取得元");
         _roomCategoryParameterLabel.Text = T("Room category parameter", "部屋カテゴリ パラメータ");
         _schemaProfileLabel.Text = T("Schema profile", "スキーマ プロファイル");
+        _validationPolicyLabel.Text = T("Validation policy", "検証ポリシー");
         _linkedModelsLabel.Text = T("Linked models", "リンク モデル");
 
         _unitCheckBox.Content = T("Units", "ユニット");
@@ -1229,6 +1395,7 @@ namespace RevitGeoExporter.UI;
 
         _mappingsButton.Content = T("Edit category mappings...", "カテゴリ マッピングを編集...");
         _manageSchemaProfilesButton.Content = T("Schemas...", "スキーマ...");
+        _manageValidationPoliciesButton.Content = T("Policies...", "ポリシー...");
         _browseButton.Content = T("Browse...", "参照...");
         _selectAllButton.Content = T("Select All", "すべて選択");
         _clearAllButton.Content = T("Clear All", "選択解除");
@@ -1253,6 +1420,7 @@ namespace RevitGeoExporter.UI;
         LanguageItem.DisplayLanguage = _language;
         CoordinateModeItem.DisplayLanguage = _language;
         UnitSourceItem.DisplayLanguage = _language;
+        UnitAttributeSourceItem.DisplayLanguage = _language;
     }
 
     private void ConfigureFeatureCheckBox(CheckBox checkBox, string englishToolTip, string japaneseToolTip)
@@ -1394,6 +1562,18 @@ namespace RevitGeoExporter.UI;
         public override string ToString() => Profile.Name;
     }
 
+    private sealed class ValidationPolicyProfileItem
+    {
+        public ValidationPolicyProfileItem(ValidationPolicyProfile profile)
+        {
+            Profile = profile?.Clone() ?? throw new ArgumentNullException(nameof(profile));
+        }
+
+        public ValidationPolicyProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
+    }
+
     private sealed class LanguageItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -1440,6 +1620,25 @@ namespace RevitGeoExporter.UI;
             return Source == UnitSource.Rooms
                 ? UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms")
                 : UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors");
+        }
+    }
+
+    private sealed class UnitAttributeSourceItem
+    {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
+        public UnitAttributeSourceItem(UnitAttributeSource source) => Source = source;
+
+        public UnitAttributeSource Source { get; }
+
+        public override string ToString()
+        {
+            return Source switch
+            {
+                UnitAttributeSource.Rooms => UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms"),
+                UnitAttributeSource.Hybrid => UiLanguageText.Select(DisplayLanguage, "Hybrid (Rooms + Floor fallback)", "ハイブリッド (部屋 + 床フォールバック)"),
+                _ => UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors"),
+            };
         }
     }
 

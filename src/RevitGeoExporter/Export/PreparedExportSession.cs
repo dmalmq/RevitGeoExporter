@@ -4,6 +4,7 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.Export;
 
@@ -29,9 +30,12 @@ public sealed class PreparedExportSession
         string? sourceCoordinateSystemId,
         string? sourceCoordinateSystemDefinition,
         UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions,
         SchemaProfile? activeSchemaProfile,
+        ValidationPolicyProfile? activeValidationPolicyProfile,
         IReadOnlyList<LinkedModelSummary>? includedLinks)
     {
         OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory)
@@ -60,9 +64,12 @@ public sealed class PreparedExportSession
             ? sourceEpsg ?? targetEpsg
             : targetEpsg;
         UnitSource = unitSource;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
         RoomCategoryParameterName = string.IsNullOrWhiteSpace(roomCategoryParameterName) ? "Name" : roomCategoryParameterName.Trim();
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        ActiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
         IncludedLinks = includedLinks ?? Array.Empty<LinkedModelSummary>();
     }
 
@@ -106,11 +113,17 @@ public sealed class PreparedExportSession
 
     public UnitSource UnitSource { get; }
 
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
+
     public string RoomCategoryParameterName { get; }
 
     public LinkExportOptions LinkExportOptions { get; }
 
     public SchemaProfile ActiveSchemaProfile { get; }
+
+    public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
 
     public IReadOnlyList<LinkedModelSummary> IncludedLinks { get; }
 }

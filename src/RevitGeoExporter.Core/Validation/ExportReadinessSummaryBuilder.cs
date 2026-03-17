@@ -10,7 +10,9 @@ public sealed class ExportReadinessSummaryBuilder
     public ExportReadinessSummary Build(
         ExportValidationRequest request,
         ExportValidationResult validationResult,
-        ZoneCatalog zoneCatalog)
+        ZoneCatalog zoneCatalog,
+        int additionalBlockingIssueCount = 0,
+        int additionalWarningIssueCount = 0)
     {
         if (request is null)
         {
@@ -64,8 +66,8 @@ public sealed class ExportReadinessSummaryBuilder
             validationResult.Issues.Count(issue => issue.Code == ValidationCode.MissingStableId),
             validationResult.Issues.Count(issue => issue.Code == ValidationCode.DuplicateStableId),
             request.Views.Sum(view => view.UnsupportedOpenings.Count),
-            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Error),
-            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Warning),
+            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Error) + Math.Max(0, additionalBlockingIssueCount),
+            validationResult.Issues.Count(issue => issue.Severity == ValidationSeverity.Warning) + Math.Max(0, additionalWarningIssueCount),
             mappingSuggestions);
     }
 

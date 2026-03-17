@@ -76,6 +76,8 @@ internal sealed class ExportWorkflowCoordinator
         ExportPreviewService previewService = new(
             _document,
             previewRequest.UnitSource,
+            previewRequest.UnitGeometrySource,
+            previewRequest.UnitAttributeSource,
             previewRequest.RoomCategoryParameterName,
             previewRequest.GeometryRepairOptions,
             previewRequest.LinkExportOptions,
@@ -129,17 +131,24 @@ internal sealed class ExportWorkflowCoordinator
                     coordinateInfo.SiteCoordinateSystemId,
                     coordinateInfo.SiteCoordinateSystemDefinition,
                     request.UnitSource,
+                    request.UnitGeometrySource,
+                    request.UnitAttributeSource,
                     request.RoomCategoryParameterName,
                     request.LinkExportOptions,
-                    request.ActiveSchemaProfile);
+                    request.ActiveSchemaProfile,
+                    request.ActiveValidationPolicyProfile);
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
                 validationResult = validationService.Validate(validationRequest);
-                SharedCoordinateValidationResult coordinateValidation = new SharedCoordinateValidator().Validate(_document);
+                SharedCoordinateValidationResult coordinateValidation = new SharedCoordinateValidator()
+                    .Validate(_document)
+                    .ApplyPolicy(request.ActiveValidationPolicyProfile);
                 ExportReadinessSummary readinessSummary = new ExportReadinessSummaryBuilder().Build(
                     validationRequest,
                     validationResult,
-                    ZoneCatalog.CreateDefault());
+                    ZoneCatalog.CreateDefault(),
+                    coordinateValidation.Findings.Count(finding => finding.Severity == ValidationSeverity.Error),
+                    coordinateValidation.Findings.Count(finding => finding.Severity == ValidationSeverity.Warning));
                 bool canResolveIssues = ValidationIssueResolutionForm.HasResolvableIssues(validationRequest);
 
                 using ExportReadinessForm readinessForm = new(

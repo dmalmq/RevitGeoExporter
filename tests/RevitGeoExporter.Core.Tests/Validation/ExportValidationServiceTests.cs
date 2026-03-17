@@ -36,7 +36,8 @@ public sealed class ExportValidationServiceTests
                                 hasGeometry: true,
                                 geometryValid: true,
                                 isUnassigned: true,
-                                assignmentMappingKey: "Wrong Floor Name"),
+                                assignmentMappingKey: "Wrong Floor Name",
+                                name: "Unit 101"),
                         }),
                 }));
 
@@ -70,8 +71,8 @@ public sealed class ExportValidationServiceTests
                         "L1",
                         new[]
                         {
-                            new ExportFeatureValidationSnapshot("unit", null, "walkway", 1, true, true),
-                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 2, true, true),
+                            new ExportFeatureValidationSnapshot("unit", null, "walkway", 1, true, true, name: "Unit 1"),
+                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 2, true, true, name: "Unit 2"),
                         }),
                     new ValidationViewSnapshot(
                         2,
@@ -79,7 +80,7 @@ public sealed class ExportValidationServiceTests
                         "L2",
                         new[]
                         {
-                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 3, true, true),
+                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 3, true, true, name: "Unit 3"),
                         }),
                 }));
 
@@ -109,7 +110,7 @@ public sealed class ExportValidationServiceTests
                         "L1",
                         new[]
                         {
-                            new ExportFeatureValidationSnapshot("unit", "unit-1", "walkway", 10, hasGeometry: false, geometryValid: false),
+                            new ExportFeatureValidationSnapshot("unit", "unit-1", "walkway", 10, hasGeometry: false, geometryValid: false, name: "Unit 10"),
                             new ExportFeatureValidationSnapshot("opening", "opening-1", "pedestrian", 11, hasGeometry: true, geometryValid: true, isSnappedToOutline: false),
                         },
                         unsupportedOpenings: new[]
@@ -150,6 +151,7 @@ public sealed class ExportValidationServiceTests
                                 501,
                                 hasGeometry: true,
                                 geometryValid: true,
+                                name: "Linked Unit",
                                 sourceDocumentKey: "LinkedModelA",
                                 sourceDocumentName: "Linked Model A",
                                 isLinkedSource: true,
@@ -235,6 +237,7 @@ public sealed class ExportValidationServiceTests
                                 88,
                                 hasGeometry: true,
                                 geometryValid: true,
+                                name: "Suite 88",
                                 schemaIssues: new[]
                                 {
                                     new SchemaAttributeIssue(
@@ -278,7 +281,7 @@ public sealed class ExportValidationServiceTests
                         "L2",
                         new[]
                         {
-                            new ExportFeatureValidationSnapshot("unit", "stairs-1", "stairs", 20, true, true),
+                            new ExportFeatureValidationSnapshot("unit", "stairs-1", "stairs", 20, true, true, name: "Stair Core"),
                         },
                         sourceStairsCount: 2,
                         sourceEscalatorCount: 1,
@@ -310,13 +313,120 @@ public sealed class ExportValidationServiceTests
         Assert.False(issue.CanNavigateInRevit);
     }
 
+    [Fact]
+    public void Validate_ReturnsWarningForMissingUnitNames()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: true,
+                includeDetails: false,
+                includeOpenings: false,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "View A",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot(
+                                "unit",
+                                "unit-1",
+                                "walkway",
+                                44,
+                                hasGeometry: true,
+                                geometryValid: true),
+                        }),
+                }));
+
+        ValidationIssue issue = Assert.Single(result.Issues);
+        Assert.Equal(ValidationCode.MissingName, issue.Code);
+        Assert.Equal(ValidationSeverity.Warning, issue.Severity);
+        Assert.Equal(ValidationActionKind.ReviewElementInRevit, issue.ActionKind);
+    }
+
+    [Fact]
+    public void Validate_UsesStrictPolicySeverityForMissingNames()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: true,
+                includeDetails: false,
+                includeOpenings: false,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "View A",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot(
+                                "unit",
+                                "unit-1",
+                                "walkway",
+                                44,
+                                hasGeometry: true,
+                                geometryValid: true),
+                        }),
+                },
+                validationPolicyProfile: ValidationPolicyProfile.CreateStrictProfile()));
+
+        ValidationIssue issue = Assert.Single(result.Issues);
+        Assert.Equal(ValidationCode.MissingName, issue.Code);
+        Assert.Equal(ValidationSeverity.Error, issue.Severity);
+    }
+
+    [Fact]
+    public void Validate_UsesLenientPolicySeverityForDuplicateStableIds()
+    {
+        ExportValidationService service = new();
+        ExportValidationResult result = service.Validate(
+            CreateRequest(
+                6677,
+                includeUnits: true,
+                includeDetails: false,
+                includeOpenings: false,
+                includeLevels: false,
+                new[]
+                {
+                    new ValidationViewSnapshot(
+                        1,
+                        "View A",
+                        "L1",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 1, true, true, name: "Unit 1"),
+                        }),
+                    new ValidationViewSnapshot(
+                        2,
+                        "View B",
+                        "L2",
+                        new[]
+                        {
+                            new ExportFeatureValidationSnapshot("unit", "dup-1", "walkway", 2, true, true, name: "Unit 2"),
+                        }),
+                },
+                validationPolicyProfile: ValidationPolicyProfile.CreateLenientProfile()));
+
+        ValidationIssue issue = Assert.Single(result.Issues, candidate => candidate.Code == ValidationCode.DuplicateStableId);
+        Assert.Equal(ValidationSeverity.Warning, issue.Severity);
+    }
+
     private static ExportValidationRequest CreateRequest(
         int targetEpsg,
         bool includeUnits,
         bool includeDetails,
         bool includeOpenings,
         bool includeLevels,
-        ValidationViewSnapshot[] views)
+        ValidationViewSnapshot[] views,
+        ValidationPolicyProfile? validationPolicyProfile = null)
     {
         return new ExportValidationRequest(
             targetEpsg,
@@ -327,6 +437,7 @@ public sealed class ExportValidationServiceTests
             views,
             UnitSource.Floors,
             "Name",
-            "TestModel");
+            "TestModel",
+            validationPolicyProfile: validationPolicyProfile);
     }
 }

@@ -11,6 +11,7 @@ using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using WinFormsControl = System.Windows.Forms.Control;
 using WinFormsForm = System.Windows.Forms.Form;
@@ -32,6 +33,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly Label _unitSourceInlineLabel = new();
     private readonly ComboBox _unitSourceComboBox = new();
+    private readonly Label _unitAttributeSourceInlineLabel = new();
+    private readonly ComboBox _unitAttributeSourceComboBox = new();
     private readonly Label _roomParameterInlineLabel = new();
     private readonly TextBox _roomCategoryParameterTextBox = new();
     private readonly Label _linkedModelsLabel = new();
@@ -40,6 +43,9 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Label _schemaProfileInlineLabel = new();
     private readonly ComboBox _schemaProfileComboBox = new();
     private readonly Button _manageSchemaProfilesButton = new();
+    private readonly Label _validationPolicyInlineLabel = new();
+    private readonly ComboBox _validationPolicyComboBox = new();
+    private readonly Button _manageValidationPoliciesButton = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
@@ -79,10 +85,14 @@ public sealed class ExportDialog : WinFormsForm
     private bool _isApplyingProfile;
     private CoordinateExportMode _coordinateMode = CoordinateExportMode.SharedCoordinates;
     private UnitSource _unitSource = UnitSource.Floors;
+    private UnitGeometrySource _unitGeometrySource = UnitGeometrySource.Unset;
+    private UnitAttributeSource _unitAttributeSource = UnitAttributeSource.Unset;
     private string _roomCategoryParameterName = "Name";
     private LinkExportOptions _linkExportOptions = new();
     private List<SchemaProfile> _schemaProfiles = new() { SchemaProfile.CreateCoreProfile() };
     private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
+    private List<ValidationPolicyProfile> _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(null);
+    private string _activeValidationPolicyProfileName = ValidationPolicyProfile.RecommendedProfileName;
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
@@ -272,6 +282,9 @@ public sealed class ExportDialog : WinFormsForm
             {
                 _language = selected.Language;
                 ViewSelectionItem.DisplayLanguage = _language;
+                UnitSourceItem.DisplayLanguage = _language;
+                UnitAttributeSourceItem.DisplayLanguage = _language;
+                ProfileItem.DisplayLanguage = _language;
                 _viewList.Refresh();
                 ApplyLanguage();
                 UpdateProfileText();
@@ -305,7 +318,11 @@ public sealed class ExportDialog : WinFormsForm
         _diagnosticsCheckBox.AutoSize = true;
         _packageCheckBox.AutoSize = true;
         _packageLegendCheckBox.AutoSize = true;
-        _unitCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _unitCheckBox.CheckedChanged += (_, _) =>
+        {
+            UpdateUnitOptionVisibility();
+            UpdatePreviewButtonEnabled();
+        };
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
@@ -317,7 +334,32 @@ public sealed class ExportDialog : WinFormsForm
         _unitSourceComboBox.Items.Add(new UnitSourceItem(UnitSource.Rooms));
         _unitSourceComboBox.SelectedIndexChanged += (_, _) =>
         {
-            _unitSource = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+            UnitSource source = (_unitSourceComboBox.SelectedItem as UnitSourceItem)?.Source ?? UnitSource.Floors;
+            _unitGeometrySource = source == UnitSource.Rooms
+                ? UnitGeometrySource.Rooms
+                : UnitGeometrySource.Floors;
+            if (_unitGeometrySource == UnitGeometrySource.Rooms &&
+                _unitAttributeSource == UnitAttributeSource.Hybrid)
+            {
+                _unitAttributeSource = UnitAttributeSource.Rooms;
+                SelectUnitAttributeSource(_unitAttributeSource);
+            }
+
+            SyncLegacyUnitSource();
+            UpdateUnitOptionVisibility();
+        };
+
+        _unitAttributeSourceInlineLabel.AutoSize = true;
+        _unitAttributeSourceComboBox.Width = 220;
+        _unitAttributeSourceComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Floors));
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Rooms));
+        _unitAttributeSourceComboBox.Items.Add(new UnitAttributeSourceItem(UnitAttributeSource.Hybrid));
+        _unitAttributeSourceComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            _unitAttributeSource = (_unitAttributeSourceComboBox.SelectedItem as UnitAttributeSourceItem)?.Source ?? UnitAttributeSource.Hybrid;
+            SyncLegacyUnitSource();
+            UpdateUnitOptionVisibility();
         };
 
         _roomParameterInlineLabel.AutoSize = true;
@@ -340,6 +382,19 @@ public sealed class ExportDialog : WinFormsForm
         _manageSchemaProfilesButton.Width = 120;
         _manageSchemaProfilesButton.Height = 26;
         _manageSchemaProfilesButton.Click += (_, _) => EditSchemaProfiles();
+        _validationPolicyInlineLabel.AutoSize = true;
+        _validationPolicyComboBox.Width = 220;
+        _validationPolicyComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _validationPolicyComboBox.SelectedIndexChanged += (_, _) =>
+        {
+            if (_validationPolicyComboBox.SelectedItem is ValidationPolicyProfileItem selected)
+            {
+                _activeValidationPolicyProfileName = selected.Profile.Name;
+            }
+        };
+        _manageValidationPoliciesButton.Width = 120;
+        _manageValidationPoliciesButton.Height = 26;
+        _manageValidationPoliciesButton.Click += (_, _) => EditValidationPolicies();
 
         featuresPanel.Controls.Add(_unitCheckBox);
         featuresPanel.Controls.Add(_detailCheckBox);
@@ -350,11 +405,16 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_packageLegendCheckBox);
         featuresPanel.Controls.Add(_unitSourceInlineLabel);
         featuresPanel.Controls.Add(_unitSourceComboBox);
+        featuresPanel.Controls.Add(_unitAttributeSourceInlineLabel);
+        featuresPanel.Controls.Add(_unitAttributeSourceComboBox);
         featuresPanel.Controls.Add(_roomParameterInlineLabel);
         featuresPanel.Controls.Add(_roomCategoryParameterTextBox);
         featuresPanel.Controls.Add(_schemaProfileInlineLabel);
         featuresPanel.Controls.Add(_schemaProfileComboBox);
         featuresPanel.Controls.Add(_manageSchemaProfilesButton);
+        featuresPanel.Controls.Add(_validationPolicyInlineLabel);
+        featuresPanel.Controls.Add(_validationPolicyComboBox);
+        featuresPanel.Controls.Add(_manageValidationPoliciesButton);
         panel.Controls.Add(featuresPanel, 0, 5);
 
         _linkedModelsLabel.Dock = DockStyle.Fill;
@@ -624,6 +684,7 @@ public sealed class ExportDialog : WinFormsForm
             : UiLanguage.English;
         ViewSelectionItem.DisplayLanguage = _language;
         UnitSourceItem.DisplayLanguage = _language;
+        UnitAttributeSourceItem.DisplayLanguage = _language;
         ProfileItem.DisplayLanguage = _language;
 
         foreach (ViewSelectionItem item in _viewItems)
@@ -661,14 +722,20 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
-        _unitSource = settings.UnitSource;
+        _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
+        _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
         _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
         _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
         _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_validationPolicyProfiles, settings.ActiveValidationPolicyProfileName);
         SelectUnitSource(_unitSource);
+        SelectUnitAttributeSource(_unitAttributeSource);
         _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
         PopulateSchemaProfiles();
+        PopulateValidationPolicies();
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
         _packageCheckBox.Checked = settings.GeneratePackageOutput;
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -686,6 +753,7 @@ public sealed class ExportDialog : WinFormsForm
         UpdateProfileText();
         UpdateDiagnosticsText();
         UpdateVersionLabel();
+        UpdateUnitOptionVisibility();
         UpdatePreviewButtonEnabled();
     }
 
@@ -707,14 +775,19 @@ public sealed class ExportDialog : WinFormsForm
         _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
         _packageCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.WritePackage", "Write GIS package");
         _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
-        _unitSourceInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.UnitSource", "Unit Source");
+        _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Geometry Source", "ユニット形状の取得元");
+        _unitAttributeSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Attribute Source", "ユニット属性の取得元");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
         _schemaProfileInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.SchemaProfile", "Schema Profile");
         _manageSchemaProfilesButton.Text = UiLanguageText.Get(_language, "ExportDialog.ManageSchemas", "Schemas...");
+        _validationPolicyInlineLabel.Text = UiLanguageText.Select(_language, "Validation Policy", "検証ポリシー");
+        _manageValidationPoliciesButton.Text = UiLanguageText.Select(_language, "Policies...", "ポリシー...");
         _linkedModelsLabel.Text = UiLanguageText.Get(_language, "ExportDialog.LinkedModels", "Linked Models");
         _includeLinkedModelsCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLinkedModels", "Include selected linked models");
         _unitSourceComboBox.Refresh();
+        _unitAttributeSourceComboBox.Refresh();
         _schemaProfileComboBox.Refresh();
+        _validationPolicyComboBox.Refresh();
         if (_availableLinks.Count == 0)
         {
             PopulateLinkList();
@@ -751,6 +824,7 @@ public sealed class ExportDialog : WinFormsForm
 
     private void ConfirmExport()
     {
+        SyncLegacyUnitSource();
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
@@ -811,9 +885,12 @@ public sealed class ExportDialog : WinFormsForm
             _language,
             _coordinateMode,
             _unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             _roomCategoryParameterName,
             BuildLinkExportOptions(),
-            GetActiveSchemaProfile());
+            GetActiveSchemaProfile(),
+            GetActiveValidationPolicyProfile());
         DialogResult = DialogResult.OK;
         Close();
     }
@@ -824,6 +901,7 @@ public sealed class ExportDialog : WinFormsForm
             return;
         }
 
+        SyncLegacyUnitSource();
         List<ViewPlan> selectedViews = GetSelectedViews();
         if (selectedViews.Count == 0)
         {
@@ -860,6 +938,8 @@ public sealed class ExportDialog : WinFormsForm
             _coordinateInfo?.SiteCoordinateSystemDefinition,
             _coordinateInfo?.SurveyPointSharedCoordinates,
             _unitSource,
+            _unitGeometrySource,
+            _unitAttributeSource,
             _roomCategoryParameterName,
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
@@ -941,9 +1021,44 @@ public sealed class ExportDialog : WinFormsForm
         _schemaProfileComboBox.SelectedIndex = _schemaProfileComboBox.Items.Count > 0 ? 0 : -1;
     }
 
+    private void PopulateValidationPolicies()
+    {
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+
+        _validationPolicyComboBox.Items.Clear();
+        foreach (ValidationPolicyProfile profile in _validationPolicyProfiles.OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _validationPolicyComboBox.Items.Add(new ValidationPolicyProfileItem(profile));
+        }
+
+        for (int i = 0; i < _validationPolicyComboBox.Items.Count; i++)
+        {
+            if (_validationPolicyComboBox.Items[i] is ValidationPolicyProfileItem item &&
+                string.Equals(item.Profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                _validationPolicyComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _validationPolicyComboBox.SelectedIndex = _validationPolicyComboBox.Items.Count > 0 ? 0 : -1;
+    }
+
     private SchemaProfile GetActiveSchemaProfile()
     {
         return SchemaProfile.ResolveActive(_schemaProfiles, _activeSchemaProfileName);
+    }
+
+    private ValidationPolicyProfile GetActiveValidationPolicyProfile()
+    {
+        return ValidationPolicyProfile.NormalizeProfiles(_validationPolicyProfiles)
+            .FirstOrDefault(profile => string.Equals(profile.Name, _activeValidationPolicyProfileName, StringComparison.OrdinalIgnoreCase))
+            ?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
     }
 
     private void EditSchemaProfiles()
@@ -957,6 +1072,23 @@ public sealed class ExportDialog : WinFormsForm
         _schemaProfiles = SchemaProfile.NormalizeProfiles(form.Profiles).Select(profile => profile.Clone()).ToList();
         _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, _activeSchemaProfileName);
         PopulateSchemaProfiles();
+    }
+
+    private void EditValidationPolicies()
+    {
+        using ValidationPolicyManagerForm form = new(_validationPolicyProfiles, _language);
+        if (form.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(form.Profiles)
+            .Select(profile => profile.Clone())
+            .ToList();
+        _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(
+            _validationPolicyProfiles,
+            _activeValidationPolicyProfileName);
+        PopulateValidationPolicies();
     }
 
     private LinkExportOptions BuildLinkExportOptions()
@@ -1056,6 +1188,38 @@ public sealed class ExportDialog : WinFormsForm
         _unitSourceComboBox.SelectedIndex = 0;
     }
 
+    private void SelectUnitAttributeSource(UnitAttributeSource source)
+    {
+        for (int i = 0; i < _unitAttributeSourceComboBox.Items.Count; i++)
+        {
+            if (_unitAttributeSourceComboBox.Items[i] is UnitAttributeSourceItem item && item.Source == source)
+            {
+                _unitAttributeSourceComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _unitAttributeSourceComboBox.SelectedIndex = 0;
+    }
+
+    private void SyncLegacyUnitSource()
+    {
+        _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
+    }
+
+    private void UpdateUnitOptionVisibility()
+    {
+        bool unitsEnabled = _unitCheckBox.Checked;
+        bool usesRoomAssignments = UnitExportSettingsResolver.UsesRoomCategoryAssignments(_unitAttributeSource);
+
+        _unitSourceInlineLabel.Visible = unitsEnabled;
+        _unitSourceComboBox.Visible = unitsEnabled;
+        _unitAttributeSourceInlineLabel.Visible = unitsEnabled;
+        _unitAttributeSourceComboBox.Visible = unitsEnabled;
+        _roomParameterInlineLabel.Visible = unitsEnabled && usesRoomAssignments;
+        _roomCategoryParameterTextBox.Visible = unitsEnabled && usesRoomAssignments;
+    }
+
     private void SelectPresetIfAvailable(int targetEpsg)
     {
         for (int i = 0; i < _crsPresetComboBox.Items.Count; i++)
@@ -1072,6 +1236,7 @@ public sealed class ExportDialog : WinFormsForm
 
     public ExportDialogSettings BuildSettings()
     {
+        SyncLegacyUnitSource();
         int targetEpsg = int.TryParse(_targetEpsgTextBox.Text, out int epsg)
             ? epsg
             : ProjectInfo.DefaultTargetEpsg;
@@ -1089,10 +1254,14 @@ public sealed class ExportDialog : WinFormsForm
             UiLanguage = _language,
             CoordinateMode = _coordinateMode,
             UnitSource = _unitSource,
+            UnitGeometrySource = _unitGeometrySource,
+            UnitAttributeSource = _unitAttributeSource,
             RoomCategoryParameterName = _roomCategoryParameterName,
             LinkExportOptions = BuildLinkExportOptions(),
             SchemaProfiles = _schemaProfiles.Select(profile => profile.Clone()).ToList(),
             ActiveSchemaProfileName = _activeSchemaProfileName,
+            ValidationPolicyProfiles = _validationPolicyProfiles.Select(profile => profile.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = _activeValidationPolicyProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
         };
@@ -1147,14 +1316,20 @@ public sealed class ExportDialog : WinFormsForm
             _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
-            _unitSource = settings.UnitSource;
+            _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
+            _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
+            _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
             _roomCategoryParameterName = string.IsNullOrWhiteSpace(settings.RoomCategoryParameterName) ? "Name" : settings.RoomCategoryParameterName.Trim();
             _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
             _schemaProfiles = SchemaProfile.NormalizeProfiles(settings.SchemaProfiles).Select(profile => profile.Clone()).ToList();
             _activeSchemaProfileName = SchemaProfile.ResolveActiveName(_schemaProfiles, settings.ActiveSchemaProfileName);
+            _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList();
+            _activeValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_validationPolicyProfiles, settings.ActiveValidationPolicyProfileName);
             SelectUnitSource(_unitSource);
+            SelectUnitAttributeSource(_unitAttributeSource);
             _roomCategoryParameterTextBox.Text = _roomCategoryParameterName;
             PopulateSchemaProfiles();
+            PopulateValidationPolicies();
             _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.Checked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
@@ -1163,6 +1338,7 @@ public sealed class ExportDialog : WinFormsForm
             SelectPresetIfAvailable(settings.TargetEpsg);
             SelectLanguage(settings.UiLanguage);
             PopulateLinkList();
+            UpdateUnitOptionVisibility();
         }
         finally
         {
@@ -1381,6 +1557,28 @@ public sealed class ExportDialog : WinFormsForm
         }
     }
 
+    private sealed class UnitAttributeSourceItem
+    {
+        public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
+
+        public UnitAttributeSourceItem(UnitAttributeSource source)
+        {
+            Source = source;
+        }
+
+        public UnitAttributeSource Source { get; }
+
+        public override string ToString()
+        {
+            return Source switch
+            {
+                UnitAttributeSource.Rooms => UiLanguageText.Get(DisplayLanguage, "Common.Rooms", "Rooms"),
+                UnitAttributeSource.Hybrid => UiLanguageText.Select(DisplayLanguage, "Hybrid (Rooms + Floor fallback)", "ハイブリッド (部屋 + 床フォールバック)"),
+                _ => UiLanguageText.Get(DisplayLanguage, "Common.Floors", "Floors"),
+            };
+        }
+    }
+
     private sealed class ProfileItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -1420,6 +1618,18 @@ public sealed class ExportDialog : WinFormsForm
         }
 
         public SchemaProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
+    }
+
+    private sealed class ValidationPolicyProfileItem
+    {
+        public ValidationPolicyProfileItem(ValidationPolicyProfile profile)
+        {
+            Profile = profile?.Clone() ?? throw new ArgumentNullException(nameof(profile));
+        }
+
+        public ValidationPolicyProfile Profile { get; }
 
         public override string ToString() => Profile.Name;
     }

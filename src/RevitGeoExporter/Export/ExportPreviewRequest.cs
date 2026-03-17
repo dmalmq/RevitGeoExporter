@@ -23,6 +23,8 @@ public sealed class ExportPreviewRequest
         string? sourceCoordinateSystemDefinition,
         Point2D? surveyPointSharedCoordinates,
         UnitSource unitSource,
+        UnitGeometrySource unitGeometrySource,
+        UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
         LinkExportOptions? linkExportOptions,
         SchemaProfile? activeSchemaProfile,
@@ -61,7 +63,9 @@ public sealed class ExportPreviewRequest
         SourceCoordinateSystemId = normalizedSourceCoordinateSystemId;
         SourceCoordinateSystemDefinition = normalizedSourceCoordinateSystemDefinition;
         SurveyPointSharedCoordinates = surveyPointSharedCoordinates;
-        UnitSource = unitSource;
+        UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
+        UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
+        UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
         RoomCategoryParameterName = normalizedRoomCategoryParameterName;
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
@@ -90,6 +94,10 @@ public sealed class ExportPreviewRequest
     public Point2D? SurveyPointSharedCoordinates { get; }
 
     public UnitSource UnitSource { get; }
+
+    public UnitGeometrySource UnitGeometrySource { get; }
+
+    public UnitAttributeSource UnitAttributeSource { get; }
 
     public string RoomCategoryParameterName { get; }
 

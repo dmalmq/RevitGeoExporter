@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows.Forms;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 
 namespace RevitGeoExporter.UI;
 
@@ -58,10 +59,14 @@ public sealed class SettingsDialog : Form
             GeometryRepairOptions = _original.GeometryRepairOptions?.Clone() ?? new RevitGeoExporter.Core.Geometry.GeometryRepairOptions(),
             UiLanguage = _language,
             UnitSource = _original.UnitSource,
+            UnitGeometrySource = _original.UnitGeometrySource,
+            UnitAttributeSource = _original.UnitAttributeSource,
             RoomCategoryParameterName = _original.RoomCategoryParameterName,
             LinkExportOptions = _original.LinkExportOptions?.Clone() ?? new RevitGeoExporter.Export.LinkExportOptions(),
             SchemaProfiles = SchemaProfile.NormalizeProfiles(_original.SchemaProfiles).Select(profile => profile.Clone()).ToList(),
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(_original.SchemaProfiles, _original.ActiveSchemaProfileName),
+            ValidationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(_original.ValidationPolicyProfiles).Select(profile => profile.Clone()).ToList(),
+            ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(_original.ValidationPolicyProfiles, _original.ActiveValidationPolicyProfileName),
         };
     }
 

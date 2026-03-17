@@ -3,6 +3,7 @@ using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 
 namespace RevitGeoExporter.UI;
@@ -31,6 +32,10 @@ public sealed class ExportDialogSettings
 
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;
 
+    public UnitGeometrySource UnitGeometrySource { get; set; } = UnitGeometrySource.Unset;
+
+    public UnitAttributeSource UnitAttributeSource { get; set; } = UnitAttributeSource.Unset;
+
     public string RoomCategoryParameterName { get; set; } = "Name";
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
@@ -38,6 +43,10 @@ public sealed class ExportDialogSettings
     public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
 
     public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;
+
+    public List<ValidationPolicyProfile> ValidationPolicyProfiles { get; set; } = ValidationPolicyProfile.NormalizeProfiles(null);
+
+    public string ActiveValidationPolicyProfileName { get; set; } = ValidationPolicyProfile.RecommendedProfileName;
 
     public string PreviewBasemapUrlTemplate { get; set; } = PreviewBasemapSettings.DefaultUrlTemplate;
 
