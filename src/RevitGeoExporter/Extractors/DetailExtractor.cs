@@ -205,7 +205,7 @@ public sealed class DetailExtractor
                     continue;
                 }
 
-                if (!TryBuildRunStepLines(run, out List<LineString2D> stepLines, geometryRepair, warnings))
+                if (!TryBuildRunStepLines(stair, run, out List<LineString2D> stepLines, geometryRepair, warnings))
                 {
                     continue;
                 }
@@ -230,6 +230,7 @@ public sealed class DetailExtractor
     }
 
     private bool TryBuildRunStepLines(
+        Stairs stair,
         StairsRun run,
         out List<LineString2D> lines,
         GeometryRepairResult geometryRepair,
@@ -245,11 +246,15 @@ public sealed class DetailExtractor
         }
         catch (Exception)
         {
-            warnings.Add($"Stairs run {run.Id.Value} path/boundary could not be read for detail export.");
+            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} path/boundary could not be read for detail export.");
             return false;
         }
 
-        if (!TryCreatePolygonFromCurveLoop(footprintBoundary, out Polygon footprintPolygon))
+        if (!TryCreatePolygonFromCurveLoop(
+                footprintBoundary,
+                out Polygon footprintPolygon,
+                warnings,
+                $"{BuildStairRunWarningPrefix(stair, run)} footprint boundary"))
         {
             return false;
         }
@@ -312,19 +317,49 @@ public sealed class DetailExtractor
         return lines.Count > 0;
     }
 
-    private bool TryCreatePolygonFromCurveLoop(CurveLoop loop, out Polygon polygon)
+    private bool TryCreatePolygonFromCurveLoop(
+        CurveLoop loop,
+        out Polygon polygon,
+        ICollection<string>? warnings = null,
+        string? context = null)
     {
         polygon = null!;
         List<Point2D> points = ProjectCurveLoop(loop, closeLoop: true);
         if (points.Count < 4)
         {
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} could not form a closed polygon for detail export.");
+            }
+
             return false;
         }
 
-        Coordinate[] coordinates = points
+        List<Coordinate> coordinates = points
             .Select(point => new Coordinate(point.X, point.Y))
-            .ToArray();
-        LinearRing shell = GeometryFactory.CreateLinearRing(coordinates);
+            .ToList();
+        Coordinate first = coordinates[0];
+        Coordinate last = coordinates[coordinates.Count - 1];
+        if (!first.Equals2D(last))
+        {
+            coordinates.Add(new Coordinate(first.X, first.Y));
+        }
+
+        LinearRing shell;
+        try
+        {
+            shell = GeometryFactory.CreateLinearRing(coordinates.ToArray());
+        }
+        catch (ArgumentException)
+        {
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} could not form a closed polygon for detail export.");
+            }
+
+            return false;
+        }
+
         Polygon created = GeometryFactory.CreatePolygon(shell);
         if (!created.IsValid)
         {
@@ -333,6 +368,11 @@ public sealed class DetailExtractor
             {
                 polygon = healedPolygon;
                 return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                warnings?.Add($"{context} produced an invalid polygon for detail export.");
             }
 
             return false;
@@ -589,6 +629,14 @@ public sealed class DetailExtractor
         }
 
         return total;
+    }
+
+    private string BuildStairRunWarningPrefix(Stairs stair, StairsRun run)
+    {
+        string prefix = $"Stairs {stair.Id.Value} run {run.Id.Value}";
+        return _sourceDescriptor.IsLinkedSource
+            ? $"{prefix} in source '{_sourceDocumentName}'"
+            : prefix;
     }
 
     private static bool IsSamePoint(Point2D left, Point2D right)
