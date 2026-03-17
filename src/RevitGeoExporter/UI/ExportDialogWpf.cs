@@ -37,6 +37,7 @@ namespace RevitGeoExporter.UI;
     private readonly ObservableCollection<LinkSelectionRow> _links = new();
     private readonly Action<ExportPreviewRequest, WinForms.IWin32Window?>? _previewRequested;
     private readonly Action? _openMappingsRequested;
+    private readonly Action<WinForms.IWin32Window?>? _batchRequested;
     private readonly Window _window;
     private readonly List<ExportProfile> _profiles;
     private readonly ModelCoordinateInfo? _coordinateInfo;
@@ -50,6 +51,8 @@ namespace RevitGeoExporter.UI;
     private readonly ComboBox _languageComboBox = new();
     private readonly ComboBox _presetComboBox = new();
     private readonly ComboBox _coordinateModeComboBox = new();
+    private readonly ComboBox _incrementalModeComboBox = new();
+    private readonly ComboBox _packagingModeComboBox = new();
     private readonly ComboBox _unitSourceComboBox = new();
     private readonly ComboBox _unitAttributeSourceComboBox = new();
     private readonly ComboBox _schemaProfileComboBox = new();
@@ -62,11 +65,16 @@ namespace RevitGeoExporter.UI;
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
+    private readonly CheckBox _validateAfterWriteCheckBox = new();
+    private readonly CheckBox _generateQgisArtifactsCheckBox = new();
+    private readonly CheckBox _openOutputFolderCheckBox = new();
+    private readonly CheckBox _launchQgisCheckBox = new();
     private readonly CheckBox _includeLinkedModelsCheckBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
+    private readonly Button _batchButton = new();
     private readonly Button _selectAllButton = new();
     private readonly Button _clearAllButton = new();
     private readonly Button _helpButton = new();
@@ -90,6 +98,8 @@ namespace RevitGeoExporter.UI;
     private readonly TextBlock _crsPresetLabel = new();
     private readonly TextBlock _targetEpsgLabel = new();
     private readonly TextBlock _coordinateModeLabel = new();
+    private readonly TextBlock _incrementalModeLabel = new();
+    private readonly TextBlock _packagingModeLabel = new();
     private readonly TextBlock _coordinateSettingsHeaderText = new();
     private readonly TextBlock _technicalDetailsHeaderText = new();
     private readonly TextBlock _unitSourceLabel = new();
@@ -137,6 +147,7 @@ namespace RevitGeoExporter.UI;
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
+        Action<WinForms.IWin32Window?>? batchRequested = null,
         Action<ExportPreviewRequest, WinForms.IWin32Window?>? previewRequested = null,
         ModelCoordinateInfo? coordinateInfo = null)
     {
@@ -166,6 +177,7 @@ namespace RevitGeoExporter.UI;
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewRequested = previewRequested;
         _openMappingsRequested = openMappingsRequested;
+        _batchRequested = batchRequested;
         _coordinateInfo = coordinateInfo;
         _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
@@ -202,9 +214,14 @@ namespace RevitGeoExporter.UI;
             TargetEpsg = targetEpsg,
             FeatureTypes = GetSelectedFeatureTypes(),
             SelectedViewIds = GetSelectedViews().Select(view => view.Id.Value).ToList(),
+            IncrementalExportMode = GetSelectedIncrementalMode(),
             GenerateDiagnosticsReport = _diagnosticsCheckBox.IsChecked == true,
             GeneratePackageOutput = _packageCheckBox.IsChecked == true,
             IncludePackageLegend = _packageLegendCheckBox.IsChecked == true,
+            PackagingMode = GetSelectedPackagingMode(),
+            ValidateAfterWrite = _validateAfterWriteCheckBox.IsChecked == true,
+            GenerateQgisArtifacts = _generateQgisArtifactsCheckBox.IsChecked == true,
+            PostExportActions = BuildPostExportActions(),
             UiLanguage = ((_languageComboBox.SelectedItem as LanguageItem)?.Language) ?? UiLanguage.English,
             CoordinateMode = GetSelectedCoordinateMode(),
             UnitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource),
@@ -534,6 +551,24 @@ namespace RevitGeoExporter.UI;
 
             RefreshDialogState();
         };
+        _incrementalModeComboBox.MinHeight = 32;
+        if (_incrementalModeComboBox.Items.Count == 0)
+        {
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.AllSelectedViews));
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.ChangedViewsOnly));
+        }
+
+        _incrementalModeComboBox.SelectionChanged += (_, _) => RefreshDialogState();
+        _packagingModeComboBox.MinHeight = 32;
+        if (_packagingModeComboBox.Items.Count == 0)
+        {
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewPerFeatureFiles));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerLevelGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerBuildingGeoPackage));
+        }
+
+        _packagingModeComboBox.SelectionChanged += (_, _) => RefreshDialogState();
         _manageSchemaProfilesButton.HorizontalAlignment = HorizontalAlignment.Left;
         _manageSchemaProfilesButton.Padding = new Thickness(12, 6, 12, 6);
         _manageSchemaProfilesButton.Margin = new Thickness(8, 0, 0, 0);
@@ -581,12 +616,16 @@ namespace RevitGeoExporter.UI;
         linkedModelsPanel.Children.Add(_includeLinkedModelsCheckBox);
         linkedModelsPanel.Children.Add(_linkList);
         _linkedModelsRow = CreateFieldBlock(_linkedModelsLabel, linkedModelsPanel);
+        FrameworkElement incrementalModeRow = CreateFieldBlock(_incrementalModeLabel, _incrementalModeComboBox);
+        FrameworkElement packagingModeRow = CreateFieldBlock(_packagingModeLabel, _packagingModeComboBox);
         advancedContent.Children.Add(_unitSourceRow);
         advancedContent.Children.Add(_unitAttributeSourceRow);
         advancedContent.Children.Add(_roomCategoryParameterRow);
         advancedContent.Children.Add(_schemaProfileRow);
         advancedContent.Children.Add(_validationPolicyRow);
         advancedContent.Children.Add(_linkedModelsRow);
+        advancedContent.Children.Add(incrementalModeRow);
+        advancedContent.Children.Add(packagingModeRow);
 
         _mappingsButton.HorizontalAlignment = HorizontalAlignment.Left;
         _mappingsButton.Padding = new Thickness(12, 6, 12, 6);
@@ -599,11 +638,19 @@ namespace RevitGeoExporter.UI;
         _packageCheckBox.Checked += (_, _) => RefreshDialogState();
         _packageCheckBox.Unchecked += (_, _) => RefreshDialogState();
         ConfigureAdvancedOption(_packageLegendCheckBox);
+        ConfigureAdvancedOption(_validateAfterWriteCheckBox);
+        ConfigureAdvancedOption(_generateQgisArtifactsCheckBox);
+        ConfigureAdvancedOption(_openOutputFolderCheckBox);
+        ConfigureAdvancedOption(_launchQgisCheckBox);
 
         advancedContent.Children.Add(WrapStandaloneOption(_diagnosticsCheckBox, new Thickness(0, 0, 0, 4)));
         advancedContent.Children.Add(WrapStandaloneOption(_packageCheckBox, new Thickness(0, 0, 0, 4)));
         _legendOptionRow = WrapStandaloneOption(_packageLegendCheckBox, new Thickness(18, 0, 0, 0));
         advancedContent.Children.Add(_legendOptionRow);
+        advancedContent.Children.Add(WrapStandaloneOption(_validateAfterWriteCheckBox, new Thickness(18, 4, 0, 0)));
+        advancedContent.Children.Add(WrapStandaloneOption(_generateQgisArtifactsCheckBox, new Thickness(18, 4, 0, 0)));
+        advancedContent.Children.Add(WrapStandaloneOption(_openOutputFolderCheckBox, new Thickness(0, 4, 0, 0)));
+        advancedContent.Children.Add(WrapStandaloneOption(_launchQgisCheckBox, new Thickness(0, 4, 0, 0)));
 
         StyleExpanderHeader(_advancedOptionsHeaderText);
         _advancedOptionsExpander.Header = _advancedOptionsHeaderText;
@@ -682,6 +729,12 @@ namespace RevitGeoExporter.UI;
         _previewButton.Click += (_, _) => ShowPreview();
         actions.Children.Add(_previewButton);
 
+        _batchButton.MinWidth = 110;
+        _batchButton.Padding = new Thickness(12, 6, 12, 6);
+        _batchButton.Margin = new Thickness(8, 0, 0, 0);
+        _batchButton.Click += (_, _) => _batchRequested?.Invoke(TryGetOwnerWindow());
+        actions.Children.Add(_batchButton);
+
         _exportButton.MinWidth = 110;
         _exportButton.Padding = new Thickness(12, 6, 12, 6);
         _exportButton.Margin = new Thickness(8, 0, 0, 0);
@@ -722,6 +775,12 @@ namespace RevitGeoExporter.UI;
             _diagnosticsCheckBox.IsChecked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.IsChecked = settings.GeneratePackageOutput;
             _packageLegendCheckBox.IsChecked = settings.IncludePackageLegend;
+            SelectIncrementalMode(settings.IncrementalExportMode);
+            SelectPackagingMode(settings.PackagingMode);
+            _validateAfterWriteCheckBox.IsChecked = settings.ValidateAfterWrite;
+            _generateQgisArtifactsCheckBox.IsChecked = settings.GenerateQgisArtifacts;
+            _openOutputFolderCheckBox.IsChecked = settings.PostExportActions?.OpenOutputFolder == true;
+            _launchQgisCheckBox.IsChecked = settings.PostExportActions?.LaunchQgis == true;
 
             _languageComboBox.Items.Clear();
             _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
@@ -870,11 +929,16 @@ namespace RevitGeoExporter.UI;
             outputDirectory,
             ParseTargetEpsgOrDefault(),
             featureTypes,
+            GetSelectedIncrementalMode(),
             _diagnosticsCheckBox.IsChecked == true,
             _packageCheckBox.IsChecked == true,
             _packageLegendCheckBox.IsChecked == true,
+            GetSelectedPackagingMode(),
+            _validateAfterWriteCheckBox.IsChecked == true,
+            _generateQgisArtifactsCheckBox.IsChecked == true,
+            BuildPostExportActions(),
             new GeometryRepairOptions(),
-            selectedProfileName: _profiles.FirstOrDefault()?.Name,
+            null,
             uiLanguage,
             coordinateMode,
             unitSource,
@@ -1071,6 +1135,8 @@ namespace RevitGeoExporter.UI;
             _legendOptionRow.Visibility = packageEnabled ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         }
 
+        _generateQgisArtifactsCheckBox.IsEnabled = packageEnabled;
+        _launchQgisCheckBox.IsEnabled = packageEnabled;
         _includeLinkedModelsCheckBox.IsEnabled = _links.Count > 0;
         _linkList.IsEnabled = linksEnabled;
     }
@@ -1249,6 +1315,53 @@ namespace RevitGeoExporter.UI;
         return (_coordinateModeComboBox.SelectedItem as CoordinateModeItem)?.Mode ?? CoordinateExportMode.SharedCoordinates;
     }
 
+    private IncrementalExportMode GetSelectedIncrementalMode()
+    {
+        return (_incrementalModeComboBox.SelectedItem as IncrementalModeItem)?.Mode ?? IncrementalExportMode.AllSelectedViews;
+    }
+
+    private PackagingMode GetSelectedPackagingMode()
+    {
+        return (_packagingModeComboBox.SelectedItem as PackagingModeItem)?.Mode ?? PackagingMode.PerViewPerFeatureFiles;
+    }
+
+    private void SelectIncrementalMode(IncrementalExportMode mode)
+    {
+        for (int i = 0; i < _incrementalModeComboBox.Items.Count; i++)
+        {
+            if (_incrementalModeComboBox.Items[i] is IncrementalModeItem item && item.Mode == mode)
+            {
+                _incrementalModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _incrementalModeComboBox.SelectedIndex = 0;
+    }
+
+    private void SelectPackagingMode(PackagingMode mode)
+    {
+        for (int i = 0; i < _packagingModeComboBox.Items.Count; i++)
+        {
+            if (_packagingModeComboBox.Items[i] is PackagingModeItem item && item.Mode == mode)
+            {
+                _packagingModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _packagingModeComboBox.SelectedIndex = 0;
+    }
+
+    private PostExportActionOptions BuildPostExportActions()
+    {
+        return new PostExportActionOptions
+        {
+            OpenOutputFolder = _openOutputFolderCheckBox.IsChecked == true,
+            LaunchQgis = _launchQgisCheckBox.IsChecked == true,
+        };
+    }
+
     private int ParseTargetEpsgOrDefault()
     {
         if (int.TryParse(_targetEpsgTextBox.Text, out int epsg) && epsg > 0)
@@ -1372,6 +1485,8 @@ namespace RevitGeoExporter.UI;
 
         _outputDirectoryLabel.Text = T("Output directory", "出力先フォルダー");
         _coordinateModeLabel.Text = T("Coordinate mode", "座標モード");
+        _incrementalModeLabel.Text = T("Incremental mode", "差分出力モード");
+        _packagingModeLabel.Text = T("Packaging mode", "パッケージ モード");
         _crsPresetLabel.Text = T("CRS preset", "CRS プリセット");
         _targetEpsgLabel.Text = T("Target EPSG", "出力 EPSG");
         _coordinateSettingsHeaderText.Text = T("Change coordinate settings", "座標設定を変更");
@@ -1391,6 +1506,10 @@ namespace RevitGeoExporter.UI;
         _diagnosticsCheckBox.Content = T("Create diagnostics report", "診断レポートを作成");
         _packageCheckBox.Content = T("Create GIS package folder", "GIS パッケージ フォルダーを作成");
         _packageLegendCheckBox.Content = T("Include legend file", "凡例ファイルを含める");
+        _validateAfterWriteCheckBox.Content = T("Validate package outputs after write", "書き出し後にパッケージを検証");
+        _generateQgisArtifactsCheckBox.Content = T("Generate QGIS handoff files", "QGIS 引き継ぎファイルを生成");
+        _openOutputFolderCheckBox.Content = T("Open output folder after export", "出力後にフォルダーを開く");
+        _launchQgisCheckBox.Content = T("Launch QGIS after export", "出力後に QGIS を起動");
         _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
         _mappingsButton.Content = T("Edit category mappings...", "カテゴリ マッピングを編集...");
@@ -1401,6 +1520,7 @@ namespace RevitGeoExporter.UI;
         _clearAllButton.Content = T("Clear All", "選択解除");
         _cancelButton.Content = T("Cancel", "キャンセル");
         _previewButton.Content = T("Preview...", "プレビュー...");
+        _batchButton.Content = T("Batch...", "バッチ...");
         _exportButton.Content = T("Export", "出力");
         _helpButton.Content = T("Help", "ヘルプ");
         _languageLabel.Text = T("Language", "言語");
@@ -1604,6 +1724,44 @@ namespace RevitGeoExporter.UI;
             return Mode == CoordinateExportMode.ConvertToTargetCrs
                 ? UiLanguageText.Get(DisplayLanguage, "ExportDialog.CoordinateMode.ConvertToTargetCrs", "Convert to target CRS")
                 : UiLanguageText.Get(DisplayLanguage, "ExportDialog.CoordinateMode.SharedCoordinatesDefault", "Shared coordinates (default)");
+        }
+    }
+
+    private sealed class IncrementalModeItem
+    {
+        public IncrementalModeItem(IncrementalExportMode mode)
+        {
+            Mode = mode;
+        }
+
+        public IncrementalExportMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode == IncrementalExportMode.ChangedViewsOnly
+                ? "Changed views only"
+                : "All selected views";
+        }
+    }
+
+    private sealed class PackagingModeItem
+    {
+        public PackagingModeItem(PackagingMode mode)
+        {
+            Mode = mode;
+        }
+
+        public PackagingMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode switch
+            {
+                PackagingMode.PerViewGeoPackage => "Per view GeoPackage",
+                PackagingMode.PerLevelGeoPackage => "Per level GeoPackage",
+                PackagingMode.PerBuildingGeoPackage => "Per building GeoPackage",
+                _ => "Per view / feature files",
+            };
         }
     }
 

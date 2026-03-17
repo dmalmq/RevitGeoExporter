@@ -18,11 +18,21 @@ public sealed class ExportDialogSettings
 
     public List<long> SelectedViewIds { get; set; } = new();
 
+    public IncrementalExportMode IncrementalExportMode { get; set; } = IncrementalExportMode.AllSelectedViews;
+
     public bool GenerateDiagnosticsReport { get; set; } = true;
 
     public bool GeneratePackageOutput { get; set; }
 
     public bool IncludePackageLegend { get; set; } = true;
+
+    public PackagingMode PackagingMode { get; set; } = PackagingMode.PerViewPerFeatureFiles;
+
+    public bool ValidateAfterWrite { get; set; } = true;
+
+    public bool GenerateQgisArtifacts { get; set; }
+
+    public PostExportActionOptions PostExportActions { get; set; } = new();
 
     public GeometryRepairOptions GeometryRepairOptions { get; set; } = new();
 
@@ -51,4 +61,6 @@ public sealed class ExportDialogSettings
     public string PreviewBasemapUrlTemplate { get; set; } = PreviewBasemapSettings.DefaultUrlTemplate;
 
     public string PreviewBasemapAttribution { get; set; } = PreviewBasemapSettings.DefaultAttribution;
+
+    public string QgisExecutablePath { get; set; } = string.Empty;
 }

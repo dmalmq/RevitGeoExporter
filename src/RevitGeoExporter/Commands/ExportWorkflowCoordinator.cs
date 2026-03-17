@@ -11,6 +11,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Diagnostics;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Core.Validation;
 using RevitGeoExporter.Export;
 using RevitGeoExporter.Resources;
@@ -123,9 +124,14 @@ internal sealed class ExportWorkflowCoordinator
                     {
                         Enabled = request.GeneratePackageOutput,
                         IncludeLegendFile = request.IncludePackageLegend,
+                        PackagingMode = request.PackagingMode,
+                        ValidateAfterWrite = request.ValidateAfterWrite,
+                        GenerateQgisArtifacts = request.GenerateQgisArtifacts,
+                        PostExportActions = request.PostExportActions.Clone(),
                     },
                     request.SelectedProfileName,
                     BuildBaselineKey(_projectKey, request.SelectedProfileName),
+                    request.IncrementalExportMode,
                     request.CoordinateMode,
                     coordinateInfo.ResolvedSourceEpsg,
                     coordinateInfo.SiteCoordinateSystemId,
@@ -205,62 +211,7 @@ internal sealed class ExportWorkflowCoordinator
                 break;
             }
 
-            FloorGeoPackageExportResult result;
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            using (ExportProgressForm progressForm = new())
-            {
-                progressForm.Show();
-                progressForm.Refresh();
-
-                result = exporter.WritePreparedExport(
-                    session,
-                    progressCallback: update => progressForm.UpdateProgress(update));
-
-                progressForm.Close();
-            }
-
-            stopwatch.Stop();
-
-            ExportDiagnosticsReportBuilder diagnosticsBuilder = new();
-            ExportDiagnosticsReport diagnosticsReport = diagnosticsBuilder.Build(
-                session,
-                validationResult,
-                result,
-                DateTimeOffset.UtcNow,
-                stopwatch.Elapsed);
-
-            if (request.GenerateDiagnosticsReport)
-            {
-                try
-                {
-                    ExportDiagnosticsWriter diagnosticsWriter = new();
-                    string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, diagnosticsReport);
-                    result.SetDiagnosticsReportPath(diagnosticsPath);
-                }
-                catch (Exception diagnosticsException)
-                {
-                    result.AddWarnings(
-                        new[]
-                        {
-                            $"Diagnostics report could not be written: {diagnosticsException.Message}",
-                        });
-                }
-            }
-
-            ExportPackageService packageService = new();
-            ExportPackageResult packageResult = packageService.BuildPackage(session, diagnosticsReport, result);
-            result.SetPackagePaths(packageResult.PackageDirectory, packageResult.ManifestPath);
-
-            ExportBaselineStore baselineStore = new();
-            var baseline = baselineStore.Load(session.BaselineKey);
-            result.AddWarnings(baseline.Warnings);
-            ChangeSummaryService changeSummaryService = new();
-            result.SetChangeSummary(changeSummaryService.Compare(
-                baseline.Report,
-                diagnosticsReport,
-                baseline.Manifest,
-                packageResult.Manifest));
-            baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest);
+            FloorGeoPackageExportResult result = CompleteExport(session, validationResult, request);
 
             using ExportResultForm resultForm = new(result, request.OutputDirectory, request.UiLanguage);
             _ = resultForm.ShowDialog();
@@ -271,6 +222,300 @@ internal sealed class ExportWorkflowCoordinator
             message = ex.Message;
             ShowExportFailureDialog(ex, request);
             return Result.Failed;
+        }
+    }
+
+    public void ShowBatchExport(ModelCoordinateInfo coordinateInfo, WinForms.IWin32Window? owner = null)
+    {
+        IReadOnlyList<ExportProfile> profiles = _profileStore.LoadWithDiagnostics(_projectKey).Value;
+        using BatchExportForm form = new(profiles, CommandLanguageResolver.Resolve());
+        if (form.ShowDialog(owner) != DialogResult.OK || form.Result == null)
+        {
+            return;
+        }
+
+        BatchExecutionSummary summary = RunBatchExport(form.Result, coordinateInfo);
+        ShowBatchSummary(summary);
+    }
+
+    private BatchExecutionSummary RunBatchExport(ExportJobManifest manifest, ModelCoordinateInfo coordinateInfo)
+    {
+        IReadOnlyList<ViewPlan> availableViews = new ViewCollector().GetExportablePlanViews(_document);
+        Dictionary<long, ViewPlan> viewsById = availableViews
+            .GroupBy(view => view.Id.Value)
+            .Select(group => group.First())
+            .ToDictionary(view => view.Id.Value);
+        IReadOnlyList<ExportProfile> profiles = _profileStore.LoadWithDiagnostics(_projectKey).Value;
+
+        BatchExecutionSummary summary = new();
+        foreach (ExportJobManifestItem job in manifest.Jobs)
+        {
+            BatchJobExecutionResult jobResult = ExecuteBatchJob(job, profiles, viewsById, coordinateInfo);
+            summary.Jobs.Add(jobResult);
+        }
+
+        return summary;
+    }
+
+    private BatchJobExecutionResult ExecuteBatchJob(
+        ExportJobManifestItem job,
+        IReadOnlyList<ExportProfile> profiles,
+        IReadOnlyDictionary<long, ViewPlan> viewsById,
+        ModelCoordinateInfo coordinateInfo)
+    {
+        string profileName = job.ProfileName?.Trim() ?? string.Empty;
+        if (profileName.Length == 0)
+        {
+            return BatchJobExecutionResult.Failed("<unspecified>", "The batch job did not specify a profile name.");
+        }
+
+        ExportProfile? profile = profiles.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        if (profile == null)
+        {
+            return BatchJobExecutionResult.Failed(profileName, "The saved export profile could not be found.");
+        }
+
+        if (profile.SelectedViewIds == null || profile.SelectedViewIds.Count == 0)
+        {
+            return BatchJobExecutionResult.Failed(profileName, "The saved export profile does not have persisted view selections. Resave the profile and try again.");
+        }
+
+        List<ViewPlan> selectedViews = new();
+        foreach (long viewId in profile.SelectedViewIds.Distinct().OrderBy(id => id))
+        {
+            if (!viewsById.TryGetValue(viewId, out ViewPlan? view))
+            {
+                return BatchJobExecutionResult.Failed(profileName, $"Saved view id {viewId} is no longer available in the current document.");
+            }
+
+            selectedViews.Add(view);
+        }
+
+        ExportDialogSettings settings = profile.ToSettings();
+        if (!string.IsNullOrWhiteSpace(job.OutputDirectoryOverride))
+        {
+            settings.OutputDirectory = job.OutputDirectoryOverride.Trim();
+        }
+
+        ExportDialogResult request = new(
+            selectedViews,
+            settings.OutputDirectory,
+            settings.TargetEpsg,
+            settings.FeatureTypes,
+            settings.IncrementalExportMode,
+            settings.GenerateDiagnosticsReport,
+            settings.GeneratePackageOutput,
+            settings.IncludePackageLegend,
+            settings.PackagingMode,
+            settings.ValidateAfterWrite,
+            settings.GenerateQgisArtifacts,
+            settings.PostExportActions,
+            settings.GeometryRepairOptions,
+            profile.Name,
+            settings.UiLanguage,
+            settings.CoordinateMode,
+            settings.UnitSource,
+            settings.UnitGeometrySource,
+            settings.UnitAttributeSource,
+            settings.RoomCategoryParameterName,
+            settings.LinkExportOptions,
+            SchemaProfile.ResolveActive(settings.SchemaProfiles, settings.ActiveSchemaProfileName),
+            ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles)
+                .First(profileItem => string.Equals(
+                    profileItem.Name,
+                    ValidationPolicyProfile.ResolveActiveName(settings.ValidationPolicyProfiles, settings.ActiveValidationPolicyProfileName),
+                    StringComparison.OrdinalIgnoreCase)));
+
+        try
+        {
+            FloorGeoPackageExporter exporter = new(_document);
+            PreparedExportSession session = exporter.PrepareExport(
+                request.OutputDirectory,
+                request.TargetEpsg,
+                request.SelectedViews,
+                request.FeatureTypes,
+                request.GeometryRepairOptions,
+                new ExportPackageOptions
+                {
+                    Enabled = request.GeneratePackageOutput,
+                    IncludeLegendFile = request.IncludePackageLegend,
+                    PackagingMode = request.PackagingMode,
+                    ValidateAfterWrite = request.ValidateAfterWrite,
+                    GenerateQgisArtifacts = request.GenerateQgisArtifacts,
+                    PostExportActions = request.PostExportActions.Clone(),
+                },
+                request.SelectedProfileName,
+                BuildBaselineKey(_projectKey, request.SelectedProfileName),
+                request.IncrementalExportMode,
+                request.CoordinateMode,
+                coordinateInfo.ResolvedSourceEpsg,
+                coordinateInfo.SiteCoordinateSystemId,
+                coordinateInfo.SiteCoordinateSystemDefinition,
+                request.UnitSource,
+                request.UnitGeometrySource,
+                request.UnitAttributeSource,
+                request.RoomCategoryParameterName,
+                request.LinkExportOptions,
+                request.ActiveSchemaProfile,
+                request.ActiveValidationPolicyProfile);
+
+            ExportValidationResult validationResult = new ExportValidationService()
+                .Validate(new ExportValidationSnapshotBuilder().Build(session));
+            FloorGeoPackageExportResult result = CompleteExport(session, validationResult, request);
+            return BatchJobExecutionResult.Completed(
+                profileName,
+                result.ArtifactResults.Count(artifact => artifact.Disposition == ArtifactDisposition.Written),
+                result.ArtifactResults.Count(artifact => artifact.Disposition == ArtifactDisposition.ReusedFromBaseline),
+                result.Warnings.Count);
+        }
+        catch (Exception ex)
+        {
+            return BatchJobExecutionResult.Failed(profileName, ex.Message);
+        }
+    }
+
+    private FloorGeoPackageExportResult CompleteExport(
+        PreparedExportSession session,
+        ExportValidationResult validationResult,
+        ExportDialogResult request)
+    {
+        FloorGeoPackageExporter exporter = new(_document);
+        FloorGeoPackageExportResult result;
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        using (ExportProgressForm progressForm = new())
+        {
+            progressForm.Show();
+            progressForm.Refresh();
+
+            result = exporter.WritePreparedExport(
+                session,
+                progressCallback: update => progressForm.UpdateProgress(update));
+
+            progressForm.Close();
+        }
+
+        stopwatch.Stop();
+
+        ExportDiagnosticsReportBuilder diagnosticsBuilder = new();
+        ExportDiagnosticsReport diagnosticsReport = diagnosticsBuilder.Build(
+            session,
+            validationResult,
+            result,
+            DateTimeOffset.UtcNow,
+            stopwatch.Elapsed);
+
+        if (request.GenerateDiagnosticsReport)
+        {
+            try
+            {
+                ExportDiagnosticsWriter diagnosticsWriter = new();
+                string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, diagnosticsReport);
+                result.SetDiagnosticsReportPath(diagnosticsPath);
+            }
+            catch (Exception diagnosticsException)
+            {
+                result.AddWarnings(
+                    new[]
+                    {
+                        $"Diagnostics report could not be written: {diagnosticsException.Message}",
+                    });
+            }
+        }
+
+        ExportPackageService packageService = new();
+        ExportPackageResult packageResult = packageService.BuildPackage(session, diagnosticsReport, result);
+        result.SetPackagePaths(packageResult.PackageDirectory, packageResult.ManifestPath);
+        result.SetPackageValidationResult(packageResult.ValidationResult);
+
+        ExportBaselineStore baselineStore = new();
+        ExportBaselineLoadResult baseline = baselineStore.Load(session.BaselineKey);
+        result.AddWarnings(baseline.Warnings);
+        ChangeSummaryService changeSummaryService = new();
+        result.SetChangeSummary(changeSummaryService.Compare(
+            baseline.Snapshot,
+            baseline.Report,
+            diagnosticsReport,
+            baseline.Manifest,
+            packageResult.Manifest,
+            result.ExecutionSummary?.ChangedViewCount ?? session.Prepared.Views.Count,
+            result.ExecutionSummary?.ReusedViewCount ?? 0,
+            result.ArtifactResults.Count(artifact => artifact.Disposition == ArtifactDisposition.Written),
+            result.ArtifactResults.Count(artifact => artifact.Disposition == ArtifactDisposition.ReusedFromBaseline),
+            result.ExecutionSummary?.MissingBaselineArtifactCount ?? 0,
+            result.ExecutionSummary?.FullRewriteReason));
+
+        bool canReplaceBaseline = result.PendingBaselineSnapshot != null &&
+                                  (packageResult.ValidationResult == null || !packageResult.ValidationResult.HasErrors);
+        if (canReplaceBaseline)
+        {
+            baselineStore.Save(session.BaselineKey, diagnosticsReport, packageResult.Manifest, result.PendingBaselineSnapshot!);
+        }
+        else if (packageResult.ValidationResult?.HasErrors == true)
+        {
+            result.AddWarning("Package validation errors prevented the export baseline from being replaced.");
+        }
+
+        return result;
+    }
+
+    private static void ShowBatchSummary(BatchExecutionSummary summary)
+    {
+        string message = string.Join(
+            Environment.NewLine,
+            summary.Jobs.Select(job =>
+                job.Succeeded
+                    ? $"{job.ProfileName}: succeeded (written: {job.WrittenArtifactCount}, reused: {job.ReusedArtifactCount}, warnings: {job.WarningCount})"
+                    : $"{job.ProfileName}: failed - {job.Message}"));
+
+        TaskDialog.Show(
+            ProjectInfo.Name,
+            $"Batch export finished.{Environment.NewLine}{Environment.NewLine}{message}");
+    }
+
+    private sealed class BatchExecutionSummary
+    {
+        public List<BatchJobExecutionResult> Jobs { get; } = new();
+    }
+
+    private sealed class BatchJobExecutionResult
+    {
+        private BatchJobExecutionResult(
+            string profileName,
+            bool succeeded,
+            string message,
+            int writtenArtifactCount,
+            int reusedArtifactCount,
+            int warningCount)
+        {
+            ProfileName = profileName;
+            Succeeded = succeeded;
+            Message = message;
+            WrittenArtifactCount = writtenArtifactCount;
+            ReusedArtifactCount = reusedArtifactCount;
+            WarningCount = warningCount;
+        }
+
+        public string ProfileName { get; }
+
+        public bool Succeeded { get; }
+
+        public string Message { get; }
+
+        public int WrittenArtifactCount { get; }
+
+        public int ReusedArtifactCount { get; }
+
+        public int WarningCount { get; }
+
+        public static BatchJobExecutionResult Failed(string profileName, string message)
+        {
+            return new BatchJobExecutionResult(profileName, succeeded: false, message, 0, 0, 0);
+        }
+
+        public static BatchJobExecutionResult Completed(string profileName, int writtenArtifactCount, int reusedArtifactCount, int warningCount)
+        {
+            return new BatchJobExecutionResult(profileName, succeeded: true, string.Empty, writtenArtifactCount, reusedArtifactCount, warningCount);
         }
     }
 

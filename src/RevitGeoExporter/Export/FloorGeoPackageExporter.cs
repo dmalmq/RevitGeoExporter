@@ -6,6 +6,7 @@ using Autodesk.Revit.DB;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
+using RevitGeoExporter.Core.Diagnostics;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
@@ -33,6 +34,7 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
         string? baselineKey = null,
+        IncrementalExportMode incrementalExportMode = IncrementalExportMode.AllSelectedViews,
         CoordinateExportMode coordinateMode = CoordinateExportMode.SharedCoordinates,
         int? sourceEpsg = null,
         string? sourceCoordinateSystemId = null,
@@ -55,6 +57,7 @@ public sealed class FloorGeoPackageExporter
             packageOptions,
             profileName,
             baselineKey,
+            incrementalExportMode,
             coordinateMode,
             sourceEpsg,
             sourceCoordinateSystemId,
@@ -78,6 +81,7 @@ public sealed class FloorGeoPackageExporter
         ExportPackageOptions? packageOptions = null,
         string? profileName = null,
         string? baselineKey = null,
+        IncrementalExportMode incrementalExportMode = IncrementalExportMode.AllSelectedViews,
         CoordinateExportMode coordinateMode = CoordinateExportMode.SharedCoordinates,
         int? sourceEpsg = null,
         string? sourceCoordinateSystemId = null,
@@ -188,8 +192,11 @@ public sealed class FloorGeoPackageExporter
             exportViews,
             contexts,
             resultWithSetupWarnings,
+            incrementalExportMode,
             overrideLoad.Value,
             roomOverrideLoad.Value,
+            familyOverrideLoad.Value,
+            acceptedOpeningLoad.Value,
             effectiveGeometryRepairOptions,
             effectivePackageOptions,
             profileName,
@@ -248,91 +255,56 @@ public sealed class FloorGeoPackageExporter
             }
         }
 
-        int totalSteps = Math.Max(1, session.Prepared.Views.Count * CountSelectedFeatureTypes(session.FeatureTypes));
+        ExportBaselineLoadResult baseline = new ExportBaselineStore().Load(session.BaselineKey);
+        Dictionary<long, ViewChangeDecision> viewDecisions = BuildViewChangeDecisions(session, baseline.Snapshot);
+        List<ArtifactPlan> artifactPlans = BuildArtifactPlans(session);
+        ExportExecutionSummary executionSummary = BuildExecutionSummary(session, baseline.Snapshot, viewDecisions);
+        int missingBaselineArtifactCount = 0;
+
+        foreach (ArtifactPlan plan in artifactPlans)
+        {
+            bool hasChangedView = plan.ContributingViewIds.Any(viewId => viewDecisions.TryGetValue(viewId, out ViewChangeDecision? decision) && decision.HasChanges);
+            bool canReuse = session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
+                            executionSummary.FullRewriteReason == null &&
+                            !hasChangedView &&
+                            CanReuseArtifact(baseline.Snapshot, plan);
+            if (!canReuse &&
+                session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
+                executionSummary.FullRewriteReason == null &&
+                !hasChangedView)
+            {
+                missingBaselineArtifactCount++;
+            }
+
+            plan.ShouldWrite = !canReuse;
+        }
+
+        executionSummary.MissingBaselineArtifactCount = missingBaselineArtifactCount;
+        result.SetExecutionSummary(executionSummary);
+
+        int totalSteps = Math.Max(1, artifactPlans.Count(plan => plan.ShouldWrite));
         int completedSteps = 0;
         progressCallback?.Invoke(new ExportProgressUpdate(0, totalSteps, "Preparing export..."));
 
-        string safeModelName = SanitizeFileName(session.SourceModelName);
-        HashSet<string> usedFileStems = new(StringComparer.OrdinalIgnoreCase);
         GpkgWriter writer = new();
-
-        foreach (PreparedViewExportData viewData in session.Prepared.Views)
+        foreach (ArtifactPlan plan in artifactPlans)
         {
-            string fileStem = BuildUniqueFileStem(
-                safeModelName,
-                SanitizeFileName(viewData.View.Name),
-                viewData.View.Id.Value,
-                usedFileStems);
-
-            if (session.FeatureTypes.HasFlag(ExportFeatureType.Unit) && viewData.UnitLayer != null)
+            if (!plan.ShouldWrite)
             {
-                ExportLayer unitLayer = PrepareLayerForWrite(viewData.UnitLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
-                string unitFile = Path.Combine(session.OutputDirectory, $"{fileStem}_unit.gpkg");
-                writer.Write(unitFile, session.OutputEpsg, new[] { unitLayer });
-                result.AddViewResult(
-                    new ViewExportResult(
-                        viewData.View.Name,
-                        viewData.Level.Name,
-                        "unit",
-                        unitFile,
-                        unitLayer.Features.Count));
-                completedSteps++;
-                progressCallback?.Invoke(
-                    new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [unit]"));
+                result.AddArtifactResult(plan.ToResult(ArtifactDisposition.ReusedFromBaseline));
+                continue;
             }
 
-            if (session.FeatureTypes.HasFlag(ExportFeatureType.Detail) && viewData.DetailLayer != null)
-            {
-                ExportLayer detailLayer = PrepareLayerForWrite(viewData.DetailLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
-                string detailFile = Path.Combine(session.OutputDirectory, $"{fileStem}_detail.gpkg");
-                writer.Write(detailFile, session.OutputEpsg, new[] { detailLayer });
-                result.AddViewResult(
-                    new ViewExportResult(
-                        viewData.View.Name,
-                        viewData.Level.Name,
-                        "detail",
-                        detailFile,
-                        detailLayer.Features.Count));
-                completedSteps++;
-                progressCallback?.Invoke(
-                    new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [detail]"));
-            }
-
-            if (session.FeatureTypes.HasFlag(ExportFeatureType.Opening) && viewData.OpeningLayer != null)
-            {
-                ExportLayer openingLayer = PrepareLayerForWrite(viewData.OpeningLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
-                string openingFile = Path.Combine(session.OutputDirectory, $"{fileStem}_opening.gpkg");
-                writer.Write(openingFile, session.OutputEpsg, new[] { openingLayer });
-                result.AddViewResult(
-                    new ViewExportResult(
-                        viewData.View.Name,
-                        viewData.Level.Name,
-                        "opening",
-                        openingFile,
-                        openingLayer.Features.Count));
-                completedSteps++;
-                progressCallback?.Invoke(
-                    new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [opening]"));
-            }
-
-            if (session.FeatureTypes.HasFlag(ExportFeatureType.Level) && viewData.LevelLayer != null)
-            {
-                ExportLayer levelLayer = PrepareLayerForWrite(viewData.LevelLayer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem);
-                string levelFile = Path.Combine(session.OutputDirectory, $"{fileStem}_level.gpkg");
-                writer.Write(levelFile, session.OutputEpsg, new[] { levelLayer });
-                result.AddViewResult(
-                    new ViewExportResult(
-                        viewData.View.Name,
-                        viewData.Level.Name,
-                        "level",
-                        levelFile,
-                        levelLayer.Features.Count));
-                completedSteps++;
-                progressCallback?.Invoke(
-                    new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {viewData.View.Name} [level]"));
-            }
+            ExportLayer[] layers = plan.Layers
+                .Select(layerPlan => PrepareLayerForWrite(layerPlan.Layer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem))
+                .ToArray();
+            writer.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+            result.AddArtifactResult(plan.ToResult(ArtifactDisposition.Written));
+            completedSteps++;
+            progressCallback?.Invoke(new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {plan.ArtifactName}"));
         }
 
+        result.SetPendingBaselineSnapshot(BuildBaselineSnapshot(session, viewDecisions, artifactPlans));
         return result;
     }
 
@@ -379,6 +351,403 @@ public sealed class FloorGeoPackageExporter
         }
 
         return count;
+    }
+
+    private static Dictionary<long, ViewChangeDecision> BuildViewChangeDecisions(
+        PreparedExportSession session,
+        ExportBaselineSnapshot? baselineSnapshot)
+    {
+        ExportFingerprintBuilder fingerprintBuilder = new();
+        string configurationFingerprint = BuildConfigurationFingerprint(session, fingerprintBuilder);
+        Dictionary<long, ExportBaselineViewSnapshot> baselineViews = baselineSnapshot?.Views
+            .GroupBy(view => view.ViewId)
+            .Select(group => group.First())
+            .ToDictionary(view => view.ViewId) ?? new Dictionary<long, ExportBaselineViewSnapshot>();
+        Dictionary<long, ViewChangeDecision> decisions = new();
+
+        bool forceRewrite = session.IncrementalExportMode == IncrementalExportMode.AllSelectedViews ||
+                            baselineSnapshot == null ||
+                            !string.Equals(
+                                baselineSnapshot.ConfigurationFingerprint,
+                                configurationFingerprint,
+                                StringComparison.Ordinal);
+
+        foreach (PreparedViewExportData viewData in session.Prepared.Views)
+        {
+            string fingerprint = fingerprintBuilder.ComputeLayerFingerprint(GetSelectedLayers(session.FeatureTypes, viewData));
+            bool hasChanges;
+            string? reason = null;
+            if (forceRewrite)
+            {
+                hasChanges = true;
+            }
+            else if (!baselineViews.TryGetValue(viewData.View.Id.Value, out ExportBaselineViewSnapshot? baselineView))
+            {
+                hasChanges = true;
+                reason = "The view did not exist in the previous baseline.";
+            }
+            else
+            {
+                hasChanges = !string.Equals(baselineView.ContentFingerprint, fingerprint, StringComparison.Ordinal);
+            }
+
+            decisions[viewData.View.Id.Value] = new ViewChangeDecision(viewData, fingerprint, hasChanges, reason);
+        }
+
+        return decisions;
+    }
+
+    private static ExportExecutionSummary BuildExecutionSummary(
+        PreparedExportSession session,
+        ExportBaselineSnapshot? baselineSnapshot,
+        IReadOnlyDictionary<long, ViewChangeDecision> viewDecisions)
+    {
+        string? fullRewriteReason = null;
+        if (session.IncrementalExportMode == IncrementalExportMode.AllSelectedViews)
+        {
+            fullRewriteReason = "Incremental export mode is set to export all selected views.";
+        }
+        else if (baselineSnapshot == null)
+        {
+            fullRewriteReason = "No previous export baseline snapshot was found.";
+        }
+        else
+        {
+            ExportFingerprintBuilder fingerprintBuilder = new();
+            string currentConfigurationFingerprint = BuildConfigurationFingerprint(session, fingerprintBuilder);
+            if (!string.Equals(baselineSnapshot.ConfigurationFingerprint, currentConfigurationFingerprint, StringComparison.Ordinal))
+            {
+                fullRewriteReason = "Export-affecting settings changed since the previous baseline.";
+            }
+        }
+
+        return new ExportExecutionSummary
+        {
+            IncrementalExportMode = session.IncrementalExportMode,
+            ChangedViewCount = viewDecisions.Values.Count(decision => decision.HasChanges),
+            ReusedViewCount = viewDecisions.Values.Count(decision => !decision.HasChanges),
+            FullRewriteReason = fullRewriteReason,
+        };
+    }
+
+    private static string BuildConfigurationFingerprint(PreparedExportSession session, ExportFingerprintBuilder fingerprintBuilder)
+    {
+        List<string> inputs = new()
+        {
+            $"featureTypes:{session.FeatureTypes}",
+            $"coordinateMode:{session.CoordinateMode}",
+            $"targetEpsg:{session.TargetEpsg}",
+            $"outputEpsg:{session.OutputEpsg}",
+            $"sourceEpsg:{session.SourceEpsg?.ToString() ?? "<none>"}",
+            $"unitSource:{session.UnitSource}",
+            $"unitGeometrySource:{session.UnitGeometrySource}",
+            $"unitAttributeSource:{session.UnitAttributeSource}",
+            $"roomCategoryParameter:{session.RoomCategoryParameterName}",
+            $"schemaProfile:{SerializeSchemaProfile(session.ActiveSchemaProfile)}",
+            $"linkOptions:{session.LinkExportOptions.IncludeLinkedModels}|{string.Join(",", session.LinkExportOptions.SelectedLinkInstanceIds.OrderBy(id => id))}",
+        };
+
+        inputs.AddRange(session.FloorCategoryOverrides.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => $"floor:{entry.Key}={entry.Value}"));
+        inputs.AddRange(session.RoomCategoryOverrides.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => $"room:{entry.Key}={entry.Value}"));
+        inputs.AddRange(session.FamilyCategoryOverrides.OrderBy(entry => entry.Key, StringComparer.Ordinal).Select(entry => $"family:{entry.Key}={entry.Value}"));
+        inputs.AddRange(session.AcceptedOpeningFamilies.OrderBy(value => value, StringComparer.Ordinal).Select(value => $"opening:{value}"));
+
+        return fingerprintBuilder.ComputeConfigurationFingerprint(inputs);
+    }
+
+    private static string SerializeSchemaProfile(SchemaProfile profile)
+    {
+        return string.Join(
+            "|",
+            profile.Mappings
+                .OrderBy(mapping => mapping.Layer)
+                .ThenBy(mapping => mapping.FieldName, StringComparer.Ordinal)
+                .ThenBy(mapping => mapping.SourceKey, StringComparer.Ordinal)
+                .Select(mapping => $"{mapping.Layer}:{mapping.FieldName}:{mapping.SourceKind}:{mapping.SourceKey}:{mapping.ConstantValue}:{mapping.TargetType}:{mapping.NullBehavior}:{mapping.DefaultValue}"));
+    }
+
+    private static List<ArtifactPlan> BuildArtifactPlans(PreparedExportSession session)
+    {
+        string safeModelName = SanitizeFileName(session.SourceModelName);
+        HashSet<string> usedFileStems = new(StringComparer.OrdinalIgnoreCase);
+        List<ArtifactPlan> plans = new();
+
+        switch (session.PackageOptions.PackagingMode)
+        {
+            case PackagingMode.PerViewPerFeatureFiles:
+                foreach (PreparedViewExportData viewData in session.Prepared.Views)
+                {
+                    string fileStem = BuildUniqueFileStem(
+                        safeModelName,
+                        SanitizeFileName(viewData.View.Name),
+                        viewData.View.Id.Value,
+                        usedFileStems);
+                    foreach ((string layerName, ExportLayer layer) in GetLayerEntries(session.FeatureTypes, viewData))
+                    {
+                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}_{layerName}.gpkg");
+                        plans.Add(new ArtifactPlan(
+                            $"view:{viewData.View.Id.Value}|layer:{layerName}",
+                            Path.GetFileName(outputFilePath),
+                            outputFilePath,
+                            session.PackageOptions.PackagingMode,
+                            new[] { viewData },
+                            new[] { new ArtifactLayerPlan(layerName, layer) }));
+                    }
+                }
+
+                break;
+
+            case PackagingMode.PerViewGeoPackage:
+                foreach (PreparedViewExportData viewData in session.Prepared.Views)
+                {
+                    List<ArtifactLayerPlan> layers = GetLayerEntries(session.FeatureTypes, viewData)
+                        .Select(entry => new ArtifactLayerPlan(entry.LayerName, entry.Layer))
+                        .ToList();
+                    if (layers.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    string fileStem = BuildUniqueFileStem(
+                        safeModelName,
+                        SanitizeFileName(viewData.View.Name),
+                        viewData.View.Id.Value,
+                        usedFileStems);
+                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}.gpkg");
+                    plans.Add(new ArtifactPlan(
+                        $"view:{viewData.View.Id.Value}",
+                        Path.GetFileName(outputFilePath),
+                        outputFilePath,
+                        session.PackageOptions.PackagingMode,
+                        new[] { viewData },
+                        layers));
+                }
+
+                break;
+
+            case PackagingMode.PerLevelGeoPackage:
+                foreach (IGrouping<long, PreparedViewExportData> group in session.Prepared.Views.GroupBy(view => view.Level.Id.Value))
+                {
+                    List<PreparedViewExportData> viewGroup = group.ToList();
+                    if (viewGroup.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    List<ArtifactLayerPlan> layers = MergeLayerPlans(session.FeatureTypes, viewGroup);
+                    if (layers.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    PreparedViewExportData representative = viewGroup[0];
+                    string stem = BuildUniqueFileStem(
+                        safeModelName,
+                        $"{SanitizeFileName(representative.Level.Name)}_level",
+                        representative.Level.Id.Value,
+                        usedFileStems);
+                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{stem}.gpkg");
+                    plans.Add(new ArtifactPlan(
+                        $"level:{representative.Level.Id.Value}",
+                        Path.GetFileName(outputFilePath),
+                        outputFilePath,
+                        session.PackageOptions.PackagingMode,
+                        viewGroup,
+                        layers));
+                }
+
+                break;
+
+            case PackagingMode.PerBuildingGeoPackage:
+                List<ArtifactLayerPlan> buildingLayers = MergeLayerPlans(session.FeatureTypes, session.Prepared.Views);
+                if (buildingLayers.Count > 0)
+                {
+                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{safeModelName}_building.gpkg");
+                    plans.Add(new ArtifactPlan(
+                        $"building:{session.SourceDocumentKey}",
+                        Path.GetFileName(outputFilePath),
+                        outputFilePath,
+                        session.PackageOptions.PackagingMode,
+                        session.Prepared.Views,
+                        buildingLayers));
+                }
+
+                break;
+        }
+
+        return plans;
+    }
+
+    private static List<ArtifactLayerPlan> MergeLayerPlans(
+        ExportFeatureType featureTypes,
+        IReadOnlyList<PreparedViewExportData> views)
+    {
+        List<ArtifactLayerPlan> layers = new();
+        foreach (string layerName in GetSelectedLayerNames(featureTypes))
+        {
+            List<ExportLayer> sourceLayers = views
+                .Select(view => GetLayerByName(view, layerName))
+                .Where(layer => layer != null)
+                .Cast<ExportLayer>()
+                .ToList();
+            if (sourceLayers.Count == 0)
+            {
+                continue;
+            }
+
+            layers.Add(new ArtifactLayerPlan(layerName, MergeLayers(sourceLayers)));
+        }
+
+        return layers;
+    }
+
+    private static ExportLayer MergeLayers(IReadOnlyList<ExportLayer> sourceLayers)
+    {
+        ExportLayer first = sourceLayers[0];
+        ExportLayer merged = new(first.Name, first.GeometryType, first.Attributes);
+        foreach (ExportLayer layer in sourceLayers)
+        {
+            foreach (IExportFeature feature in layer.Features)
+            {
+                merged.AddFeature(feature);
+            }
+        }
+
+        return merged;
+    }
+
+    private static IEnumerable<(string LayerName, ExportLayer Layer)> GetLayerEntries(
+        ExportFeatureType featureTypes,
+        PreparedViewExportData viewData)
+    {
+        if (featureTypes.HasFlag(ExportFeatureType.Unit) && viewData.UnitLayer != null)
+        {
+            yield return ("unit", viewData.UnitLayer);
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Detail) && viewData.DetailLayer != null)
+        {
+            yield return ("detail", viewData.DetailLayer);
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Opening) && viewData.OpeningLayer != null)
+        {
+            yield return ("opening", viewData.OpeningLayer);
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Level) && viewData.LevelLayer != null)
+        {
+            yield return ("level", viewData.LevelLayer);
+        }
+    }
+
+    private static IReadOnlyList<ExportLayer> GetSelectedLayers(ExportFeatureType featureTypes, PreparedViewExportData viewData)
+    {
+        return GetLayerEntries(featureTypes, viewData)
+            .Select(entry => entry.Layer)
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> GetSelectedLayerNames(ExportFeatureType featureTypes)
+    {
+        List<string> names = new();
+        if (featureTypes.HasFlag(ExportFeatureType.Unit))
+        {
+            names.Add("unit");
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Detail))
+        {
+            names.Add("detail");
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Opening))
+        {
+            names.Add("opening");
+        }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Level))
+        {
+            names.Add("level");
+        }
+
+        return names;
+    }
+
+    private static ExportLayer? GetLayerByName(PreparedViewExportData viewData, string layerName)
+    {
+        return layerName switch
+        {
+            "unit" => viewData.UnitLayer,
+            "detail" => viewData.DetailLayer,
+            "opening" => viewData.OpeningLayer,
+            "level" => viewData.LevelLayer,
+            _ => null,
+        };
+    }
+
+    private static bool CanReuseArtifact(ExportBaselineSnapshot? baselineSnapshot, ArtifactPlan plan)
+    {
+        if (baselineSnapshot == null)
+        {
+            return false;
+        }
+
+        ExportBaselineArtifactSnapshot? baselineArtifact = baselineSnapshot.Artifacts.FirstOrDefault(artifact =>
+            string.Equals(artifact.ArtifactKey, plan.ArtifactKey, StringComparison.Ordinal) &&
+            string.Equals(artifact.PackagingMode, plan.PackagingMode.ToString(), StringComparison.Ordinal) &&
+            string.Equals(artifact.OutputFilePath, plan.OutputFilePath, StringComparison.Ordinal));
+        return baselineArtifact != null && File.Exists(baselineArtifact.OutputFilePath);
+    }
+
+    private static ExportBaselineSnapshot BuildBaselineSnapshot(
+        PreparedExportSession session,
+        IReadOnlyDictionary<long, ViewChangeDecision> viewDecisions,
+        IReadOnlyList<ArtifactPlan> artifactPlans)
+    {
+        ExportFingerprintBuilder fingerprintBuilder = new();
+        Dictionary<long, List<string>> artifactKeysByViewId = artifactPlans
+            .SelectMany(plan => plan.ContributingViewIds.Select(viewId => new { viewId, plan.ArtifactKey }))
+            .GroupBy(entry => entry.viewId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(entry => entry.ArtifactKey).Distinct(StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).ToList());
+
+        return new ExportBaselineSnapshot
+        {
+            BaselineKey = session.BaselineKey,
+            SourceDocumentKey = session.SourceDocumentKey,
+            SourceModelName = session.SourceModelName,
+            ProfileName = session.ProfileName,
+            ConfigurationFingerprint = BuildConfigurationFingerprint(session, fingerprintBuilder),
+            ExportedAtUtc = DateTimeOffset.UtcNow,
+            Views = viewDecisions.Values
+                .Select(decision => new ExportBaselineViewSnapshot
+                {
+                    ViewId = decision.ViewData.View.Id.Value,
+                    ViewName = decision.ViewData.View.Name,
+                    LevelName = decision.ViewData.Level.Name,
+                    ContentFingerprint = decision.ContentFingerprint,
+                    ArtifactKeys = artifactKeysByViewId.TryGetValue(decision.ViewData.View.Id.Value, out List<string>? artifactKeys)
+                        ? artifactKeys
+                        : new List<string>(),
+                })
+                .OrderBy(view => view.ViewName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(view => view.ViewId)
+                .ToList(),
+            Artifacts = artifactPlans
+                .Select(plan => new ExportBaselineArtifactSnapshot
+                {
+                    ArtifactKey = plan.ArtifactKey,
+                    OutputFilePath = plan.OutputFilePath,
+                    PackagingMode = plan.PackagingMode.ToString(),
+                    ContributingViewIds = plan.ContributingViewIds.OrderBy(id => id).ToList(),
+                    LayerNames = plan.LayerNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(),
+                    FeatureCount = plan.FeatureCount,
+                })
+                .OrderBy(artifact => artifact.ArtifactKey, StringComparer.Ordinal)
+                .ToList(),
+        };
     }
 
     private static void EnsureSharedParameters(SharedParameterManager manager, ICollection<string> warnings)
@@ -512,6 +881,96 @@ public sealed class FloorGeoPackageExporter
         public int GetHashCode(Level obj)
         {
             return obj.Id.Value.GetHashCode();
+        }
+    }
+
+    private sealed class ViewChangeDecision
+    {
+        public ViewChangeDecision(PreparedViewExportData viewData, string contentFingerprint, bool hasChanges, string? reason)
+        {
+            ViewData = viewData;
+            ContentFingerprint = contentFingerprint;
+            HasChanges = hasChanges;
+            Reason = reason;
+        }
+
+        public PreparedViewExportData ViewData { get; }
+
+        public string ContentFingerprint { get; }
+
+        public bool HasChanges { get; }
+
+        public string? Reason { get; }
+    }
+
+    private sealed class ArtifactLayerPlan
+    {
+        public ArtifactLayerPlan(string layerName, ExportLayer layer)
+        {
+            LayerName = layerName;
+            Layer = layer;
+        }
+
+        public string LayerName { get; }
+
+        public ExportLayer Layer { get; }
+    }
+
+    private sealed class ArtifactPlan
+    {
+        public ArtifactPlan(
+            string artifactKey,
+            string artifactName,
+            string outputFilePath,
+            PackagingMode packagingMode,
+            IReadOnlyList<PreparedViewExportData> views,
+            IReadOnlyList<ArtifactLayerPlan> layers)
+        {
+            ArtifactKey = artifactKey;
+            ArtifactName = artifactName;
+            OutputFilePath = outputFilePath;
+            PackagingMode = packagingMode;
+            Views = views;
+            Layers = layers;
+        }
+
+        public string ArtifactKey { get; }
+
+        public string ArtifactName { get; }
+
+        public string OutputFilePath { get; }
+
+        public PackagingMode PackagingMode { get; }
+
+        public IReadOnlyList<PreparedViewExportData> Views { get; }
+
+        public IReadOnlyList<ArtifactLayerPlan> Layers { get; }
+
+        public bool ShouldWrite { get; set; }
+
+        public IReadOnlyList<long> ContributingViewIds => Views.Select(view => view.View.Id.Value).Distinct().OrderBy(id => id).ToList();
+
+        public IReadOnlyList<string> ContributingViewNames => Views.Select(view => view.View.Name).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        public IReadOnlyList<string> ContributingLevelNames => Views.Select(view => view.Level.Name).Distinct(StringComparer.Ordinal).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        public IReadOnlyList<string> LayerNames => Layers.Select(layer => layer.LayerName).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+
+        public int FeatureCount => Layers.Sum(layer => layer.Layer.Features.Count);
+
+        public ExportArtifactResult ToResult(ArtifactDisposition disposition)
+        {
+            return new ExportArtifactResult(
+                ArtifactKey,
+                ArtifactName,
+                OutputFilePath,
+                PackagingMode,
+                disposition,
+                ContributingViewIds,
+                ContributingViewNames,
+                ContributingLevelNames,
+                LayerNames,
+                FeatureCount);
         }
     }
 }

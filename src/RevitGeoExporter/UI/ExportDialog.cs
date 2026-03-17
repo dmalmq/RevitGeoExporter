@@ -26,6 +26,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly ComboBox _crsPresetComboBox = new();
     private readonly TextBox _targetEpsgTextBox = new();
     private readonly ComboBox _profileComboBox = new();
+    private readonly ComboBox _incrementalModeComboBox = new();
+    private readonly ComboBox _packagingModeComboBox = new();
     private readonly CheckBox _unitCheckBox = new();
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
@@ -48,6 +50,10 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _manageValidationPoliciesButton = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
+    private readonly CheckBox _validateAfterWriteCheckBox = new();
+    private readonly CheckBox _generateQgisArtifactsCheckBox = new();
+    private readonly CheckBox _openOutputFolderCheckBox = new();
+    private readonly CheckBox _launchQgisCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
     private readonly TextBox _minPolygonAreaTextBox = new();
     private readonly TextBox _minOpeningLengthTextBox = new();
@@ -63,6 +69,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Button _cancelButton = new();
     private readonly Button _previewButton = new();
     private readonly Button _exportButton = new();
+    private readonly Button _batchButton = new();
     private readonly Button _helpButton = new();
     private readonly Label _versionLabel = new();
     private readonly Label _profilesLabel = new();
@@ -77,6 +84,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly Action<ExportProfile, string>? _renameProfileRequested;
     private readonly Action<ExportProfile>? _deleteProfileRequested;
     private readonly Action? _openMappingsRequested;
+    private readonly Action<IWin32Window?>? _batchRequested;
     private readonly IReadOnlyList<LinkSelectionItem> _availableLinks;
     private readonly List<ExportProfile> _profiles;
     private readonly PreviewBasemapSettings _previewBasemapSettings;
@@ -103,6 +111,7 @@ public sealed class ExportDialog : WinFormsForm
         Action<ExportProfile, string>? renameProfileRequested = null,
         Action<ExportProfile>? deleteProfileRequested = null,
         Action? openMappingsRequested = null,
+        Action<IWin32Window?>? batchRequested = null,
         Action<ExportPreviewRequest>? previewRequested = null,
         ModelCoordinateInfo? coordinateInfo = null)
     {
@@ -129,6 +138,7 @@ public sealed class ExportDialog : WinFormsForm
         _renameProfileRequested = renameProfileRequested;
         _deleteProfileRequested = deleteProfileRequested;
         _openMappingsRequested = openMappingsRequested;
+        _batchRequested = batchRequested;
         _previewRequested = previewRequested;
 
         InitializeComponents();
@@ -326,7 +336,7 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
-        _packageCheckBox.CheckedChanged += (_, _) => _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        _packageCheckBox.CheckedChanged += (_, _) => UpdatePackagingState();
         _unitSourceInlineLabel.AutoSize = true;
         _unitSourceComboBox.Width = 180;
         _unitSourceComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -540,13 +550,42 @@ public sealed class ExportDialog : WinFormsForm
     }
     private WinFormsControl BuildPackagingPanel()
     {
-        Label label = new()
+        TableLayoutPanel panel = new()
         {
             Dock = DockStyle.Fill,
-            Text = "When enabled, export also writes a package folder with preview images, a manifest, and optional legend.",
-            AutoEllipsis = false,
+            ColumnCount = 2,
         };
-        return label;
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180f));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+        _incrementalModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        if (_incrementalModeComboBox.Items.Count == 0)
+        {
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.AllSelectedViews));
+            _incrementalModeComboBox.Items.Add(new IncrementalModeItem(IncrementalExportMode.ChangedViewsOnly));
+        }
+
+        _packagingModeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        if (_packagingModeComboBox.Items.Count == 0)
+        {
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewPerFeatureFiles));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerViewGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerLevelGeoPackage));
+            _packagingModeComboBox.Items.Add(new PackagingModeItem(PackagingMode.PerBuildingGeoPackage));
+        }
+
+        _validateAfterWriteCheckBox.AutoSize = true;
+        _generateQgisArtifactsCheckBox.AutoSize = true;
+        _openOutputFolderCheckBox.AutoSize = true;
+        _launchQgisCheckBox.AutoSize = true;
+
+        AddRepairRow(panel, 0, "Incremental mode", _incrementalModeComboBox);
+        AddRepairRow(panel, 1, "Packaging mode", _packagingModeComboBox);
+        AddRepairRow(panel, 2, "Validate after write", _validateAfterWriteCheckBox);
+        AddRepairRow(panel, 3, "Generate QGIS artifacts", _generateQgisArtifactsCheckBox);
+        AddRepairRow(panel, 4, "Open output folder", _openOutputFolderCheckBox);
+        AddRepairRow(panel, 5, "Launch QGIS", _launchQgisCheckBox);
+        return panel;
     }
 
     private WinFormsControl BuildRepairPanel()
@@ -661,6 +700,10 @@ public sealed class ExportDialog : WinFormsForm
         _previewButton.Height = 30;
         _previewButton.Click += (_, _) => ShowPreview();
 
+        _batchButton.Width = 90;
+        _batchButton.Height = 30;
+        _batchButton.Click += (_, _) => _batchRequested?.Invoke(this);
+
         _helpButton.Width = 90;
         _helpButton.Height = 30;
         _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
@@ -669,6 +712,7 @@ public sealed class ExportDialog : WinFormsForm
         actions.Controls.Add(_cancelButton);
         actions.Controls.Add(_exportButton);
         actions.Controls.Add(_previewButton);
+        actions.Controls.Add(_batchButton);
         actions.Controls.Add(_helpButton);
         AcceptButton = _exportButton;
         CancelButton = _cancelButton;
@@ -739,7 +783,13 @@ public sealed class ExportDialog : WinFormsForm
         _diagnosticsCheckBox.Checked = settings.GenerateDiagnosticsReport;
         _packageCheckBox.Checked = settings.GeneratePackageOutput;
         _packageLegendCheckBox.Checked = settings.IncludePackageLegend;
-        _packageLegendCheckBox.Enabled = _packageCheckBox.Checked;
+        SelectIncrementalMode(settings.IncrementalExportMode);
+        SelectPackagingMode(settings.PackagingMode);
+        _validateAfterWriteCheckBox.Checked = settings.ValidateAfterWrite;
+        _generateQgisArtifactsCheckBox.Checked = settings.GenerateQgisArtifacts;
+        _openOutputFolderCheckBox.Checked = settings.PostExportActions?.OpenOutputFolder == true;
+        _launchQgisCheckBox.Checked = settings.PostExportActions?.LaunchQgis == true;
+        UpdatePackagingState();
         LoadGeometryRepairOptions(settings.GeometryRepairOptions);
         PopulateLinkList();
 
@@ -772,9 +822,14 @@ public sealed class ExportDialog : WinFormsForm
         _cancelButton.Text = UiLanguageText.Get(_language, "Common.Cancel", "Cancel");
         _previewButton.Text = UiLanguageText.Get(_language, "ExportDialog.Preview", "Preview...");
         _exportButton.Text = UiLanguageText.Get(_language, "ExportDialog.ExportButton", "Export");
+        _batchButton.Text = UiLanguageText.Select(_language, "Batch...", "バッチ...");
         _helpButton.Text = UiLanguageText.Get(_language, "Common.Help", "Help");
         _packageCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.WritePackage", "Write GIS package");
         _packageLegendCheckBox.Text = UiLanguageText.Get(_language, "ExportDialog.IncludeLegend", "Include legend file");
+        _validateAfterWriteCheckBox.Text = UiLanguageText.Select(_language, "Validate package outputs after write", "書き出し後にパッケージを検証");
+        _generateQgisArtifactsCheckBox.Text = UiLanguageText.Select(_language, "Generate QGIS handoff files", "QGIS 引き継ぎファイルを生成");
+        _openOutputFolderCheckBox.Text = UiLanguageText.Select(_language, "Open output folder after export", "出力後にフォルダーを開く");
+        _launchQgisCheckBox.Text = UiLanguageText.Select(_language, "Launch QGIS after export", "出力後に QGIS を起動");
         _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Geometry Source", "ユニット形状の取得元");
         _unitAttributeSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Attribute Source", "ユニット属性の取得元");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
@@ -877,9 +932,14 @@ public sealed class ExportDialog : WinFormsForm
             outputDirectory,
             epsg,
             featureTypes,
+            GetSelectedIncrementalMode(),
             _diagnosticsCheckBox.Checked,
             _packageCheckBox.Checked,
             _packageLegendCheckBox.Checked,
+            GetSelectedPackagingMode(),
+            _validateAfterWriteCheckBox.Checked,
+            _generateQgisArtifactsCheckBox.Checked,
+            BuildPostExportActions(),
             BuildGeometryRepairOptions(),
             (_profileComboBox.SelectedItem as ProfileItem)?.Profile?.Name,
             _language,
@@ -1247,9 +1307,14 @@ public sealed class ExportDialog : WinFormsForm
             TargetEpsg = targetEpsg,
             FeatureTypes = GetSelectedFeatureTypes(),
             SelectedViewIds = GetSelectedViews().Select(x => x.Id.Value).ToList(),
+            IncrementalExportMode = GetSelectedIncrementalMode(),
             GenerateDiagnosticsReport = _diagnosticsCheckBox.Checked,
             GeneratePackageOutput = _packageCheckBox.Checked,
             IncludePackageLegend = _packageLegendCheckBox.Checked,
+            PackagingMode = GetSelectedPackagingMode(),
+            ValidateAfterWrite = _validateAfterWriteCheckBox.Checked,
+            GenerateQgisArtifacts = _generateQgisArtifactsCheckBox.Checked,
+            PostExportActions = BuildPostExportActions(),
             GeometryRepairOptions = BuildGeometryRepairOptions(),
             UiLanguage = _language,
             CoordinateMode = _coordinateMode,
@@ -1485,6 +1550,61 @@ public sealed class ExportDialog : WinFormsForm
         return double.TryParse(value, out double parsed) ? parsed : fallback;
     }
 
+    private void UpdatePackagingState()
+    {
+        bool packageEnabled = _packageCheckBox.Checked;
+        _packageLegendCheckBox.Enabled = packageEnabled;
+        _generateQgisArtifactsCheckBox.Enabled = packageEnabled;
+        _launchQgisCheckBox.Enabled = packageEnabled;
+    }
+
+    private IncrementalExportMode GetSelectedIncrementalMode()
+    {
+        return (_incrementalModeComboBox.SelectedItem as IncrementalModeItem)?.Mode ?? IncrementalExportMode.AllSelectedViews;
+    }
+
+    private PackagingMode GetSelectedPackagingMode()
+    {
+        return (_packagingModeComboBox.SelectedItem as PackagingModeItem)?.Mode ?? PackagingMode.PerViewPerFeatureFiles;
+    }
+
+    private void SelectIncrementalMode(IncrementalExportMode mode)
+    {
+        for (int i = 0; i < _incrementalModeComboBox.Items.Count; i++)
+        {
+            if (_incrementalModeComboBox.Items[i] is IncrementalModeItem item && item.Mode == mode)
+            {
+                _incrementalModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _incrementalModeComboBox.SelectedIndex = 0;
+    }
+
+    private void SelectPackagingMode(PackagingMode mode)
+    {
+        for (int i = 0; i < _packagingModeComboBox.Items.Count; i++)
+        {
+            if (_packagingModeComboBox.Items[i] is PackagingModeItem item && item.Mode == mode)
+            {
+                _packagingModeComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _packagingModeComboBox.SelectedIndex = 0;
+    }
+
+    private PostExportActionOptions BuildPostExportActions()
+    {
+        return new PostExportActionOptions
+        {
+            OpenOutputFolder = _openOutputFolderCheckBox.Checked,
+            LaunchQgis = _launchQgisCheckBox.Checked,
+        };
+    }
+
     private sealed class ViewSelectionItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -1534,6 +1654,44 @@ public sealed class ExportDialog : WinFormsForm
         public override string ToString()
         {
             return $"EPSG:{Epsg} - {ZoneName}";
+        }
+    }
+
+    private sealed class IncrementalModeItem
+    {
+        public IncrementalModeItem(IncrementalExportMode mode)
+        {
+            Mode = mode;
+        }
+
+        public IncrementalExportMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode == IncrementalExportMode.ChangedViewsOnly
+                ? "Changed views only"
+                : "All selected views";
+        }
+    }
+
+    private sealed class PackagingModeItem
+    {
+        public PackagingModeItem(PackagingMode mode)
+        {
+            Mode = mode;
+        }
+
+        public PackagingMode Mode { get; }
+
+        public override string ToString()
+        {
+            return Mode switch
+            {
+                PackagingMode.PerViewGeoPackage => "Per view GeoPackage",
+                PackagingMode.PerLevelGeoPackage => "Per level GeoPackage",
+                PackagingMode.PerBuildingGeoPackage => "Per building GeoPackage",
+                _ => "Per view / feature files",
+            };
         }
     }
 

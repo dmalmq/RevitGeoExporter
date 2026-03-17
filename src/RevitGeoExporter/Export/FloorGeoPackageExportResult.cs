@@ -1,15 +1,25 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using RevitGeoExporter.Core.Diagnostics;
 
 namespace RevitGeoExporter.Export;
 
 public sealed class FloorGeoPackageExportResult
 {
-    private readonly List<ViewExportResult> _viewResults = new();
+    private readonly List<ExportArtifactResult> _artifacts = new();
     private readonly List<string> _warnings = new();
 
-    public IReadOnlyList<ViewExportResult> ViewResults => _viewResults;
+    public IReadOnlyList<ExportArtifactResult> ArtifactResults => _artifacts;
+
+    public IReadOnlyList<ViewExportResult> ViewResults => _artifacts
+        .Select(artifact => new ViewExportResult(
+            artifact.ContributingViewNames.FirstOrDefault() ?? artifact.ArtifactName,
+            artifact.ContributingLevelNames.FirstOrDefault() ?? string.Empty,
+            artifact.LayerSummary,
+            artifact.OutputFilePath,
+            artifact.FeatureCount))
+        .ToList();
 
     public IReadOnlyList<string> Warnings => _warnings;
 
@@ -21,14 +31,20 @@ public sealed class FloorGeoPackageExportResult
 
     public ExportChangeSummary? ChangeSummary { get; private set; }
 
-    public void AddViewResult(ViewExportResult result)
+    public ExportExecutionSummary? ExecutionSummary { get; private set; }
+
+    public PackageValidationResult? PackageValidationResult { get; private set; }
+
+    public ExportBaselineSnapshot? PendingBaselineSnapshot { get; private set; }
+
+    public void AddArtifactResult(ExportArtifactResult result)
     {
         if (result is null)
         {
             throw new ArgumentNullException(nameof(result));
         }
 
-        _viewResults.Add(result);
+        _artifacts.Add(result);
     }
 
     public void AddWarning(string warning)
@@ -66,6 +82,21 @@ public sealed class FloorGeoPackageExportResult
     public void SetChangeSummary(ExportChangeSummary? changeSummary)
     {
         ChangeSummary = changeSummary;
+    }
+
+    public void SetExecutionSummary(ExportExecutionSummary? executionSummary)
+    {
+        ExecutionSummary = executionSummary;
+    }
+
+    public void SetPackageValidationResult(PackageValidationResult? validationResult)
+    {
+        PackageValidationResult = validationResult;
+    }
+
+    public void SetPendingBaselineSnapshot(ExportBaselineSnapshot? snapshot)
+    {
+        PendingBaselineSnapshot = snapshot;
     }
 }
 
