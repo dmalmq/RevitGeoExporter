@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Autodesk.Revit.DB;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Union;
+using NetTopologySuite.Precision;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
@@ -57,9 +58,7 @@ public sealed class LevelBoundaryBuilder
             return false;
         }
 
-        // Heal minor topology artifacts produced by overlapping/touching polygons.
-        Geometry normalized = unioned.Buffer(0d);
-        Geometry repaired = ApplyLevelBoundaryRepair(normalized, gapClosingThresholdMeters);
+        Geometry repaired = HealLevelGeometry(unioned, gapClosingThresholdMeters, viewName, warnings);
         List<Polygon2D> polygons = ExtractPolygons(repaired, maxRetainedHoleSizeMeters);
         if (polygons.Count == 0)
         {
@@ -80,6 +79,64 @@ public sealed class LevelBoundaryBuilder
                 warnings));
 
         return true;
+    }
+
+    private static Geometry HealLevelGeometry(
+        Geometry unioned,
+        double gapClosingThresholdMeters,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        Geometry normalized = unioned.Buffer(0d);
+        if (gapClosingThresholdMeters <= 0d)
+        {
+            return normalized;
+        }
+
+        try
+        {
+            Geometry healed = ApplyLevelBoundaryRepair(normalized, gapClosingThresholdMeters);
+            if (!healed.IsEmpty)
+            {
+                return healed;
+            }
+
+            warnings.Add($"Level boundary topology healing produced empty geometry for view '{viewName ?? "(unknown)"}'; using normalized union geometry.");
+            return normalized;
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reduced = reducer.Reduce(normalized);
+                Geometry healedReduced = ApplyLevelBoundaryRepair(reduced, gapClosingThresholdMeters);
+                warnings.Add($"Level boundary topology healing required reduced precision for view '{viewName ?? "(unknown)"}'.");
+                return healedReduced.IsEmpty ? normalized : healedReduced;
+            }
+            catch (TopologyException)
+            {
+                warnings.Add($"Level boundary topology healing failed for view '{viewName ?? "(unknown)"}'; using normalized union geometry.");
+                return normalized;
+            }
+        }
+    }
+
+    private static Geometry ApplyLevelBoundaryRepair(Geometry geometry, double gapClosingThresholdMeters)
+    {
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryFactory.CreateGeometryCollection();
+        }
+
+        Geometry repaired = geometry;
+        if (gapClosingThresholdMeters > 0d)
+        {
+            double halfGap = gapClosingThresholdMeters / 2d;
+            repaired = repaired.Buffer(halfGap).Buffer(-halfGap);
+        }
+
+        return repaired.Buffer(0d);
     }
 
     private static Dictionary<string, object?> BuildAttributes(
@@ -221,23 +278,6 @@ public sealed class LevelBoundaryBuilder
         return !ring.IsEmpty;
     }
 
-    private static Geometry ApplyLevelBoundaryRepair(Geometry geometry, double gapClosingThresholdMeters)
-    {
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return GeometryFactory.CreateGeometryCollection();
-        }
-
-        Geometry repaired = geometry;
-        if (gapClosingThresholdMeters > 0d)
-        {
-            double halfGap = gapClosingThresholdMeters / 2d;
-            repaired = repaired.Buffer(halfGap).Buffer(-halfGap);
-        }
-
-        return repaired.Buffer(0d);
-    }
-
     private static List<Polygon2D> ExtractPolygons(Geometry geometry, double maxRetainedHoleSizeMeters)
     {
         List<Polygon2D> polygons = new();
@@ -303,7 +343,6 @@ public sealed class LevelBoundaryBuilder
 
         return new Polygon2D(exterior, interior);
     }
-
 
     private static bool IsSmallHole(LineString ring, double maxRetainedHoleSizeMeters)
     {
