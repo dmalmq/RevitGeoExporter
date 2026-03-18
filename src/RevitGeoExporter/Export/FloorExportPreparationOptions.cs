@@ -18,6 +18,10 @@ public sealed class FloorExportPreparationOptions
 
     public IReadOnlyList<string>? InitialWarnings { get; set; }
 
+    /// <summary>
+    /// Geometry repair settings for export preparation.
+    /// Unit-level and level-boundary gap/hole controls are configured separately via <see cref="GeometryRepairOptions"/>.
+    /// </summary>
     public GeometryRepairOptions? GeometryRepairOptions { get; set; }
 
     public UnitSource UnitSource { get; set; } = UnitSource.Floors;

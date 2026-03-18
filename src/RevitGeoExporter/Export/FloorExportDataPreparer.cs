@@ -280,12 +280,13 @@ public sealed class FloorExportDataPreparer
                         levelId,
                         ordinal,
                         unitFeatures,
-                        geometryRepairOptions,
                         hostSourceDocumentKey,
                         hostSourceDocumentName,
                         levelMetadata.HasPersistedId,
                         activeSchemaProfile,
                         context.View.Name,
+                        geometryRepairOptions.LevelBoundaryGapClosingThresholdMeters,
+                        geometryRepairOptions.LevelBoundaryMaxHoleSizeMeters,
                         viewWarnings,
                         out ExportPolygon? levelBoundary) &&
                     levelBoundary != null)

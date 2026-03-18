@@ -4,7 +4,6 @@ using Autodesk.Revit.DB;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
-using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
@@ -21,12 +20,13 @@ public sealed class LevelBoundaryBuilder
         string levelId,
         int ordinal,
         IReadOnlyList<ExportPolygon> unitFeatures,
-        GeometryRepairOptions geometryRepairOptions,
         string sourceDocumentKey,
         string sourceDocumentName,
         bool hasPersistedExportId,
         SchemaProfile? schemaProfile,
         string? viewName,
+        double gapClosingThresholdMeters,
+        double maxRetainedHoleSizeMeters,
         ICollection<string> warnings,
         out ExportPolygon? boundaryFeature)
     {
@@ -58,8 +58,8 @@ public sealed class LevelBoundaryBuilder
             return false;
         }
 
-        Geometry repaired = HealLevelGeometry(unioned, geometryRepairOptions, viewName, warnings);
-        List<Polygon2D> polygons = ExtractPolygons(repaired);
+        Geometry repaired = HealLevelGeometry(unioned, gapClosingThresholdMeters, viewName, warnings);
+        List<Polygon2D> polygons = ExtractPolygons(repaired, maxRetainedHoleSizeMeters);
         if (polygons.Count == 0)
         {
             return false;
@@ -83,20 +83,19 @@ public sealed class LevelBoundaryBuilder
 
     private static Geometry HealLevelGeometry(
         Geometry unioned,
-        GeometryRepairOptions geometryRepairOptions,
+        double gapClosingThresholdMeters,
         string? viewName,
         ICollection<string> warnings)
     {
         Geometry normalized = unioned.Buffer(0d);
-        double threshold = geometryRepairOptions?.MergeNearbyBoundaryThresholdMeters ?? 0d;
-        if (threshold <= 0d)
+        if (gapClosingThresholdMeters <= 0d)
         {
             return normalized;
         }
 
         try
         {
-            Geometry healed = ApplyCloseOpen(normalized, threshold);
+            Geometry healed = ApplyLevelBoundaryRepair(normalized, gapClosingThresholdMeters);
             if (!healed.IsEmpty)
             {
                 return healed;
@@ -111,7 +110,7 @@ public sealed class LevelBoundaryBuilder
             {
                 GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
                 Geometry reduced = reducer.Reduce(normalized);
-                Geometry healedReduced = ApplyCloseOpen(reduced, threshold);
+                Geometry healedReduced = ApplyLevelBoundaryRepair(reduced, gapClosingThresholdMeters);
                 warnings.Add($"Level boundary topology healing required reduced precision for view '{viewName ?? "(unknown)"}'.");
                 return healedReduced.IsEmpty ? normalized : healedReduced;
             }
@@ -123,11 +122,21 @@ public sealed class LevelBoundaryBuilder
         }
     }
 
-    private static Geometry ApplyCloseOpen(Geometry geometry, double threshold)
+    private static Geometry ApplyLevelBoundaryRepair(Geometry geometry, double gapClosingThresholdMeters)
     {
-        Geometry closed = geometry.Buffer(threshold).Buffer(-threshold);
-        Geometry opened = closed.Buffer(-threshold).Buffer(threshold);
-        return opened.Buffer(0d);
+        if (geometry == null || geometry.IsEmpty)
+        {
+            return GeometryFactory.CreateGeometryCollection();
+        }
+
+        Geometry repaired = geometry;
+        if (gapClosingThresholdMeters > 0d)
+        {
+            double halfGap = gapClosingThresholdMeters / 2d;
+            repaired = repaired.Buffer(halfGap).Buffer(-halfGap);
+        }
+
+        return repaired.Buffer(0d);
     }
 
     private static Dictionary<string, object?> BuildAttributes(
@@ -269,13 +278,13 @@ public sealed class LevelBoundaryBuilder
         return !ring.IsEmpty;
     }
 
-    private static List<Polygon2D> ExtractPolygons(Geometry geometry)
+    private static List<Polygon2D> ExtractPolygons(Geometry geometry, double maxRetainedHoleSizeMeters)
     {
         List<Polygon2D> polygons = new();
         switch (geometry)
         {
             case Polygon polygon:
-                Polygon2D? converted = ToPolygon2D(polygon);
+                Polygon2D? converted = ToPolygon2D(polygon, maxRetainedHoleSizeMeters);
                 if (converted != null)
                 {
                     polygons.Add(converted);
@@ -287,7 +296,7 @@ public sealed class LevelBoundaryBuilder
                 {
                     if (multiPolygon.GetGeometryN(i) is Polygon child)
                     {
-                        Polygon2D? childPolygon = ToPolygon2D(child);
+                        Polygon2D? childPolygon = ToPolygon2D(child, maxRetainedHoleSizeMeters);
                         if (childPolygon != null)
                         {
                             polygons.Add(childPolygon);
@@ -299,7 +308,7 @@ public sealed class LevelBoundaryBuilder
             case GeometryCollection collection:
                 for (int i = 0; i < collection.NumGeometries; i++)
                 {
-                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i)));
+                    polygons.AddRange(ExtractPolygons(collection.GetGeometryN(i), maxRetainedHoleSizeMeters));
                 }
 
                 break;
@@ -308,7 +317,7 @@ public sealed class LevelBoundaryBuilder
         return polygons;
     }
 
-    private static Polygon2D? ToPolygon2D(Polygon polygon)
+    private static Polygon2D? ToPolygon2D(Polygon polygon, double maxRetainedHoleSizeMeters)
     {
         IReadOnlyList<Point2D>? exterior = ToPointList(polygon.ExteriorRing.Coordinates);
         if (exterior == null)
@@ -319,7 +328,13 @@ public sealed class LevelBoundaryBuilder
         List<IReadOnlyList<Point2D>> interior = new();
         for (int i = 0; i < polygon.NumInteriorRings; i++)
         {
-            IReadOnlyList<Point2D>? ring = ToPointList(polygon.GetInteriorRingN(i).Coordinates);
+            LineString interiorRing = polygon.GetInteriorRingN(i);
+            if (maxRetainedHoleSizeMeters > 0d && IsSmallHole(interiorRing, maxRetainedHoleSizeMeters))
+            {
+                continue;
+            }
+
+            IReadOnlyList<Point2D>? ring = ToPointList(interiorRing.Coordinates);
             if (ring != null)
             {
                 interior.Add(ring);
@@ -327,6 +342,17 @@ public sealed class LevelBoundaryBuilder
         }
 
         return new Polygon2D(exterior, interior);
+    }
+
+    private static bool IsSmallHole(LineString ring, double maxRetainedHoleSizeMeters)
+    {
+        Envelope envelope = ring.EnvelopeInternal;
+        if (envelope == null || envelope.IsNull)
+        {
+            return false;
+        }
+
+        return Math.Max(envelope.Width, envelope.Height) <= maxRetainedHoleSizeMeters;
     }
 
     private static IReadOnlyList<Point2D>? ToPointList(Coordinate[] coordinates)
