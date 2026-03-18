@@ -285,6 +285,8 @@ public sealed class FloorExportDataPreparer
                         levelMetadata.HasPersistedId,
                         activeSchemaProfile,
                         context.View.Name,
+                        geometryRepairOptions.LevelBoundaryGapClosingThresholdMeters,
+                        geometryRepairOptions.LevelBoundaryMaxHoleSizeMeters,
                         viewWarnings,
                         out ExportPolygon? levelBoundary) &&
                     levelBoundary != null)
