@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RevitGeoExporter.Core", "src\RevitGeoExporter.Core\RevitGeoExporter.Core.csproj", "{D3A6E5DF-075C-437D-AB05-914EE8AD80D5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RevitGeoExporter", "src\RevitGeoExporter\RevitGeoExporter.csproj", "{331D4009-08CA-4112-A958-0AE1861A1636}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RevitGeoExporter.Core.Tests", "tests\RevitGeoExporter.Core.Tests\RevitGeoExporter.Core.Tests.csproj", "{E0BA2185-2125-439D-AC74-7B287FA51968}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D3A6E5DF-075C-437D-AB05-914EE8AD80D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D3A6E5DF-075C-437D-AB05-914EE8AD80D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D3A6E5DF-075C-437D-AB05-914EE8AD80D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D3A6E5DF-075C-437D-AB05-914EE8AD80D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{331D4009-08CA-4112-A958-0AE1861A1636}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{331D4009-08CA-4112-A958-0AE1861A1636}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{331D4009-08CA-4112-A958-0AE1861A1636}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{331D4009-08CA-4112-A958-0AE1861A1636}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E0BA2185-2125-439D-AC74-7B287FA51968}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E0BA2185-2125-439D-AC74-7B287FA51968}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E0BA2185-2125-439D-AC74-7B287FA51968}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E0BA2185-2125-439D-AC74-7B287FA51968}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

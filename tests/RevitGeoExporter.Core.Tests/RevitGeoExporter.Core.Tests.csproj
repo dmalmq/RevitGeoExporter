@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RevitGeoExporter.Core\RevitGeoExporter.Core.csproj" />
+    <ProjectReference Include="..\..\src\RevitGeoExporter\RevitGeoExporter.csproj" />
   </ItemGroup>
 
   <ItemGroup>

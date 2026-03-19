@@ -1,0 +1,19 @@
+{
+  "ProjectKey": "sample-retail-mall",
+  "Rules": [
+    { "RuleType": 1, "MatchValue": "Shop", "ResolvedValue": "room" },
+    { "RuleType": 1, "MatchValue": "Tenant", "ResolvedValue": "room" },
+    { "RuleType": 1, "MatchValue": "Food Court", "ResolvedValue": "foodservice" },
+    { "RuleType": 1, "MatchValue": "Cafe", "ResolvedValue": "foodservice" },
+    { "RuleType": 1, "MatchValue": "Lobby", "ResolvedValue": "lobby" },
+    { "RuleType": 1, "MatchValue": "Atrium", "ResolvedValue": "walkway.island" },
+    { "RuleType": 1, "MatchValue": "Mall Corridor", "ResolvedValue": "walkway" },
+    { "RuleType": 1, "MatchValue": "Back of House", "ResolvedValue": "nonpublic" },
+    { "RuleType": 1, "MatchValue": "Storage", "ResolvedValue": "storage" },
+    { "RuleType": 1, "MatchValue": "Family Restroom", "ResolvedValue": "restroom.family" },
+    { "RuleType": 1, "MatchValue": "Male Restroom", "ResolvedValue": "restroom.male" },
+    { "RuleType": 1, "MatchValue": "Female Restroom", "ResolvedValue": "restroom.female" },
+    { "RuleType": 1, "MatchValue": "Nursing Room", "ResolvedValue": "mothersroom" },
+    { "RuleType": 1, "MatchValue": "Play Area", "ResolvedValue": "recreation" }
+  ]
+}

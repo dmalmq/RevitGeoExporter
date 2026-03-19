@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Preview and Assignments</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ol, ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    .badge { display: inline-block; margin: 0 8px 8px 0; padding: 4px 10px; border-radius: 999px; background: #eef3f9; border: 1px solid #d7e2ef; color: #27486a; font-size: 12px; font-weight: 600; }
+    .note { color: #617182; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Preview Workspace</p>
+      <h1>Preview and Assignments</h1>
+      <p>The preview window now mirrors the export dialog with a card-based layout: filters on the left, the map workspace in the center, and the inspector on the right.</p>
+      <div>
+        <span class="badge">Search</span>
+        <span class="badge">Layers</span>
+        <span class="badge">Details</span>
+        <span class="badge">Assignments</span>
+        <span class="badge">Warnings</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Layout overview</h2>
+      <ul>
+        <li>The left rail contains <strong>Search</strong>, <strong>Map layers</strong>, <strong>Filters</strong>, and <strong>View tools</strong>.</li>
+        <li>The center workspace shows the legend, status hints, and the preview canvas.</li>
+        <li>The right inspector keeps <strong>Details</strong>, <strong>Assignments</strong>, and <strong>Warnings</strong> together in one place.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Inspecting features</h2>
+      <ul>
+        <li>Click a feature on the canvas to inspect its metadata in the <strong>Details</strong> tab.</li>
+        <li>The warnings tab groups validation or preparation issues that are relevant to the current view.</li>
+        <li>An empty-state message is shown when nothing is selected, so the next step is obvious for new users.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Assignments</h2>
+      <ul>
+        <li>Unassigned floor-derived units can be reviewed and assigned to supported categories without modifying the Revit model.</li>
+        <li>The assignments tab shows the parsed candidate, the current value, and any pending change before you save.</li>
+        <li>You can assign, clear an override, save staged changes, or discard them before closing the preview.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Filters and view tools</h2>
+      <ul>
+        <li>Search filters by feature name, category, or export ID.</li>
+        <li>Layer toggles, warning filters, override filters, and unassigned-only filters update the map immediately.</li>
+        <li>Basemap and survey-point options stay disabled with an inline reason when the current preview cannot show them.</li>
+        <li>Use <strong>Fit</strong> and <strong>Reset</strong> for quick framing, and keep using mouse wheel zoom and drag-to-pan navigation.</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <h2>Related workflow</h2>
+      <ul>
+        <li><a href="help:ExportWorkflow">Export Workflow</a> for the main export dialog steps.</li>
+        <li><a href="help:SettingsAndProfiles">Settings and Profiles</a> for exporter-side mappings and defaults.</li>
+        <li><a href="help:ValidationAndDiagnostics">Validation and Diagnostics</a> for issues that can still block export.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

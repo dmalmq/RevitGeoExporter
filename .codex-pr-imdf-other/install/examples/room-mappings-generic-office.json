@@ -1,0 +1,20 @@
+{
+  "ProjectKey": "sample-generic-office",
+  "Rules": [
+    { "RuleType": 1, "MatchValue": "Office", "ResolvedValue": "office" },
+    { "RuleType": 1, "MatchValue": "Open Office", "ResolvedValue": "office" },
+    { "RuleType": 1, "MatchValue": "Meeting Room", "ResolvedValue": "conferenceroom" },
+    { "RuleType": 1, "MatchValue": "Conference Room", "ResolvedValue": "conferenceroom" },
+    { "RuleType": 1, "MatchValue": "Phone Booth", "ResolvedValue": "phoneroom" },
+    { "RuleType": 1, "MatchValue": "Break Room", "ResolvedValue": "lounge" },
+    { "RuleType": 1, "MatchValue": "Kitchen", "ResolvedValue": "kitchen" },
+    { "RuleType": 1, "MatchValue": "Lobby", "ResolvedValue": "lobby" },
+    { "RuleType": 1, "MatchValue": "Reception", "ResolvedValue": "lobby" },
+    { "RuleType": 1, "MatchValue": "Storage", "ResolvedValue": "storage" },
+    { "RuleType": 1, "MatchValue": "Server Room", "ResolvedValue": "serverroom" },
+    { "RuleType": 1, "MatchValue": "WC Male", "ResolvedValue": "restroom.male" },
+    { "RuleType": 1, "MatchValue": "WC Female", "ResolvedValue": "restroom.female" },
+    { "RuleType": 1, "MatchValue": "Accessible WC", "ResolvedValue": "restroom.wheelchair" },
+    { "RuleType": 1, "MatchValue": "Corridor", "ResolvedValue": "walkway" }
+  ]
+}

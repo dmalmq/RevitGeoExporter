@@ -1,0 +1,47 @@
+# Build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# User/IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Installer output
+install/output/
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# ReSharper / Rider
+_ReSharper*/
+*.DotSettings.user
+
+# JetBrains
+.idea/
+
+# Custom Ignore Rules
+.claude/
+.dotnet-home/
+node_modules/
+package.json
+package-lock.json
+install/dist/
+install/output*/
+install/*.zip
+tmp/
+tmp_*.cs

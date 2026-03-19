@@ -30,6 +30,7 @@ public sealed class PreviewCanvasControl : Control
     private PreviewBasemapSettings _basemapSettings = new(PreviewBasemapSettings.DefaultUrlTemplate, PreviewBasemapSettings.DefaultAttribution);
     private string _basemapStatusMessage = string.Empty;
     private Point2D? _surveyPoint;
+    private bool _pendingFitToFeatures;
 
     public PreviewCanvasControl()
     {
@@ -100,9 +101,10 @@ public sealed class PreviewCanvasControl : Control
         _bounds = bounds;
         _surveyPoint = surveyPoint;
         _selectedFeature = null;
+        SetHoveredFeature(null);
         ClearBasemapStatus();
-        ResetView();
         NotifySelectionChanged();
+        Invalidate();
     }
 
     public void ConfigureBasemap(PreviewMapContext? mapContext, PreviewBasemapSettings? basemapSettings)
@@ -115,13 +117,19 @@ public sealed class PreviewCanvasControl : Control
 
     public void FitToFeatures()
     {
-        Bounds2D visibleBounds = GetVisibleBounds();
-        _transform = ViewTransform2D.Fit(visibleBounds, ClientSize.Width, ClientSize.Height, 24d);
-        Invalidate();
+        _pendingFitToFeatures = false;
+        ApplyFitToFeatures();
+    }
+
+    public void RequestFitToFeatures()
+    {
+        _pendingFitToFeatures = true;
+        TryApplyPendingFitToFeatures();
     }
 
     public void ResetView()
     {
+        _pendingFitToFeatures = false;
         _transform = ViewTransform2D.Fit(IncludeSurveyPointInBounds(_bounds), ClientSize.Width, ClientSize.Height, 24d);
         _selectedFeature = null;
         NotifySelectionChanged();
@@ -142,6 +150,12 @@ public sealed class PreviewCanvasControl : Control
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+
+        if (TryApplyPendingFitToFeatures())
+        {
+            return;
+        }
+
         _transform = _transform.WithViewportSize(ClientSize.Width, ClientSize.Height);
         Invalidate();
     }
@@ -343,7 +357,31 @@ public sealed class PreviewCanvasControl : Control
         return true;
     }
 
-        private Bounds2D GetVisibleBounds()
+    private bool TryApplyPendingFitToFeatures()
+    {
+        if (!_pendingFitToFeatures || !HasUsableViewport())
+        {
+            return false;
+        }
+
+        _pendingFitToFeatures = false;
+        ApplyFitToFeatures();
+        return true;
+    }
+
+    private void ApplyFitToFeatures()
+    {
+        Bounds2D visibleBounds = GetVisibleBounds();
+        _transform = ViewTransform2D.Fit(visibleBounds, ClientSize.Width, ClientSize.Height, 24d);
+        Invalidate();
+    }
+
+    private bool HasUsableViewport()
+    {
+        return ClientSize.Width > 0 && ClientSize.Height > 0;
+    }
+
+    private Bounds2D GetVisibleBounds()
     {
         Bounds2D visibleBounds = FeatureBoundsCalculator.FromFeatures(GetVisibleFeatures().Select(x => x.Feature));
         Bounds2D fallbackBounds = _bounds.IsEmpty ? visibleBounds : _bounds;
@@ -429,7 +467,7 @@ public sealed class PreviewCanvasControl : Control
         graphics.DrawPath(outlinePen, path);
     }
 
-        private void DrawLineFeature(Graphics graphics, ExportLineString lineString, PreviewFeatureData feature, bool selected)
+    private void DrawLineFeature(Graphics graphics, ExportLineString lineString, PreviewFeatureData feature, bool selected)
     {
         PointF[] points = lineString.LineString.Points
             .Select(point => ToPointF(_transform.WorldToScreen(point)))

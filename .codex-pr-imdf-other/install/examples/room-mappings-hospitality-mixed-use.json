@@ -1,0 +1,20 @@
+{
+  "ProjectKey": "sample-hospitality-mixed-use",
+  "Rules": [
+    { "RuleType": 1, "MatchValue": "Guest Room", "ResolvedValue": "room" },
+    { "RuleType": 1, "MatchValue": "Suite", "ResolvedValue": "privatelounge" },
+    { "RuleType": 1, "MatchValue": "Lounge", "ResolvedValue": "lounge" },
+    { "RuleType": 1, "MatchValue": "Private Lounge", "ResolvedValue": "privatelounge" },
+    { "RuleType": 1, "MatchValue": "Fitness", "ResolvedValue": "fitnessroom" },
+    { "RuleType": 1, "MatchValue": "Spa", "ResolvedValue": "recreation" },
+    { "RuleType": 1, "MatchValue": "Restaurant", "ResolvedValue": "foodservice" },
+    { "RuleType": 1, "MatchValue": "Bar", "ResolvedValue": "foodservice" },
+    { "RuleType": 1, "MatchValue": "Meeting Room", "ResolvedValue": "conferenceroom" },
+    { "RuleType": 1, "MatchValue": "Ballroom", "ResolvedValue": "auditorium" },
+    { "RuleType": 1, "MatchValue": "Terrace", "ResolvedValue": "terrace" },
+    { "RuleType": 1, "MatchValue": "Kitchen", "ResolvedValue": "kitchen" },
+    { "RuleType": 1, "MatchValue": "Storage", "ResolvedValue": "storage" },
+    { "RuleType": 1, "MatchValue": "Accessible Restroom", "ResolvedValue": "restroom.wheelchair" },
+    { "RuleType": 1, "MatchValue": "Unisex Restroom", "ResolvedValue": "restroom.unisex" }
+  ]
+}

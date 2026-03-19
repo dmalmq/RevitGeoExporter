@@ -648,7 +648,10 @@ public sealed class FloorExportDataPreparer
             }
         }
 
-        CloseSmallGaps(converted, geometryRepairOptions.MergeNearbyBoundaryThresholdMeters);
+        if (geometryRepairOptions.Enabled)
+        {
+            CloseSmallGaps(converted, geometryRepairOptions.MergeNearbyBoundaryThresholdMeters);
+        }
 
         List<ExportPolygon> exported = BuildExportPolygons(
             converted,
@@ -766,6 +769,11 @@ public sealed class FloorExportDataPreparer
 
         for (int i = 0; i < records.Count; i++)
         {
+            if (IsVerticalFillCategory(records[i].Category))
+            {
+                continue;
+            }
+
             Geometry buffered = records[i].Geometry.Buffer(halfGap);
             for (int j = 0; j < records.Count; j++)
             {
