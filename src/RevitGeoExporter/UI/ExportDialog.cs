@@ -102,6 +102,7 @@ public sealed class ExportDialog : WinFormsForm
     private string _activeSchemaProfileName = SchemaProfile.CoreProfileName;
     private List<ValidationPolicyProfile> _validationPolicyProfiles = ValidationPolicyProfile.NormalizeProfiles(null);
     private string _activeValidationPolicyProfileName = ValidationPolicyProfile.RecommendedProfileName;
+    private GeometryRepairOptions _loadedGeometryRepairOptions = new();
 
     public ExportDialog(
         IReadOnlyList<ViewPlan> views,
@@ -1524,6 +1525,7 @@ public sealed class ExportDialog : WinFormsForm
     private void LoadGeometryRepairOptions(GeometryRepairOptions? options)
     {
         GeometryRepairOptions value = (options ?? new GeometryRepairOptions()).Clone();
+        _loadedGeometryRepairOptions = value.Clone();
         _repairEnabledCheckBox.Checked = value.Enabled;
         _minPolygonAreaTextBox.Text = value.MinimumPolygonAreaSquareMeters.ToString("0.###");
         _minOpeningLengthTextBox.Text = value.MinimumOpeningLengthMeters.ToString("0.###");
@@ -1546,6 +1548,8 @@ public sealed class ExportDialog : WinFormsForm
             ElevatorOpeningSnapDistanceMeters = ParseDouble(_elevatorSnapDistanceTextBox.Text, 0.20d),
             MergeNearbyBoundaryThresholdMeters = ParseDouble(_mergeBoundaryThresholdTextBox.Text, 0.15d),
             MaxHoleSizeMeters = ParseDouble(_maxHoleSizeTextBox.Text, 0.05d),
+            LevelBoundaryGapClosingThresholdMeters = _loadedGeometryRepairOptions.LevelBoundaryGapClosingThresholdMeters,
+            LevelBoundaryMaxHoleSizeMeters = _loadedGeometryRepairOptions.LevelBoundaryMaxHoleSizeMeters,
         };
     }
 
