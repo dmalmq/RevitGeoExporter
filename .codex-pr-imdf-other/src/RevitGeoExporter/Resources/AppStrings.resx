@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, ...</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, ...</value>
+  </resheader>
+  <data name="Language.English" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="Language.Japanese" xml:space="preserve">
+    <value>Japanese</value>
+  </data>
+  <data name="Ribbon.Panel.Export" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="Ribbon.Export.Text" xml:space="preserve">
+    <value>Export GeoPackage</value>
+  </data>
+  <data name="Ribbon.Export.ToolTip" xml:space="preserve">
+    <value>Export IMDF GeoPackages from selected plan views.</value>
+  </data>
+  <data name="Ribbon.Export.Description" xml:space="preserve">
+    <value>Select floor or ceiling plan views and export one _unit, _detail, _opening, and _level GeoPackage per view.</value>
+  </data>
+  <data name="Ribbon.Help.Text" xml:space="preserve">
+    <value>Help</value>
+  </data>
+  <data name="Ribbon.Help.ToolTip" xml:space="preserve">
+    <value>Open the offline help viewer.</value>
+  </data>
+  <data name="Ribbon.Help.Description" xml:space="preserve">
+    <value>Opens the built-in bilingual help viewer with offline documentation for export, preview, settings, and troubleshooting.</value>
+  </data>
+  <data name="Common.Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common.Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Common.Help" xml:space="preserve">
+    <value>Help</value>
+  </data>
+  <data name="Common.Browse" xml:space="preserve">
+    <value>Browse...</value>
+  </data>
+  <data name="Common.Language" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Common.Level" xml:space="preserve">
+    <value>Level</value>
+  </data>
+  <data name="Common.View" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="Common.Rooms" xml:space="preserve">
+    <value>Rooms</value>
+  </data>
+  <data name="Common.Floors" xml:space="preserve">
+    <value>Floors</value>
+  </data>
+  <data name="Common.OutputDirectory" xml:space="preserve">
+    <value>Output Directory</value>
+  </data>
+  <data name="Common.TargetEpsg" xml:space="preserve">
+    <value>Target EPSG</value>
+  </data>
+  <data name="Common.CrsPreset" xml:space="preserve">
+    <value>CRS Preset</value>
+  </data>
+  <data name="Common.Version" xml:space="preserve">
+    <value>Version {0}</value>
+  </data>
+  <data name="Common.Import" xml:space="preserve">
+    <value>Import...</value>
+  </data>
+  <data name="Common.Export" xml:space="preserve">
+    <value>Export...</value>
+  </data>
+  <data name="Common.ResetDefaults" xml:space="preserve">
+    <value>Reset Defaults</value>
+  </data>
+  <data name="Common.ClearProjectData" xml:space="preserve">
+    <value>Clear Project Data</value>
+  </data>
+  <data name="Common.ProjectProfiles" xml:space="preserve">
+    <value>Project Profiles</value>
+  </data>
+  <data name="Common.GlobalProfiles" xml:space="preserve">
+    <value>Global Profiles</value>
+  </data>
+  <data name="Common.ProjectMappings" xml:space="preserve">
+    <value>Project Mappings</value>
+  </data>
+  <data name="Common.Status" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="SettingsHub.Title" xml:space="preserve">
+    <value>GeoExporter Settings</value>
+  </data>
+  <data name="SettingsHub.GlobalTab" xml:space="preserve">
+    <value>Global</value>
+  </data>
+  <data name="SettingsHub.ProjectTab" xml:space="preserve">
+    <value>Project</value>
+  </data>
+  <data name="SettingsHub.DefaultsGroup" xml:space="preserve">
+    <value>Default Export Settings</value>
+  </data>
+  <data name="SettingsHub.ScopeActionsGroup" xml:space="preserve">
+    <value>Scope Actions</value>
+  </data>
+  <data name="SettingsHub.ScopeStatusGroup" xml:space="preserve">
+    <value>Configuration Status</value>
+  </data>
+  <data name="SettingsHub.ProjectMappingsIntro" xml:space="preserve">
+    <value>Manage exporter-side floor, family, and accepted opening mappings for the current project.</value>
+  </data>
+  <data name="SettingsHub.ProfileSummary" xml:space="preserve">
+    <value>Global profiles: {0}    Project profiles: {1}</value>
+  </data>
+  <data name="SettingsHub.ImportTitle.Global" xml:space="preserve">
+    <value>Import Global Settings Bundle</value>
+  </data>
+  <data name="SettingsHub.ImportTitle.Project" xml:space="preserve">
+    <value>Import Project Settings Bundle</value>
+  </data>
+  <data name="SettingsHub.ExportTitle.Global" xml:space="preserve">
+    <value>Export Global Settings Bundle</value>
+  </data>
+  <data name="SettingsHub.ExportTitle.Project" xml:space="preserve">
+    <value>Export Project Settings Bundle</value>
+  </data>
+  <data name="SettingsHub.ScopeSaved.Global" xml:space="preserve">
+    <value>Global settings were saved.</value>
+  </data>
+  <data name="SettingsHub.ScopeSaved.Project" xml:space="preserve">
+    <value>Project settings were saved.</value>
+  </data>
+  <data name="SettingsHub.ImportSucceeded.Global" xml:space="preserve">
+    <value>Imported global settings bundle.</value>
+  </data>
+  <data name="SettingsHub.ImportSucceeded.Project" xml:space="preserve">
+    <value>Imported project settings bundle.</value>
+  </data>
+  <data name="SettingsHub.ResetConfirm.Global" xml:space="preserve">
+    <value>Reset global defaults and remove all global export profiles?</value>
+  </data>
+  <data name="SettingsHub.ResetConfirm.Project" xml:space="preserve">
+    <value>Clear project mappings and remove all project-scoped export profiles?</value>
+  </data>
+  <data name="SettingsHub.FloorOverridesTab" xml:space="preserve">
+    <value>Floor Overrides</value>
+  </data>
+  <data name="SettingsHub.FamilyCategoriesTab" xml:space="preserve">
+    <value>Family Categories</value>
+  </data>
+  <data name="SettingsHub.AcceptedOpeningsTab" xml:space="preserve">
+    <value>Accepted Openings</value>
+  </data>
+  <data name="SettingsHub.FloorTypeName" xml:space="preserve">
+    <value>Floor Type Name</value>
+  </data>
+  <data name="SettingsHub.FamilyName" xml:space="preserve">
+    <value>Family Name</value>
+  </data>
+  <data name="SettingsHub.AcceptedOpeningFamilyName" xml:space="preserve">
+    <value>Accepted Opening Family Name</value>
+  </data>
+  <data name="SettingsHub.Category" xml:space="preserve">
+    <value>Category</value>
+  </data>
+  <data name="ExportDialog.Title" xml:space="preserve">
+    <value>Export GeoPackage</value>
+  </data>
+  <data name="ExportDialog.PlanViews" xml:space="preserve">
+    <value>Plan Views</value>
+  </data>
+  <data name="ExportDialog.Options" xml:space="preserve">
+    <value>Export Options</value>
+  </data>
+  <data name="ExportDialog.FeatureTypes" xml:space="preserve">
+    <value>Feature Types</value>
+  </data>
+  <data name="ExportDialog.CrsLabel" xml:space="preserve">
+    <value>CRS (EPSG)</value>
+  </data>
+  <data name="ExportDialog.SelectAll" xml:space="preserve">
+    <value>Select All</value>
+  </data>
+  <data name="ExportDialog.ClearAll" xml:space="preserve">
+    <value>Clear All</value>
+  </data>
+  <data name="ExportDialog.Preview" xml:space="preserve">
+    <value>Preview...</value>
+  </data>
+  <data name="ExportDialog.ExportButton" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="ExportDialog.ExportProfiles" xml:space="preserve">
+    <value>Export Profiles</value>
+  </data>
+  <data name="ExportDialog.WriteDiagnostics" xml:space="preserve">
+    <value>Write diagnostics report</value>
+  </data>
+  <data name="ExportDialog.WritePackage" xml:space="preserve">
+    <value>Write GIS package</value>
+  </data>
+  <data name="ExportDialog.IncludeLegend" xml:space="preserve">
+    <value>Include legend file</value>
+  </data>
+  <data name="ExportDialog.UnitSource" xml:space="preserve">
+    <value>Unit Source</value>
+  </data>
+  <data name="ExportDialog.RoomCategoryParameter" xml:space="preserve">
+    <value>Room Category Parameter</value>
+  </data>
+  <data name="ExportDialog.CurrentSettings" xml:space="preserve">
+    <value>(Current settings)</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.ConvertToTargetCrs" xml:space="preserve">
+    <value>Convert to target CRS</value>
+  </data>
+  <data name="ExportDialog.CoordinateMode.SharedCoordinatesDefault" xml:space="preserve">
+    <value>Shared coordinates (default)</value>
+  </data>
+  <data name="ExportDialog.GeometryRepair" xml:space="preserve">
+    <value>Geometry Repair</value>
+  </data>
+  <data name="ExportDialog.Packaging" xml:space="preserve">
+    <value>Packaging</value>
+  </data>
+  <data name="ExportDialog.SettingsButton" xml:space="preserve">
+    <value>Settings...</value>
+  </data>
+  <data name="ExportDialog.Message.SelectPlanViewToExport" xml:space="preserve">
+    <value>Select at least one plan view to export.</value>
+  </data>
+  <data name="ExportDialog.Message.SelectFeatureType" xml:space="preserve">
+    <value>Select at least one feature type.</value>
+  </data>
+  <data name="ExportDialog.Message.ChooseOutputDirectory" xml:space="preserve">
+    <value>Choose an output directory.</value>
+  </data>
+  <data name="ExportDialog.Message.EnterValidEpsg" xml:space="preserve">
+    <value>Enter a valid EPSG code.</value>
+  </data>
+  <data name="ExportDialog.Message.SelectPlanViewToPreview" xml:space="preserve">
+    <value>Select at least one plan view to preview.</value>
+  </data>
+  <data name="ExportDialog.Message.PreviewRequiresFeatureType" xml:space="preserve">
+    <value>Preview requires at least one selected feature type.</value>
+  </data>
+  <data name="Common.NoLevel" xml:space="preserve">
+    <value>&lt;no level&gt;</value>
+  </data>
+  <data name="Validation.Title" xml:space="preserve">
+    <value>Validation Results</value>
+  </data>
+  <data name="Validation.NoIssues" xml:space="preserve">
+    <value>No validation issues were found.</value>
+  </data>
+  <data name="Validation.Continue" xml:space="preserve">
+    <value>Continue Export</value>
+  </data>
+  <data name="Validation.ResolveErrors" xml:space="preserve">
+    <value>Resolve Errors</value>
+  </data>
+  <data name="Result.Title" xml:space="preserve">
+    <value>Export Results</value>
+  </data>
+  <data name="Preview.Title" xml:space="preserve">
+    <value>Export Preview</value>
+  </data>
+  <data name="Preview.Units" xml:space="preserve">
+    <value>Units</value>
+  </data>
+  <data name="Preview.Openings" xml:space="preserve">
+    <value>Openings</value>
+  </data>
+  <data name="Preview.Details" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="Preview.Levels" xml:space="preserve">
+    <value>Levels</value>
+  </data>
+  <data name="Preview.Stairs" xml:space="preserve">
+    <value>Stairs</value>
+  </data>
+  <data name="Preview.Escalators" xml:space="preserve">
+    <value>Escalators</value>
+  </data>
+  <data name="Preview.Elevators" xml:space="preserve">
+    <value>Elevators</value>
+  </data>
+  <data name="Preview.Warnings" xml:space="preserve">
+    <value>Warnings</value>
+  </data>
+  <data name="Preview.Overrides" xml:space="preserve">
+    <value>Overrides</value>
+  </data>
+  <data name="Preview.Unassigned" xml:space="preserve">
+    <value>Unassigned</value>
+  </data>
+  <data name="Preview.Fit" xml:space="preserve">
+    <value>Fit</value>
+  </data>
+  <data name="Preview.Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="Command.ActiveDocumentRequired" xml:space="preserve">
+    <value>An active document is required.</value>
+  </data>
+  <data name="Command.NoExportableViews" xml:space="preserve">
+    <value>No exportable plan views were found.</value>
+  </data>
+  <data name="Command.SettingsSaved" xml:space="preserve">
+    <value>Settings saved.</value>
+  </data>
+  <data name="Command.ExportFailed" xml:space="preserve">
+    <value>Export failed.</value>
+  </data>
+  <data name="Command.ExportFailed.Body" xml:space="preserve">
+    <value>The export could not be completed. You can save an error report as a text file.</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReport" xml:space="preserve">
+    <value>Save Error Report</value>
+  </data>
+  <data name="Command.ExportFailed.SaveReportTitle" xml:space="preserve">
+    <value>Save Export Error Report</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaved" xml:space="preserve">
+    <value>Error report saved.{0}{1}</value>
+  </data>
+  <data name="Command.ExportFailed.ReportSaveFailed" xml:space="preserve">
+    <value>Failed to save error report.{0}{0}{1}</value>
+  </data>
+  <data name="Help.Command.OpenFailed" xml:space="preserve">
+    <value>Unable to open help.</value>
+  </data>
+  <data name="Help.Viewer.Title" xml:space="preserve">
+    <value>Help - {0}</value>
+  </data>
+  <data name="Help.Viewer.LanguageLabel" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="Help.Viewer.HeaderDescription" xml:space="preserve">
+    <value>Offline guidance for export, preview, settings, and troubleshooting.</value>
+  </data>
+  <data name="Help.Viewer.NavigationTitle" xml:space="preserve">
+    <value>Topics</value>
+  </data>
+  <data name="Help.Viewer.NavigationDescription" xml:space="preserve">
+    <value>Choose a topic to review the current workflow and related guidance.</value>
+  </data>
+  <data name="Help.Viewer.ArticleDescription" xml:space="preserve">
+    <value>Articles open inside this viewer, including links to related help topics.</value>
+  </data>
+  <data name="Help.Viewer.FooterSummary" xml:space="preserve">
+    <value>Offline bilingual help</value>
+  </data>
+  <data name="Help.Viewer.ContextLabel" xml:space="preserve">
+    <value>Opened from: {0}</value>
+  </data>
+  <data name="Help.Viewer.FallbackNotice" xml:space="preserve">
+    <value>Showing fallback content because this topic is not available in the selected language.</value>
+  </data>
+  <data name="Help.Viewer.TopicUnavailableTitle" xml:space="preserve">
+    <value>Help topic unavailable</value>
+  </data>
+  <data name="Help.Viewer.TopicUnavailableBody" xml:space="preserve">
+    <value>The requested help topic could not be found in this add-in build.</value>
+  </data>
+  <data name="Help.Topic.GettingStarted" xml:space="preserve">
+    <value>Getting Started</value>
+  </data>
+  <data name="Help.Topic.ExportWorkflow" xml:space="preserve">
+    <value>Export Workflow</value>
+  </data>
+  <data name="Help.Topic.PreviewAndAssignments" xml:space="preserve">
+    <value>Preview and Assignments</value>
+  </data>
+  <data name="Help.Topic.SettingsAndProfiles" xml:space="preserve">
+    <value>Settings and Profiles</value>
+  </data>
+  <data name="Help.Topic.ValidationAndDiagnostics" xml:space="preserve">
+    <value>Validation and Diagnostics</value>
+  </data>
+  <data name="Help.Topic.TroubleshootingFaq" xml:space="preserve">
+    <value>Troubleshooting / FAQ</value>
+  </data>
+  <data name="Preview.BasemapUnavailable" xml:space="preserve">
+    <value>Basemap unavailable</value>
+  </data>
+  <data name="Preview.Basemap" xml:space="preserve">
+    <value>Basemap</value>
+  </data>
+  <data name="Preview.BasemapUnavailableCrs" xml:space="preserve">
+    <value>Model CRS could not be resolved for map preview.</value>
+  </data>
+  <data name="Preview.ShowBasemap" xml:space="preserve">
+    <value>Show basemap</value>
+  </data>
+  
+  <data name="Preview.ShowSurveyPoint" xml:space="preserve">
+    <value>Show survey point</value>
+  </data>
+  <data name="Preview.SurveyPoint" xml:space="preserve">
+    <value>Survey point</value>
+  </data>
+  <data name="Preview.BasemapSourceMissing" xml:space="preserve">
+    <value>No basemap tile source is configured.</value>
+  </data>
+  <data name="Preview.BasemapTargetUnavailable" xml:space="preserve">
+    <value>Target CRS could not be resolved for map preview.</value>
+  </data>
+  <data name="Preview.BasemapLoadFailed" xml:space="preserve">
+    <value>Basemap loading failed; showing model only.</value>
+  </data>
+  <data name="SettingsHub.BasemapSource" xml:space="preserve">
+    <value>Basemap source</value>
+  </data>
+  <data name="SettingsHub.BasemapAttribution" xml:space="preserve">
+    <value>Basemap attribution</value>
+  </data>
+  <data name="Preview.MapProjectionFailed" xml:space="preserve">
+    <value>Map preview projection failed.</value>
+  </data>
+  <data name="SettingsDialog.SelectDefaultOutputDirectory" xml:space="preserve">
+    <value>Select default output directory</value>
+  </data>
+  <data name="Validation.ResolveWarnings" xml:space="preserve">
+    <value>Some issues were encountered while applying validation fixes.</value>
+  </data>
+  <data name="Validation.ResolveWarnings.Body" xml:space="preserve">
+    <value>{0}{1}{1}{2}</value>
+  </data>
+</root>

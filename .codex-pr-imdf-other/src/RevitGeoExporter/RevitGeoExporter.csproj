@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>RevitGeoExporter</RootNamespace>
+    <AssemblyName>RevitGeoExporter</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Version>1.4.14</Version>
+    <InformationalVersion>1.4.14</InformationalVersion>
+    <AssemblyVersion>1.4.14.0</AssemblyVersion>
+    <FileVersion>1.4.14.0</FileVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitApiDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\RevitGeoExporter.Core\RevitGeoExporter.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NetTopologySuite" Version="2.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Help\**\*.html" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(RevitApiDir)\RevitAPI.dll')">
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitApiDir)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(RevitApiDir)\RevitAPIUI.dll')">
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitApiDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

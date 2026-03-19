@@ -134,7 +134,7 @@ public sealed class ExportPreviewForm : WinFormsForm
 
         _viewComboBox.Dock = DockStyle.Fill;
         _viewComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-        _viewComboBox.SelectedIndexChanged += (_, _) => LoadSelectedView();
+        _viewComboBox.SelectedIndexChanged += (_, _) => LoadSelectedView(fitViewport: true);
         toolbar.Controls.Add(_viewComboBox, 1, 0);
         return toolbar;
     }
@@ -663,7 +663,7 @@ public sealed class ExportPreviewForm : WinFormsForm
         _unitsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Unit);
         _openingsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Opening);
         _detailsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Detail);
-        _levelsCheckBox.Checked = _request.FeatureTypes.HasFlag(ExportFeatureType.Level);
+        _levelsCheckBox.Checked = false;
         _basemapCheckBox.Checked = false;
         _basemapCheckBox.Enabled = false;
         _surveyPointCheckBox.Checked = false;
@@ -679,7 +679,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             _viewComboBox.SelectedIndex = 0;
         }
     }
-    private void LoadSelectedView()
+    private void LoadSelectedView(bool fitViewport)
     {
         if (_viewComboBox.SelectedItem is not ViewItem viewItem)
         {
@@ -695,6 +695,11 @@ public sealed class ExportPreviewForm : WinFormsForm
         }
 
         PreviewDisplayViewState displayState = _controller.LoadView(viewItem.View);
+        ApplyLoadedDisplayState(displayState, fitViewport);
+    }
+
+    private void ApplyLoadedDisplayState(PreviewDisplayViewState displayState, bool fitViewport)
+    {
         _isLoadingView = true;
         try
         {
@@ -708,6 +713,11 @@ public sealed class ExportPreviewForm : WinFormsForm
             UpdateBasemapAvailability();
             UpdateSurveyPointAvailability();
             ApplyCanvasFilters();
+            if (fitViewport)
+            {
+                _canvas.RequestFitToFeatures();
+            }
+
             PopulateLegend(displayState.SourceViewData);
             PopulateWarnings(displayState.SourceViewData);
             PopulateUnassignedFloors(displayState.SourceViewData);
@@ -878,9 +888,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        _currentViewData = displayState.SourceViewData;
-        _currentDisplayState = displayState;
-        LoadSelectedView();
+        ApplyLoadedDisplayState(displayState, fitViewport: false);
     }
 
     private void ClearSelectedFloorCategoryOverride()
@@ -891,9 +899,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        _currentViewData = displayState.SourceViewData;
-        _currentDisplayState = displayState;
-        LoadSelectedView();
+        ApplyLoadedDisplayState(displayState, fitViewport: false);
     }
 
     private void SavePendingAssignments()
@@ -904,9 +910,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        _currentViewData = displayState.SourceViewData;
-        _currentDisplayState = displayState;
-        LoadSelectedView();
+        ApplyLoadedDisplayState(displayState, fitViewport: false);
     }
 
     private void DiscardPendingAssignments()
@@ -917,9 +921,7 @@ public sealed class ExportPreviewForm : WinFormsForm
             return;
         }
 
-        _currentViewData = displayState.SourceViewData;
-        _currentDisplayState = displayState;
-        LoadSelectedView();
+        ApplyLoadedDisplayState(displayState, fitViewport: false);
     }
 
     private void UpdateAssignmentControls()

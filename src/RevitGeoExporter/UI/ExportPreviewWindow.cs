@@ -173,7 +173,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         StackPanel content = new();
 
         _viewComboBox.MinHeight = 34;
-        _viewComboBox.SelectionChanged += (_, _) => LoadSelectedView();
+        _viewComboBox.SelectionChanged += (_, _) => LoadSelectedView(fitViewport: true);
 
         TextBlock viewLabel = new();
         content.Children.Add(WpfDialogChrome.CreateFieldBlock(viewLabel, _viewComboBox, 10));
@@ -641,7 +641,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         _unitsCheckBox.IsChecked = request.FeatureTypes.HasFlag(ExportFeatureType.Unit);
         _openingsCheckBox.IsChecked = request.FeatureTypes.HasFlag(ExportFeatureType.Opening);
         _detailsCheckBox.IsChecked = request.FeatureTypes.HasFlag(ExportFeatureType.Detail);
-        _levelsCheckBox.IsChecked = request.FeatureTypes.HasFlag(ExportFeatureType.Level);
+        _levelsCheckBox.IsChecked = false;
         _basemapCheckBox.IsChecked = false;
         _basemapCheckBox.IsEnabled = false;
         _surveyPointCheckBox.IsChecked = false;
@@ -670,7 +670,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         }
     }
 
-    private void LoadSelectedView()
+    private void LoadSelectedView(bool fitViewport)
     {
         if (_viewComboBox.SelectedItem is not ViewItem item)
         {
@@ -684,10 +684,10 @@ internal sealed class ExportPreviewWindow : IDisposable
         }
 
         PreviewDisplayViewState displayState = _controller.LoadView(item.View);
-        ApplyLoadedDisplayState(displayState);
+        ApplyLoadedDisplayState(displayState, fitViewport);
     }
 
-    private void ApplyLoadedDisplayState(PreviewDisplayViewState displayState)
+    private void ApplyLoadedDisplayState(PreviewDisplayViewState displayState, bool fitViewport)
     {
         _isLoadingView = true;
         try
@@ -699,6 +699,11 @@ internal sealed class ExportPreviewWindow : IDisposable
             UpdateBasemapAvailability();
             UpdateSurveyPointAvailability();
             ApplyCanvasFilters();
+            if (fitViewport)
+            {
+                _canvas.RequestFitToFeatures();
+            }
+
             PopulateLegend();
             PopulateWarnings();
             PopulateUnassignedFloors();
@@ -938,7 +943,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         PreviewDisplayViewState? displayState = _controller.StageCategoryOverride(floorTypeNames, category);
         if (displayState != null)
         {
-            ApplyLoadedDisplayState(displayState);
+            ApplyLoadedDisplayState(displayState, fitViewport: false);
         }
         else
         {
@@ -953,7 +958,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         PreviewDisplayViewState? displayState = _controller.ClearCategoryOverride(floorTypeNames);
         if (displayState != null)
         {
-            ApplyLoadedDisplayState(displayState);
+            ApplyLoadedDisplayState(displayState, fitViewport: false);
         }
         else
         {
@@ -966,7 +971,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         PreviewDisplayViewState? displayState = _controller.SavePendingAssignments();
         if (displayState != null)
         {
-            ApplyLoadedDisplayState(displayState);
+            ApplyLoadedDisplayState(displayState, fitViewport: false);
         }
     }
 
@@ -975,7 +980,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         PreviewDisplayViewState? displayState = _controller.DiscardPendingAssignments();
         if (displayState != null)
         {
-            ApplyLoadedDisplayState(displayState);
+            ApplyLoadedDisplayState(displayState, fitViewport: false);
         }
     }
 

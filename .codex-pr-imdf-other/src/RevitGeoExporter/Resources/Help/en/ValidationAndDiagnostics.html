@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Validation and Diagnostics</title>
+  <style>
+    body { margin: 0; background: #f5f6f8; color: #27313d; font-family: "Segoe UI", sans-serif; line-height: 1.6; }
+    .page { max-width: 900px; margin: 0 auto; padding: 28px; }
+    .hero, .section, .callout { background: #ffffff; border: 1px solid #d6dbe2; border-radius: 12px; padding: 20px 22px; margin-bottom: 16px; }
+    .callout { background: #f7f8fa; }
+    .eyebrow { margin: 0 0 8px 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #617182; }
+    h1 { margin: 0 0 10px 0; font-size: 28px; color: #2b343f; }
+    h2 { margin: 0 0 10px 0; font-size: 19px; color: #2b343f; }
+    p { margin: 0 0 10px 0; }
+    ul { margin: 10px 0 0 22px; padding: 0; }
+    li { margin: 0 0 8px 0; }
+    a { color: #145da0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <p class="eyebrow">Quality Checks</p>
+      <h1>Validation and Diagnostics</h1>
+      <p>Validation runs before files are written, so data issues can be caught early and reviewed while the export context is still open.</p>
+    </div>
+
+    <div class="section">
+      <h2>Validation checks include</h2>
+      <ul>
+        <li>Unassigned floor-derived units.</li>
+        <li>Duplicate or missing export IDs where required.</li>
+        <li>Empty or invalid geometry.</li>
+        <li>Unsupported opening families and unsnapped openings.</li>
+        <li>Views that produce no exportable output.</li>
+        <li>Missing vertical circulation output.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Diagnostics output</h2>
+      <p>The diagnostics JSON can capture counts, warnings, skipped content, overrides, timestamps, and export timing. If GIS package output is enabled, the diagnostics report can travel with the handoff folder.</p>
+    </div>
+
+    <div class="section">
+      <h2>When export is blocked</h2>
+      <p>Use the validation messages to decide whether you should return to preview, fix a settings issue, or adjust the export selection. The goal is to surface actionable issues before a partially understood package is delivered.</p>
+    </div>
+
+    <div class="callout">
+      <h2>Related topics</h2>
+      <ul>
+        <li><a href="help:PreviewAndAssignments">Preview and Assignments</a></li>
+        <li><a href="help:ExportWorkflow">Export Workflow</a></li>
+        <li><a href="help:TroubleshootingFaq">Troubleshooting / FAQ</a></li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
