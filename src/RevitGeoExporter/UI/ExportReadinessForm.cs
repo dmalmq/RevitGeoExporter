@@ -163,10 +163,10 @@ public sealed class ExportReadinessForm : IDisposable
     private TabItem BuildOverviewTab()
     {
         StackPanel panel = new() { Margin = new Thickness(8) };
-        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsWithName", "Units with IMDF_Name"), $"{_summary.UnitsWithNameCount} / {_summary.TotalUnitCount}"));
-        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsMissingName", "Units missing IMDF_Name"), _summary.UnitsMissingNameCount.ToString()));
-        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsWithAltName", "Units with IMDF_AltName"), $"{_summary.UnitsWithAltNameCount} / {_summary.TotalUnitCount}"));
-        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsMissingAltName", "Units missing IMDF_AltName"), _summary.UnitsMissingAltNameCount.ToString()));
+        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsWithName", "Units with name"), $"{_summary.UnitsWithNameCount} / {_summary.TotalUnitCount}"));
+        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsMissingName", "Units missing name"), _summary.UnitsMissingNameCount.ToString()));
+        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsWithAltName", "Units with short_name"), $"{_summary.UnitsWithAltNameCount} / {_summary.TotalUnitCount}"));
+        panel.Children.Add(CreateMetricRow(T("Readiness.UnitsMissingAltName", "Units missing short_name"), _summary.UnitsMissingAltNameCount.ToString()));
         panel.Children.Add(CreateMetricRow(T("Readiness.MissingStableIds", "Missing stable IDs"), _summary.MissingStableIdCount.ToString()));
         panel.Children.Add(CreateMetricRow(T("Readiness.DuplicateStableIds", "Duplicate stable IDs"), _summary.DuplicateStableIdCount.ToString()));
         panel.Children.Add(CreateMetricRow(T("Readiness.UnsupportedOpeningFamilies", "Unsupported opening families"), _summary.UnsupportedOpeningFamilyCount.ToString()));
