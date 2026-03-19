@@ -144,7 +144,7 @@ public sealed class FloorExportDataPreparer
             if (string.IsNullOrWhiteSpace(levelId))
             {
                 viewWarnings.Add(
-                    $"View '{context.View.Name}' level '{context.Level.Name}' is missing IMDF_LevelId. Skipping view.");
+                    $"View '{context.View.Name}' level '{context.Level.Name}' is missing level_id. Skipping view.");
                 warnings.AddRange(viewWarnings);
                 continue;
             }
