@@ -7,10 +7,10 @@ namespace RevitGeoExporter.Core;
 
 public sealed class SharedParameterManager
 {
-    public const string ImdfIdParameterName = "IMDF_Id";
-    public const string ImdfLevelIdParameterName = "IMDF_LevelId";
-    public const string ImdfNameParameterName = "IMDF_Name";
-    public const string ImdfAltNameParameterName = "IMDF_AltName";
+    public const string ImdfIdParameterName = "id";
+    public const string ImdfLevelIdParameterName = "level_id";
+    public const string ImdfNameParameterName = "name";
+    public const string ImdfAltNameParameterName = "short_name";
 
     private const string SharedParameterGroupName = "RevitGeoExporter";
 
@@ -215,10 +215,10 @@ public sealed class SharedParameterManager
 
         Binding binding = _application.Create.NewInstanceBinding(categorySet);
         BindingMap map = _document.ParameterBindings;
-        bool inserted = map.Insert(definition, binding, GroupTypeId.Data);
+        bool inserted = map.Insert(definition, binding, GroupTypeId.General);
         if (!inserted)
         {
-            map.ReInsert(definition, binding, GroupTypeId.Data);
+            map.ReInsert(definition, binding, GroupTypeId.General);
         }
     }
 
