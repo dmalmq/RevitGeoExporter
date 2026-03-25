@@ -368,6 +368,11 @@ public sealed class FloorGeoPackageExporter
             count++;
         }
 
+        if (featureTypes.HasFlag(ExportFeatureType.Fixture))
+        {
+            count++;
+        }
+
         return count;
     }
 
@@ -715,6 +720,11 @@ public sealed class FloorGeoPackageExporter
         {
             yield return ("level", viewData.LevelLayer);
         }
+
+        if (featureTypes.HasFlag(ExportFeatureType.Fixture) && viewData.FixtureLayer != null)
+        {
+            yield return ("fixture", viewData.FixtureLayer);
+        }
     }
 
     private static IReadOnlyList<ExportLayer> GetSelectedLayers(ExportFeatureType featureTypes, PreparedViewExportData viewData)
@@ -747,6 +757,11 @@ public sealed class FloorGeoPackageExporter
             names.Add("level");
         }
 
+        if (featureTypes.HasFlag(ExportFeatureType.Fixture))
+        {
+            names.Add("fixture");
+        }
+
         return names;
     }
 
@@ -758,6 +773,7 @@ public sealed class FloorGeoPackageExporter
             "detail" => viewData.DetailLayer,
             "opening" => viewData.OpeningLayer,
             "level" => viewData.LevelLayer,
+            "fixture" => viewData.FixtureLayer,
             _ => null,
         };
     }

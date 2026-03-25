@@ -64,6 +64,7 @@ namespace RevitGeoExporter.UI;
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
+    private readonly CheckBox _fixtureCheckBox = new();
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly CheckBox _packageCheckBox = new();
     private readonly CheckBox _packageLegendCheckBox = new();
@@ -586,11 +587,15 @@ namespace RevitGeoExporter.UI;
         ConfigureFeatureCheckBox(_levelCheckBox,
             "Export building levels as polygon features.",
             "建物レベルをポリゴン フィーチャとして出力します。");
+        ConfigureFeatureCheckBox(_fixtureCheckBox,
+            "Export fixtures (e.g. ticket gates) as polygon features.",
+            "フィクスチャ（自動改札など）をポリゴン フィーチャとして出力します。");
 
         panel.Children.Add(_unitCheckBox);
         panel.Children.Add(_detailCheckBox);
         panel.Children.Add(_openingCheckBox);
         panel.Children.Add(_levelCheckBox);
+        panel.Children.Add(_fixtureCheckBox);
         return CreateSectionCard(_includeTitleText, _includeDescriptionText, panel);
     }
 
@@ -945,6 +950,7 @@ namespace RevitGeoExporter.UI;
             _detailCheckBox.IsChecked = featureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.IsChecked = featureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.IsChecked = featureTypes.HasFlag(ExportFeatureType.Level);
+            _fixtureCheckBox.IsChecked = featureTypes.HasFlag(ExportFeatureType.Fixture);
 
             _diagnosticsCheckBox.IsChecked = settings.GenerateDiagnosticsReport;
             _packageCheckBox.IsChecked = settings.GeneratePackageOutput;
@@ -1573,6 +1579,7 @@ namespace RevitGeoExporter.UI;
         if (_detailCheckBox.IsChecked == true) types |= ExportFeatureType.Detail;
         if (_openingCheckBox.IsChecked == true) types |= ExportFeatureType.Opening;
         if (_levelCheckBox.IsChecked == true) types |= ExportFeatureType.Level;
+        if (_fixtureCheckBox.IsChecked == true) types |= ExportFeatureType.Fixture;
         return types;
     }
 
@@ -1798,6 +1805,7 @@ namespace RevitGeoExporter.UI;
         _detailCheckBox.Content = T("Details", "ディテール");
         _openingCheckBox.Content = T("Openings", "開口");
         _levelCheckBox.Content = T("Levels", "レベル");
+        _fixtureCheckBox.Content = T("Fixtures", "フィクスチャ");
         _diagnosticsCheckBox.Content = T("Create diagnostics report", "診断レポートを作成");
         _packageCheckBox.Content = T("Create GIS package folder", "GIS パッケージ フォルダーを作成");
         _packageLegendCheckBox.Content = T("Include legend file", "凡例ファイルを含める");
@@ -1838,6 +1846,9 @@ namespace RevitGeoExporter.UI;
         _levelCheckBox.ToolTip = T(
             "Export building levels as polygon features.",
             "建物レベルをポリゴン フィーチャとして出力します。");
+        _fixtureCheckBox.ToolTip = T(
+            "Export fixtures (e.g. ticket gates) as polygon features.",
+            "フィクスチャ（自動改札など）をポリゴン フィーチャとして出力します。");
 
         _targetEpsgTextBox.ToolTip = T(
             "Enter the numeric EPSG code for the target coordinate reference system.",

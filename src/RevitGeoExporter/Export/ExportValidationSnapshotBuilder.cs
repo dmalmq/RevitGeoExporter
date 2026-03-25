@@ -34,6 +34,7 @@ public sealed class ExportValidationSnapshotBuilder
                 AddLayerFeatures(features, "detail", prepared.DetailLayer?.Features);
                 AddLayerFeatures(features, "opening", prepared.OpeningLayer?.Features);
                 AddLayerFeatures(features, "level", prepared.LevelLayer?.Features);
+                AddLayerFeatures(features, "fixture", prepared.FixtureLayer?.Features);
             }
 
             List<UnsupportedOpeningFamilySnapshot> unsupportedOpenings = context.UnsupportedOpenings
