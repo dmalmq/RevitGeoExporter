@@ -79,7 +79,8 @@ public sealed class ExportValidationSnapshotBuilder
             session.SourceDocumentKey,
             session.UnitGeometrySource,
             session.UnitAttributeSource,
-            session.ActiveValidationPolicyProfile);
+            session.ActiveValidationPolicyProfile,
+            includeFixtures: session.FeatureTypes.HasFlag(ExportFeatureType.Fixture));
     }
 
     private static void AddLayerFeatures(

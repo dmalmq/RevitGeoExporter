@@ -425,9 +425,13 @@ public sealed class FloorExportDataPreparer
             if (extractor.TryCreateFamilyUnit(familyUnit, view, levelId, warnings, out ExportPolygon? feature, out string? resolvedCategory) &&
                 feature != null)
             {
-                if (fixtureLayer != null && string.Equals(resolvedCategory, "fixture", StringComparison.OrdinalIgnoreCase))
+                bool isFixture = string.Equals(resolvedCategory, "fixture", StringComparison.OrdinalIgnoreCase);
+                if (isFixture)
                 {
-                    fixtureLayer.AddFeature(feature);
+                    if (fixtureLayer != null)
+                    {
+                        fixtureLayer.AddFeature(RemapToFixtureAttributes(feature));
+                    }
                 }
                 else
                 {
@@ -435,6 +439,22 @@ public sealed class FloorExportDataPreparer
                 }
             }
         }
+    }
+
+    private static ExportPolygon RemapToFixtureAttributes(ExportPolygon unitFeature)
+    {
+        Dictionary<string, object?> attributes = new()
+        {
+            ["id"] = unitFeature.Attributes.TryGetValue("id", out object? id) ? id : null,
+            ["type"] = unitFeature.Attributes.TryGetValue("category", out object? category) ? category : null,
+            ["name"] = unitFeature.Attributes.TryGetValue("name", out object? name) ? name : null,
+            ["alt_name"] = unitFeature.Attributes.TryGetValue("alt_name", out object? altName) ? altName : null,
+            ["level_id"] = unitFeature.Attributes.TryGetValue("level_id", out object? levelId) ? levelId : null,
+            ["source"] = unitFeature.Attributes.TryGetValue("source", out object? source) ? source : null,
+            ["display_point"] = unitFeature.Attributes.TryGetValue("display_point", out object? dp) ? dp : null,
+        };
+
+        return new ExportPolygon(unitFeature.Polygons, attributes);
     }
 
     private void AddLinkedUnitFeatures(
