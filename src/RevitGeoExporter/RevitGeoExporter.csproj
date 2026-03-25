@@ -5,14 +5,16 @@
     <AssemblyName>RevitGeoExporter</AssemblyName>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
-    <Version>1.4.14</Version>
-    <InformationalVersion>1.4.14</InformationalVersion>
-    <AssemblyVersion>1.4.14.0</AssemblyVersion>
-    <FileVersion>1.4.14.0</FileVersion>
+    <Version>1.5.7</Version>
+    <InformationalVersion>1.5.7</InformationalVersion>
+    <AssemblyVersion>1.5.7.0</AssemblyVersion>
+    <FileVersion>1.5.7.0</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup>
-    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitApiDir>
+    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitApiDir>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

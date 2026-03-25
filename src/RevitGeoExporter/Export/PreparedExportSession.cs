@@ -138,4 +138,6 @@ public sealed class PreparedExportSession
     public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
 
     public IReadOnlyList<LinkedModelSummary> IncludedLinks { get; }
+
+    public ExportFormat OutputFormat { get; set; } = ExportFormat.GeoPackage;
 }

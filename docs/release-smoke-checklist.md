@@ -1,8 +1,8 @@
 # Release Smoke Checklist
 
 ## Revit Startup
-- Install the latest EXE build on a clean or upgraded machine.
-- Launch Revit 2024 and confirm the `GeoExporter` ribbon tab appears.
+- Install the latest EXE build for the target Revit year on a clean or upgraded machine.
+- Launch that Revit year and confirm the `GeoExporter` ribbon tab appears.
 - Open a representative project with floor plans, stairs, escalators, elevators, and openings.
 
 ## Settings And Dialogs
@@ -22,7 +22,7 @@
 - Confirm the progress window updates without UI glitches or re-entrancy behavior.
 - Confirm exported GeoPackages open in QGIS.
 - Verify elevator footprints and elevator-adjacent openings are present.
-- Verify stair detail lines use the schematic fixed-spacing representation.
+- Verify stair detail lines follow the modeled stair tread representation, including winders where present.
 
 ## Installer And Upgrade
 - Install over an older version and confirm the add-in still launches.

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Autodesk.Revit.DB;
@@ -53,6 +54,7 @@ namespace RevitGeoExporter.UI;
     private readonly ComboBox _coordinateModeComboBox = new();
     private readonly ComboBox _incrementalModeComboBox = new();
     private readonly ComboBox _packagingModeComboBox = new();
+    private readonly ComboBox _outputFormatComboBox = new();
     private readonly ComboBox _unitSourceComboBox = new();
     private readonly ComboBox _unitAttributeSourceComboBox = new();
     private readonly ComboBox _schemaProfileComboBox = new();
@@ -79,8 +81,14 @@ namespace RevitGeoExporter.UI;
     private readonly Button _clearAllButton = new();
     private readonly Button _helpButton = new();
     private readonly Button _mappingsButton = new();
+    private readonly TextBox _viewFilterTextBox = new();
     private readonly Button _manageSchemaProfilesButton = new();
     private readonly Button _manageValidationPoliciesButton = new();
+    private readonly ComboBox _exportProfileComboBox = new();
+    private readonly Button _saveProfileButton = new();
+    private readonly Button _deleteProfileButton = new();
+    private Action<ExportProfileScope, string, ExportDialogSettings>? _saveProfileRequested;
+    private Action<ExportProfile>? _deleteProfileRequested;
     private readonly TextBlock _viewsTitleText = new();
     private readonly TextBlock _viewSelectionSummaryText = new();
     private readonly TextBlock _exportToTitleText = new();
@@ -92,6 +100,7 @@ namespace RevitGeoExporter.UI;
     private readonly TextBlock _advancedTitleText = new();
     private readonly TextBlock _advancedDescriptionText = new();
     private readonly TextBlock _outputDirectoryLabel = new();
+    private readonly TextBlock _outputFormatLabel = new();
     private readonly TextBlock _coordinateStatusTitleText = new();
     private readonly TextBlock _coordinateStatusText = new();
     private readonly TextBlock _coordinateStatusDetailText = new();
@@ -178,12 +187,15 @@ namespace RevitGeoExporter.UI;
         _previewRequested = previewRequested;
         _openMappingsRequested = openMappingsRequested;
         _batchRequested = batchRequested;
+        _saveProfileRequested = saveProfileRequested;
+        _deleteProfileRequested = deleteProfileRequested;
         _coordinateInfo = coordinateInfo;
         _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
 
         _window = new Window
         {
+            Title = "Export GeoPackage",
             Width = 980,
             Height = 760,
             MinWidth = 900,
@@ -194,6 +206,7 @@ namespace RevitGeoExporter.UI;
         };
 
         LoadValues(settings);
+        RegisterKeyboardShortcuts();
     }
 
     public ExportDialogResult? Result { get; private set; }
@@ -236,6 +249,7 @@ namespace RevitGeoExporter.UI;
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
+            OutputFormat = GetSelectedOutputFormat(),
         };
     }
 
@@ -322,7 +336,7 @@ namespace RevitGeoExporter.UI;
 
         StackPanel header = new()
         {
-            Margin = new Thickness(0, 0, 0, 12),
+            Margin = new Thickness(0, 0, 0, 8),
         };
         StyleSectionTitle(_viewsTitleText);
         StyleDescriptionText(_viewSelectionSummaryText);
@@ -330,6 +344,36 @@ namespace RevitGeoExporter.UI;
         header.Children.Add(_viewSelectionSummaryText);
         DockPanel.SetDock(header, Dock.Top);
         layout.Children.Add(header);
+
+        _viewFilterTextBox.MinHeight = 28;
+        _viewFilterTextBox.Margin = new Thickness(0, 0, 0, 8);
+        _viewFilterTextBox.Padding = new Thickness(6, 4, 6, 4);
+        _viewFilterTextBox.Foreground = MutedTextBrush;
+        _viewFilterTextBox.GotFocus += (_, _) =>
+        {
+            if (_viewFilterTextBox.Text == _viewFilterTextBox.Tag as string)
+            {
+                _viewFilterTextBox.Text = string.Empty;
+                _viewFilterTextBox.Foreground = SystemColors.ControlTextBrush;
+            }
+        };
+        _viewFilterTextBox.LostFocus += (_, _) =>
+        {
+            if (string.IsNullOrEmpty(_viewFilterTextBox.Text))
+            {
+                _viewFilterTextBox.Text = _viewFilterTextBox.Tag as string ?? string.Empty;
+                _viewFilterTextBox.Foreground = MutedTextBrush;
+            }
+        };
+        _viewFilterTextBox.TextChanged += (_, _) =>
+        {
+            if (_viewFilterTextBox.Text != _viewFilterTextBox.Tag as string)
+            {
+                ApplyViewFilter();
+            }
+        };
+        DockPanel.SetDock(_viewFilterTextBox, Dock.Top);
+        layout.Children.Add(_viewFilterTextBox);
 
         StackPanel actions = new()
         {
@@ -375,6 +419,7 @@ namespace RevitGeoExporter.UI;
     private UIElement BuildOptionsColumn()
     {
         StackPanel stack = new();
+        stack.Children.Add(BuildProfileBar());
         stack.Children.Add(BuildExportDestinationCard());
         stack.Children.Add(BuildIncludeCard());
         stack.Children.Add(BuildCoordinateCard());
@@ -385,6 +430,109 @@ namespace RevitGeoExporter.UI;
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Content = stack,
         };
+    }
+
+    private UIElement BuildProfileBar()
+    {
+        WpfGrid bar = new()
+        {
+            Margin = new Thickness(0, 0, 0, 12),
+        };
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        _exportProfileComboBox.MinHeight = 28;
+        _exportProfileComboBox.IsEditable = true;
+        _exportProfileComboBox.SelectionChanged += (_, _) =>
+        {
+            if (_isInitializing)
+            {
+                return;
+            }
+
+            if (_exportProfileComboBox.SelectedItem is ExportProfileItem selectedProfile)
+            {
+                LoadProfileSettings(selectedProfile.Profile);
+            }
+        };
+        bar.Children.Add(_exportProfileComboBox);
+
+        _saveProfileButton.MinWidth = 60;
+        _saveProfileButton.Padding = new Thickness(8, 4, 8, 4);
+        _saveProfileButton.Margin = new Thickness(6, 0, 0, 0);
+        _saveProfileButton.Click += (_, _) => SaveCurrentProfile();
+        WpfGrid.SetColumn(_saveProfileButton, 1);
+        bar.Children.Add(_saveProfileButton);
+
+        _deleteProfileButton.MinWidth = 60;
+        _deleteProfileButton.Padding = new Thickness(8, 4, 8, 4);
+        _deleteProfileButton.Margin = new Thickness(4, 0, 0, 0);
+        _deleteProfileButton.Click += (_, _) => DeleteCurrentProfile();
+        WpfGrid.SetColumn(_deleteProfileButton, 2);
+        bar.Children.Add(_deleteProfileButton);
+
+        PopulateExportProfiles();
+        return bar;
+    }
+
+    private void PopulateExportProfiles()
+    {
+        _exportProfileComboBox.Items.Clear();
+        foreach (ExportProfile profile in _profiles.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            _exportProfileComboBox.Items.Add(new ExportProfileItem(profile));
+        }
+    }
+
+    private void LoadProfileSettings(ExportProfile profile)
+    {
+        LoadValues(profile.ToSettings());
+    }
+
+    private void SaveCurrentProfile()
+    {
+        if (_saveProfileRequested == null)
+        {
+            return;
+        }
+
+        string profileName = (_exportProfileComboBox.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(profileName))
+        {
+            MessageBox.Show(
+                _window,
+                T("Enter a profile name.", "プロファイル名を入力してください。"),
+                _window.Title,
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        _saveProfileRequested(ExportProfileScope.Project, profileName, BuildSettings());
+        RefreshDialogState();
+    }
+
+    private void DeleteCurrentProfile()
+    {
+        if (_deleteProfileRequested == null || _exportProfileComboBox.SelectedItem is not ExportProfileItem item)
+        {
+            return;
+        }
+
+        MessageBoxResult confirm = MessageBox.Show(
+            _window,
+            TF("Delete profile \"{0}\"?", "プロファイル \"{0}\" を削除しますか？", item.Profile.Name),
+            _window.Title,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm == MessageBoxResult.Yes)
+        {
+            _deleteProfileRequested(item.Profile);
+            _profiles.Remove(item.Profile);
+            PopulateExportProfiles();
+        }
     }
 
     private UIElement BuildExportDestinationCard()
@@ -404,20 +552,40 @@ namespace RevitGeoExporter.UI;
         WpfGrid.SetColumn(_browseButton, 1);
         pathGrid.Children.Add(_browseButton);
 
+        _outputFormatComboBox.MinHeight = 32;
+        _outputFormatComboBox.MinWidth = 180;
+        if (_outputFormatComboBox.Items.Count == 0)
+        {
+            _outputFormatComboBox.Items.Add(new OutputFormatItem(ExportFormat.GeoPackage));
+            _outputFormatComboBox.Items.Add(new OutputFormatItem(ExportFormat.Shapefile));
+        }
+
+        StackPanel destinationPanel = new();
+        destinationPanel.Children.Add(CreateFieldBlock(_outputDirectoryLabel, pathGrid));
+        destinationPanel.Children.Add(CreateFieldBlock(_outputFormatLabel, _outputFormatComboBox));
+
         return CreateSectionCard(
             _exportToTitleText,
             _exportToDescriptionText,
-            CreateFieldBlock(_outputDirectoryLabel, pathGrid));
+            destinationPanel);
     }
 
     private UIElement BuildIncludeCard()
     {
         StackPanel panel = new();
 
-        ConfigureFeatureCheckBox(_unitCheckBox, "Exports the `unit` layer.", "`unit` レイヤーを出力します。");
-        ConfigureFeatureCheckBox(_detailCheckBox, "Exports the `detail` layer.", "`detail` レイヤーを出力します。");
-        ConfigureFeatureCheckBox(_openingCheckBox, "Exports the `opening` layer.", "`opening` レイヤーを出力します。");
-        ConfigureFeatureCheckBox(_levelCheckBox, "Exports the `level` layer.", "`level` レイヤーを出力します。");
+        ConfigureFeatureCheckBox(_unitCheckBox,
+            "Export spatial units (rooms, floors, or spaces) as polygon features.",
+            "空間ユニット（部屋、フロア、スペース）をポリゴン フィーチャとして出力します。");
+        ConfigureFeatureCheckBox(_detailCheckBox,
+            "Export detail areas and amenity features as polygons.",
+            "ディテール エリアとアメニティ フィーチャをポリゴンとして出力します。");
+        ConfigureFeatureCheckBox(_openingCheckBox,
+            "Export door and gate openings as line features.",
+            "ドアやゲートの開口をライン フィーチャとして出力します。");
+        ConfigureFeatureCheckBox(_levelCheckBox,
+            "Export building levels as polygon features.",
+            "建物レベルをポリゴン フィーチャとして出力します。");
 
         panel.Children.Add(_unitCheckBox);
         panel.Children.Add(_detailCheckBox);
@@ -465,6 +633,12 @@ namespace RevitGeoExporter.UI;
             if (_presetComboBox.SelectedItem is CrsPresetItem item)
             {
                 _targetEpsgTextBox.Text = item.Epsg.ToString();
+            }
+            else if (_presetComboBox.SelectedItem != null && _presetComboBox.SelectedItem is not CrsPresetItem)
+            {
+                // Prevent selecting separator or group header items
+                _presetComboBox.SelectedItem = null;
+                return;
             }
 
             RefreshDialogState();
@@ -777,6 +951,7 @@ namespace RevitGeoExporter.UI;
             _packageLegendCheckBox.IsChecked = settings.IncludePackageLegend;
             SelectIncrementalMode(settings.IncrementalExportMode);
             SelectPackagingMode(settings.PackagingMode);
+            SelectOutputFormat(settings.OutputFormat);
             _validateAfterWriteCheckBox.IsChecked = settings.ValidateAfterWrite;
             _generateQgisArtifactsCheckBox.IsChecked = settings.GenerateQgisArtifacts;
             _openOutputFolderCheckBox.IsChecked = settings.PostExportActions?.OpenOutputFolder == true;
@@ -793,13 +968,33 @@ namespace RevitGeoExporter.UI;
             _coordinateModeComboBox.SelectedIndex = settings.CoordinateMode == CoordinateExportMode.ConvertToTargetCrs ? 1 : 0;
 
             _presetComboBox.Items.Clear();
-            foreach (KeyValuePair<int, string> zone in JapanPlaneRectangular.Zones.OrderBy(entry => entry.Key))
+            bool firstGroup = true;
+            foreach (CrsPresetGroup group in CrsPresetCatalog.GetAllGroups())
             {
-                CrsPresetItem item = new(zone.Key, zone.Value);
-                _presetComboBox.Items.Add(item);
-                if (zone.Key == settings.TargetEpsg)
+                if (!firstGroup)
                 {
-                    _presetComboBox.SelectedItem = item;
+                    _presetComboBox.Items.Add(new Separator());
+                }
+                firstGroup = false;
+
+                TextBlock groupHeader = new()
+                {
+                    Text = $"— {group.Region} —",
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = MutedTextBrush,
+                    Padding = new Thickness(4, 2, 4, 2),
+                    IsHitTestVisible = false,
+                };
+                _presetComboBox.Items.Add(groupHeader);
+
+                foreach (CrsPresetEntry entry in group.Entries)
+                {
+                    CrsPresetItem item = new(entry.Epsg, entry.DisplayName, group.Region);
+                    _presetComboBox.Items.Add(item);
+                    if (entry.Epsg == settings.TargetEpsg)
+                    {
+                        _presetComboBox.SelectedItem = item;
+                    }
                 }
             }
 
@@ -947,7 +1142,10 @@ namespace RevitGeoExporter.UI;
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
-            GetActiveValidationPolicyProfile());
+            GetActiveValidationPolicyProfile())
+        {
+            OutputFormat = GetSelectedOutputFormat(),
+        };
 
         _window.DialogResult = true;
         _window.Close();
@@ -1052,14 +1250,67 @@ namespace RevitGeoExporter.UI;
         return handle == IntPtr.Zero ? null : new Win32WindowOwner(handle);
     }
 
+    private void RegisterKeyboardShortcuts()
+    {
+        RoutedCommand selectAllCommand = new();
+        selectAllCommand.InputGestures.Add(new KeyGesture(Key.A, ModifierKeys.Control));
+        _window.CommandBindings.Add(new CommandBinding(selectAllCommand, (_, _) => SetAllViewsSelected(true)));
+
+        RoutedCommand clearAllCommand = new();
+        clearAllCommand.InputGestures.Add(new KeyGesture(Key.A, ModifierKeys.Control | ModifierKeys.Shift));
+        _window.CommandBindings.Add(new CommandBinding(clearAllCommand, (_, _) => SetAllViewsSelected(false)));
+
+        RoutedCommand browseCommand = new();
+        browseCommand.InputGestures.Add(new KeyGesture(Key.B, ModifierKeys.Control));
+        _window.CommandBindings.Add(new CommandBinding(browseCommand, (_, _) => BrowseForOutputDirectory()));
+
+        RoutedCommand previewCommand = new();
+        previewCommand.InputGestures.Add(new KeyGesture(Key.P, ModifierKeys.Control));
+        _window.CommandBindings.Add(new CommandBinding(previewCommand, (_, _) => ShowPreview()));
+
+        RoutedCommand helpCommand = new();
+        helpCommand.InputGestures.Add(new KeyGesture(Key.F1));
+        _window.CommandBindings.Add(new CommandBinding(helpCommand, (_, _) => ShowHelp()));
+    }
+
     private void SetAllViewsSelected(bool isSelected)
     {
+        string filterText = GetActiveFilterText();
+        bool hasFilter = filterText.Length > 0;
+
         foreach (ViewSelectionRow row in _views)
         {
-            row.IsSelected = isSelected;
+            if (!hasFilter || row.DisplayText.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                row.IsSelected = isSelected;
+            }
         }
 
         _viewList.Items.Refresh();
+        RefreshDialogState();
+    }
+
+    private string GetActiveFilterText()
+    {
+        string text = (_viewFilterTextBox.Text ?? string.Empty).Trim();
+        string placeholder = _viewFilterTextBox.Tag as string ?? string.Empty;
+        return text == placeholder ? string.Empty : text;
+    }
+
+    private void ApplyViewFilter()
+    {
+        string filterText = GetActiveFilterText();
+
+        if (string.IsNullOrEmpty(filterText))
+        {
+            _viewList.ItemsSource = _views;
+        }
+        else
+        {
+            _viewList.ItemsSource = _views.Where(
+                row => row.DisplayText.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+        }
+
         RefreshDialogState();
     }
 
@@ -1103,7 +1354,22 @@ namespace RevitGeoExporter.UI;
 
     private void UpdateViewSelectionSummary()
     {
-        _viewSelectionSummaryText.Text = TF("{0} of {1} selected", "{1} 件中 {0} 件を選択", GetSelectedViews().Count, _views.Count);
+        int selectedCount = GetSelectedViews().Count;
+        int totalCount = _views.Count;
+        string filterText = GetActiveFilterText();
+
+        if (filterText.Length > 0)
+        {
+            int visibleCount = _views.Count(row => row.DisplayText.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0);
+            _viewSelectionSummaryText.Text = TF(
+                "{0} of {1} selected ({2} shown)",
+                "{1} 件中 {0} 件を選択（{2} 件表示中）",
+                selectedCount, totalCount, visibleCount);
+        }
+        else
+        {
+            _viewSelectionSummaryText.Text = TF("{0} of {1} selected", "{1} 件中 {0} 件を選択", selectedCount, totalCount);
+        }
     }
 
     private void UpdateAdvancedOptionsVisibility()
@@ -1353,6 +1619,25 @@ namespace RevitGeoExporter.UI;
         _packagingModeComboBox.SelectedIndex = 0;
     }
 
+    private ExportFormat GetSelectedOutputFormat()
+    {
+        return (_outputFormatComboBox.SelectedItem as OutputFormatItem)?.Format ?? ExportFormat.GeoPackage;
+    }
+
+    private void SelectOutputFormat(ExportFormat format)
+    {
+        for (int i = 0; i < _outputFormatComboBox.Items.Count; i++)
+        {
+            if (_outputFormatComboBox.Items[i] is OutputFormatItem item && item.Format == format)
+            {
+                _outputFormatComboBox.SelectedIndex = i;
+                return;
+            }
+        }
+
+        _outputFormatComboBox.SelectedIndex = 0;
+    }
+
     private PostExportActionOptions BuildPostExportActions()
     {
         return new PostExportActionOptions
@@ -1474,6 +1759,15 @@ namespace RevitGeoExporter.UI;
     {
         _window.Title = T("Export GeoPackage", "GeoPackage を出力");
         _viewsTitleText.Text = T("Plan views", "平面ビュー");
+
+        // View filter placeholder - uses Tag to store placeholder and GotFocus/LostFocus for watermark
+        string filterPlaceholder = T("Filter views...", "ビューを絞り込む...");
+        if (string.IsNullOrEmpty(_viewFilterTextBox.Text) || _viewFilterTextBox.Text == _viewFilterTextBox.Tag as string)
+        {
+            _viewFilterTextBox.Text = filterPlaceholder;
+            _viewFilterTextBox.Foreground = MutedTextBrush;
+        }
+        _viewFilterTextBox.Tag = filterPlaceholder;
         _exportToTitleText.Text = T("Export to", "出力先");
         _exportToDescriptionText.Text = T("Choose where the GeoPackage files should be written.", "GeoPackage ファイルの出力先を選択します。");
         _includeTitleText.Text = T("Include in export", "出力内容");
@@ -1484,6 +1778,7 @@ namespace RevitGeoExporter.UI;
         _advancedDescriptionText.Text = T("Change settings used less often.", "使用頻度の低い設定を変更します。");
 
         _outputDirectoryLabel.Text = T("Output directory", "出力先フォルダー");
+        _outputFormatLabel.Text = T("Output format", "出力形式");
         _coordinateModeLabel.Text = T("Coordinate mode", "座標モード");
         _incrementalModeLabel.Text = T("Incremental mode", "差分出力モード");
         _packagingModeLabel.Text = T("Packaging mode", "パッケージ モード");
@@ -1512,6 +1807,11 @@ namespace RevitGeoExporter.UI;
         _launchQgisCheckBox.Content = T("Launch QGIS after export", "出力後に QGIS を起動");
         _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
+        _saveProfileButton.Content = T("Save", "保存");
+        _deleteProfileButton.Content = T("Delete", "削除");
+        _exportProfileComboBox.ToolTip = T(
+            "Select a saved export profile or type a new name to create one.",
+            "保存済みのエクスポート プロファイルを選択するか、新しい名前を入力して作成します。");
         _mappingsButton.Content = T("Edit category mappings...", "カテゴリ マッピングを編集...");
         _manageSchemaProfilesButton.Content = T("Schemas...", "スキーマ...");
         _manageValidationPoliciesButton.Content = T("Policies...", "ポリシー...");
@@ -1526,10 +1826,43 @@ namespace RevitGeoExporter.UI;
         _languageLabel.Text = T("Language", "言語");
         _versionText.Text = TF("Version {0}", "バージョン {0}", ProjectInfo.VersionTag);
 
-        _unitCheckBox.ToolTip = T("Exports the `unit` layer.", "`unit` レイヤーを出力します。");
-        _detailCheckBox.ToolTip = T("Exports the `detail` layer.", "`detail` レイヤーを出力します。");
-        _openingCheckBox.ToolTip = T("Exports the `opening` layer.", "`opening` レイヤーを出力します。");
-        _levelCheckBox.ToolTip = T("Exports the `level` layer.", "`level` レイヤーを出力します。");
+        _unitCheckBox.ToolTip = T(
+            "Export spatial units (rooms, floors, or spaces) as polygon features.",
+            "空間ユニット（部屋、フロア、スペース）をポリゴン フィーチャとして出力します。");
+        _detailCheckBox.ToolTip = T(
+            "Export detail areas and amenity features as polygons.",
+            "ディテール エリアとアメニティ フィーチャをポリゴンとして出力します。");
+        _openingCheckBox.ToolTip = T(
+            "Export door and gate openings as line features.",
+            "ドアやゲートの開口をライン フィーチャとして出力します。");
+        _levelCheckBox.ToolTip = T(
+            "Export building levels as polygon features.",
+            "建物レベルをポリゴン フィーチャとして出力します。");
+
+        _targetEpsgTextBox.ToolTip = T(
+            "Enter the numeric EPSG code for the target coordinate reference system.",
+            "出力先の座標参照系の EPSG コードを入力してください。");
+        _coordinateModeComboBox.ToolTip = T(
+            "Choose whether to export in shared coordinates or convert to a target CRS.",
+            "共有座標で出力するか、指定 CRS に変換するかを選択します。");
+        _incrementalModeComboBox.ToolTip = T(
+            "Choose whether to export all views or only views that have changed since the last export.",
+            "すべてのビューを出力するか、前回出力以降に変更されたビューのみを出力するかを選択します。");
+        _packagingModeComboBox.ToolTip = T(
+            "Choose how GeoPackage files are organized: one per view or one per building.",
+            "GeoPackage ファイルの構成を選択します: ビューごと、または建物ごと。");
+        _unitSourceComboBox.ToolTip = T(
+            "Choose whether unit geometry is derived from floor elements or room boundaries.",
+            "ユニット形状をフロア要素から取得するか、部屋境界から取得するかを選択します。");
+        _unitAttributeSourceComboBox.ToolTip = T(
+            "Choose whether unit attributes come from floors, rooms, or a hybrid of both.",
+            "ユニット属性をフロア、部屋、または両方のハイブリッドから取得するかを選択します。");
+        _roomCategoryParameterTextBox.ToolTip = T(
+            "The Revit parameter name used to determine room category assignments.",
+            "部屋カテゴリの割り当てに使用する Revit パラメータ名。");
+        _presetComboBox.ToolTip = T(
+            "Select a common coordinate reference system, or enter a custom EPSG code below.",
+            "一般的な座標参照系を選択するか、下のフィールドに EPSG コードを入力してください。");
 
         UpdateCoordinateInfoText(GetSelectedCoordinateMode() == CoordinateExportMode.ConvertToTargetCrs);
     }
@@ -1765,6 +2098,25 @@ namespace RevitGeoExporter.UI;
         }
     }
 
+    private sealed class OutputFormatItem
+    {
+        public OutputFormatItem(ExportFormat format)
+        {
+            Format = format;
+        }
+
+        public ExportFormat Format { get; }
+
+        public override string ToString()
+        {
+            return Format switch
+            {
+                ExportFormat.Shapefile => "Shapefile (.shp)",
+                _ => "GeoPackage (.gpkg)",
+            };
+        }
+    }
+
     private sealed class UnitSourceItem
     {
         public static UiLanguage DisplayLanguage { get; set; } = UiLanguage.English;
@@ -1800,17 +2152,32 @@ namespace RevitGeoExporter.UI;
         }
     }
 
+    private sealed class ExportProfileItem
+    {
+        public ExportProfileItem(ExportProfile profile)
+        {
+            Profile = profile;
+        }
+
+        public ExportProfile Profile { get; }
+
+        public override string ToString() => Profile.Name;
+    }
+
     private sealed class CrsPresetItem
     {
-        public CrsPresetItem(int epsg, string name)
+        public CrsPresetItem(int epsg, string name, string region)
         {
             Epsg = epsg;
             Name = name;
+            Region = region;
         }
 
         public int Epsg { get; }
 
         public string Name { get; }
+
+        public string Region { get; }
 
         public override string ToString() => $"EPSG:{Epsg} - {Name}";
     }

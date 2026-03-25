@@ -1,6 +1,6 @@
 # RevitGeoExporter
 
-RevitGeoExporter is a Revit 2024 add-in that turns selected floor and ceiling plan views into IMDF-style GeoPackage files for indoor mapping workflows.
+RevitGeoExporter is currently a Revit 2024 add-in that turns selected floor and ceiling plan views into IMDF-style GeoPackage files for indoor mapping workflows. The build and installer tooling is parameterized by Revit year so future parallel targets can be added without forking the repo.
 
 <p>
 A native Revit add-in that turns floor and ceiling plan views into georeferenced GeoPackage files<br />
@@ -43,7 +43,7 @@ The add-in is designed around Japanese rail station and commercial complex workf
 - **Settings hub** — global defaults, project-specific zone mappings, accepted opening families, and reusable export profiles
 - **Bilingual help** — embedded offline help viewer with English and Japanese content
 
-1. Open a supported plan view model in Revit 2024.
+1. Open a supported plan view model in the Revit version the add-in was built for.
 2. Start `GeoExporter > Export GeoPackage`.
 3. Choose the plan views, output folder, and feature types to export.
 4. Open the settings hub from the export flow if you need to adjust defaults, mappings, basemap settings, or export profiles.
@@ -58,7 +58,7 @@ For installer-based deployment, see [install/README.md](install/README.md).
 
 The generated installer:
 
-- Installs the add-in under `C:\ProgramData\Autodesk\Revit\Addins\2024\`
+- Installs the add-in under `C:\ProgramData\Autodesk\Revit\Addins\<selected-year>\`
 - Registers a normal Windows uninstall entry
 - Requires administrator rights
 
@@ -68,15 +68,16 @@ Prerequisites:
 
 - Windows
 - .NET SDK
-- Revit 2024 API installed locally
+- Revit API installed locally for the target year (defaults to Revit 2024)
 - Inno Setup 6 if you want to build the installer EXE
 
 Useful commands:
 
 ```powershell
-dotnet build RevitGeoExporter.sln
+dotnet build src/RevitGeoExporter/RevitGeoExporter.csproj -p:RevitYear=2024
 dotnet test RevitGeoExporter.sln
-pwsh ./install/build-installer.ps1
+pwsh ./install/build-installer.ps1 -RevitYear 2024
+pwsh ./install/build-installer.ps1 -RevitYear 2026 -RevitApiDir "C:\Program Files\Autodesk\Revit 2026"
 ```
 
 ## Repository layout

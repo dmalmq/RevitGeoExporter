@@ -91,49 +91,57 @@ public sealed class ExportValidationForm : IDisposable
         _grid.IsReadOnly = true;
         _grid.SelectionMode = DataGridSelectionMode.Single;
         _grid.SelectionUnit = DataGridSelectionUnit.FullRow;
+        _grid.CanUserResizeColumns = true;
         _grid.ItemsSource = BuildRows();
         _grid.SelectionChanged += (_, _) => UpdateNavigationButtonState();
+
+        Style wrapCellStyle = new(typeof(TextBlock));
+        wrapCellStyle.Setters.Add(new Setter(TextBlock.TextWrappingProperty, TextWrapping.Wrap));
+        wrapCellStyle.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
+
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.Severity", "Severity"),
             Binding = new Binding(nameof(ValidationRow.Severity)),
-            Width = new DataGridLength(0.1, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.08, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.Code", "Code"),
             Binding = new Binding(nameof(ValidationRow.Code)),
-            Width = new DataGridLength(0.14, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.10, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.View", "View"),
             Binding = new Binding(nameof(ValidationRow.View)),
-            Width = new DataGridLength(0.14, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.12, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.FeatureType", "Feature Type"),
             Binding = new Binding(nameof(ValidationRow.FeatureType)),
-            Width = new DataGridLength(0.1, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.08, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.SourceDocument", "Source Document"),
             Binding = new Binding(nameof(ValidationRow.SourceDocumentKey)),
-            Width = new DataGridLength(0.16, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.12, DataGridLengthUnitType.Star),
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.Message", "Message"),
             Binding = new Binding(nameof(ValidationRow.Message)),
-            Width = new DataGridLength(0.24, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.28, DataGridLengthUnitType.Star),
+            ElementStyle = wrapCellStyle,
         });
         _grid.Columns.Add(new DataGridTextColumn
         {
             Header = T("Validation.Column.RecommendedAction", "Recommended Action"),
             Binding = new Binding(nameof(ValidationRow.RecommendedAction)),
-            Width = new DataGridLength(0.18, DataGridLengthUnitType.Star),
+            Width = new DataGridLength(0.22, DataGridLengthUnitType.Star),
+            ElementStyle = wrapCellStyle,
         });
 
         Grid.SetRow(_grid, 1);
@@ -191,7 +199,7 @@ public sealed class ExportValidationForm : IDisposable
         {
             Content = _result.HasErrors
                 ? T("Validation.ContinueAnyway", "Continue Anyway")
-                : T("Validation.Continue", "Continue Export"),
+                : T("Validation.StartExport", "Start Export"),
             Width = 140,
             Margin = new Thickness(8, 0, 0, 0),
             IsDefault = true,

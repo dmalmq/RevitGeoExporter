@@ -15,6 +15,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 
@@ -27,10 +28,12 @@ public sealed class UnitExtractor
     private const double SquareFeetToSquareMeters = 0.09290304d;
     private const double MinEscalatorLengthMeters = 0.50d;
     private const double MinEscalatorWidthMeters = 0.30d;
+    private const double MaxEscalatorWidthMeters = 1.50d;
     private const double EscalatorFootprintPaddingMeters = 0.02d;
     private const double FloorAreaFallbackRatio = 0.85d;
     private const double MinFloorAreaForSanityCheckSquareMeters = 0.25d;
     private const double StairCutPlaneToleranceFeet = 0.10d;
+    private static readonly string[] EscalatorWidthParameterNames = { "Width", "幅" };
     private static readonly string[] FloorNamePrefixes = { "j ", "j　", "j" };
     private static readonly string[] FloorNameSuffixes =
     {
@@ -52,6 +55,7 @@ public sealed class UnitExtractor
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
     private readonly SchemaProfile _schemaProfile;
+    private readonly PreviewPaletteResolver _paletteResolver = new();
 
     public UnitExtractor(
         Document document,
@@ -418,14 +422,14 @@ public sealed class UnitExtractor
         {
             ["id"] = id,
             ["category"] = zoneInfo.Category,
-            ["restrict"] = zoneInfo.Restriction,
+            ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,
             ["alt_name"] = altName,
             ["level_id"] = levelId,
             ["source"] = _source,
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
-            ["preview_fill_color"] = zoneInfo.FillColor,
+            ["preview_fill_color"] = $"#{_paletteResolver.ResolveFillColor(zoneInfo.Category, zoneInfo.FillColor)}",
             ["source_label"] = sourceLabel,
         };
         AddSourceMetadata(attributes, metadata);
@@ -471,14 +475,14 @@ public sealed class UnitExtractor
         {
             ["id"] = id,
             ["category"] = zoneInfo.Category,
-            ["restrict"] = zoneInfo.Restriction,
+            ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,
             ["alt_name"] = altName,
             ["level_id"] = levelId,
             ["source"] = _source,
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
-            ["preview_fill_color"] = zoneInfo.FillColor,
+            ["preview_fill_color"] = $"#{_paletteResolver.ResolveFillColor(zoneInfo.Category, zoneInfo.FillColor)}",
             ["source_label"] = sourceLabel,
         };
         AddSourceMetadata(attributes, metadata);
@@ -1620,7 +1624,7 @@ public sealed class UnitExtractor
         }
 
         double? explicitWidthMeters = TryGetFamilyWidthMeters(escalator);
-        List<Point2D>? fallbackPoints = box == null
+        List<Point2D>? boundingBoxPoints = box == null
             ? null
             : GetBoundingBoxCorners(box).Select(ProjectPoint).ToList();
 
@@ -1630,7 +1634,7 @@ public sealed class UnitExtractor
                 geometryPoints,
                 explicitLengthMeters,
                 explicitWidthMeters,
-                fallbackPoints,
+                boundingBoxPoints,
                 MinEscalatorLengthMeters,
                 MinEscalatorWidthMeters,
                 out EscalatorFootprintProjection footprint))
@@ -1638,10 +1642,12 @@ public sealed class UnitExtractor
             return false;
         }
 
-        if (footprint.UsedFallbackPoints)
+        double originalWidthMeters = footprint.WidthMeters;
+        footprint = footprint.ClampWidth(MaxEscalatorWidthMeters);
+        if (originalWidthMeters > MaxEscalatorWidthMeters + 1e-6d)
         {
             warnings.Add(
-                $"Escalator {escalator.Id.Value} rectangle footprint used bounding box fallback because projected footprint geometry was unavailable.");
+                $"Escalator {escalator.Id.Value} rectangle width was capped to {MaxEscalatorWidthMeters:F2} m from {originalWidthMeters:F2} m.");
         }
 
         polygon = footprint.ToPolygon(EscalatorFootprintPaddingMeters);
@@ -1776,22 +1782,19 @@ public sealed class UnitExtractor
 
     private static double? TryGetFamilyWidthMeters(FamilyInstance familyInstance)
     {
-        double widthFeet = TryReadWidth(familyInstance.LookupParameter("Width"));
+        double widthFeet = TryReadWidthFromElement(familyInstance);
         if (widthFeet > 1e-6d)
         {
             return widthFeet * FeetToMeters;
         }
 
-        if (familyInstance.Symbol != null)
+        if (familyInstance.Symbol == null)
         {
-            widthFeet = TryReadWidth(familyInstance.Symbol.LookupParameter("Width"));
-            if (widthFeet > 1e-6d)
-            {
-                return widthFeet * FeetToMeters;
-            }
+            return null;
         }
 
-        return null;
+        widthFeet = TryReadWidthFromElement(familyInstance.Symbol);
+        return widthFeet > 1e-6d ? widthFeet * FeetToMeters : null;
     }
 
     private static double TryReadWidth(Parameter? parameter)
@@ -1802,6 +1805,20 @@ public sealed class UnitExtractor
         }
 
         return parameter.AsDouble();
+    }
+
+    private static double TryReadWidthFromElement(Element element)
+    {
+        for (int i = 0; i < EscalatorWidthParameterNames.Length; i++)
+        {
+            double width = TryReadWidth(element.LookupParameter(EscalatorWidthParameterNames[i]));
+            if (width > 1e-6d)
+            {
+                return width;
+            }
+        }
+
+        return 0d;
     }
 
     private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
@@ -1921,5 +1938,4 @@ public sealed class UnitExtractor
         return Math.Max(0d, area);
     }
 }
-
 
