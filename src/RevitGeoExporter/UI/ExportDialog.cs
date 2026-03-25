@@ -32,6 +32,7 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _detailCheckBox = new();
     private readonly CheckBox _openingCheckBox = new();
     private readonly CheckBox _levelCheckBox = new();
+    private readonly CheckBox _fixtureCheckBox = new();
     private readonly CheckBox _diagnosticsCheckBox = new();
     private readonly Label _unitSourceInlineLabel = new();
     private readonly ComboBox _unitSourceComboBox = new();
@@ -323,10 +324,12 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.AutoSize = true;
         _openingCheckBox.AutoSize = true;
         _levelCheckBox.AutoSize = true;
+        _fixtureCheckBox.AutoSize = true;
         _unitCheckBox.Text = "unit";
         _detailCheckBox.Text = "detail";
         _openingCheckBox.Text = "opening";
         _levelCheckBox.Text = "level";
+        _fixtureCheckBox.Text = "fixture";
         _diagnosticsCheckBox.AutoSize = true;
         _packageCheckBox.AutoSize = true;
         _packageLegendCheckBox.AutoSize = true;
@@ -338,6 +341,7 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _openingCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _levelCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
+        _fixtureCheckBox.CheckedChanged += (_, _) => UpdatePreviewButtonEnabled();
         _packageCheckBox.CheckedChanged += (_, _) => UpdatePackagingState();
         _unitSourceInlineLabel.AutoSize = true;
         _unitSourceComboBox.Width = 180;
@@ -412,6 +416,7 @@ public sealed class ExportDialog : WinFormsForm
         featuresPanel.Controls.Add(_detailCheckBox);
         featuresPanel.Controls.Add(_openingCheckBox);
         featuresPanel.Controls.Add(_levelCheckBox);
+        featuresPanel.Controls.Add(_fixtureCheckBox);
         featuresPanel.Controls.Add(_diagnosticsCheckBox);
         featuresPanel.Controls.Add(_packageCheckBox);
         featuresPanel.Controls.Add(_packageLegendCheckBox);
@@ -769,6 +774,7 @@ public sealed class ExportDialog : WinFormsForm
         _detailCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Detail);
         _openingCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Opening);
         _levelCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Level);
+        _fixtureCheckBox.Checked = featureTypes.HasFlag(ExportFeatureType.Fixture);
         _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
         _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
         _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);
@@ -1200,6 +1206,11 @@ public sealed class ExportDialog : WinFormsForm
             types |= ExportFeatureType.Level;
         }
 
+        if (_fixtureCheckBox.Checked)
+        {
+            types |= ExportFeatureType.Fixture;
+        }
+
         return types;
     }
 
@@ -1384,6 +1395,7 @@ public sealed class ExportDialog : WinFormsForm
             _detailCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Detail);
             _openingCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Opening);
             _levelCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Level);
+            _fixtureCheckBox.Checked = settings.FeatureTypes.HasFlag(ExportFeatureType.Fixture);
             _unitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(settings.UnitSource, settings.UnitGeometrySource);
             _unitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(settings.UnitSource, _unitGeometrySource, settings.UnitAttributeSource);
             _unitSource = UnitExportSettingsResolver.ToLegacy(_unitGeometrySource, _unitAttributeSource);

@@ -151,6 +151,9 @@ public sealed class FloorExportDataPreparer
 
             List<ExportPolygon> unitFeatures = new();
             ExportLayer? unitLayer = null;
+            ExportLayer? fixtureLayer = featureTypes.HasFlag(ExportFeatureType.Fixture)
+                ? LayerDefinition.CreateFixtureLayer(activeSchemaProfile, viewWarnings)
+                : null;
             if (NeedsUnitContext(featureTypes))
             {
                 bool collectFloorCandidates =
@@ -186,7 +189,7 @@ public sealed class FloorExportDataPreparer
                 if (!RawFloorOnlyDebugMode)
                 {
                     AddStairsUnits(levelId, context.View, context.Stairs, unitExtractor, supplementalUnitLayer, viewWarnings);
-                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, supplementalUnitLayer, viewWarnings);
+                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, supplementalUnitLayer, fixtureLayer, viewWarnings);
                 }
 
                 AddLinkedUnitFeatures(
@@ -201,6 +204,7 @@ public sealed class FloorExportDataPreparer
                     collectFloorCandidates ? rawFloorUnitLayer : null,
                     collectRoomCandidates ? rawRoomUnitLayer : null,
                     RawFloorOnlyDebugMode ? null : supplementalUnitLayer,
+                    fixtureLayer,
                     viewWarnings);
 
                 List<ExportPolygon> rawUnitFeatures = UnitFeatureComposer.Compose(
@@ -309,6 +313,7 @@ public sealed class FloorExportDataPreparer
                     detailLayer,
                     openingLayer,
                     levelLayer,
+                    fixtureLayer,
                     geometryRepair,
                     viewWarnings.ToList()));
         }
@@ -335,7 +340,8 @@ public sealed class FloorExportDataPreparer
     {
         return featureTypes.HasFlag(ExportFeatureType.Unit) ||
                featureTypes.HasFlag(ExportFeatureType.Opening) ||
-               featureTypes.HasFlag(ExportFeatureType.Level);
+               featureTypes.HasFlag(ExportFeatureType.Level) ||
+               featureTypes.HasFlag(ExportFeatureType.Fixture);
     }
 
 
@@ -411,14 +417,22 @@ public sealed class FloorExportDataPreparer
         IReadOnlyList<FamilyInstance> familyUnits,
         UnitExtractor extractor,
         ExportLayer unitLayer,
+        ExportLayer? fixtureLayer,
         ICollection<string> warnings)
     {
         foreach (FamilyInstance familyUnit in familyUnits)
         {
-            if (extractor.TryCreateFamilyUnit(familyUnit, view, levelId, warnings, out ExportPolygon? feature) &&
+            if (extractor.TryCreateFamilyUnit(familyUnit, view, levelId, warnings, out ExportPolygon? feature, out string? resolvedCategory) &&
                 feature != null)
             {
-                unitLayer.AddFeature(feature);
+                if (fixtureLayer != null && string.Equals(resolvedCategory, "fixture", StringComparison.OrdinalIgnoreCase))
+                {
+                    fixtureLayer.AddFeature(feature);
+                }
+                else
+                {
+                    unitLayer.AddFeature(feature);
+                }
             }
         }
     }
@@ -435,6 +449,7 @@ public sealed class FloorExportDataPreparer
         ExportLayer? floorUnitLayer,
         ExportLayer? roomUnitLayer,
         ExportLayer? supplementalUnitLayer,
+        ExportLayer? fixtureLayer,
         ICollection<string> warnings)
     {
         if (context.LinkedSources.Count == 0)
@@ -479,7 +494,7 @@ public sealed class FloorExportDataPreparer
             }
 
             AddStairsUnits(levelId, context.View, linkedSource.Stairs, linkedUnitExtractor, supplementalUnitLayer, warnings);
-            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, supplementalUnitLayer, warnings);
+            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, supplementalUnitLayer, fixtureLayer, warnings);
         }
     }
 

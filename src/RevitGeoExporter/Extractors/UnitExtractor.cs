@@ -321,7 +321,19 @@ public sealed class UnitExtractor
         ICollection<string> warnings,
         out ExportPolygon? feature)
     {
+        return TryCreateFamilyUnit(familyInstance, view, levelId, warnings, out feature, out _);
+    }
+
+    public bool TryCreateFamilyUnit(
+        FamilyInstance familyInstance,
+        ViewPlan? view,
+        string levelId,
+        ICollection<string> warnings,
+        out ExportPolygon? feature,
+        out string? resolvedCategory)
+    {
         feature = null;
+        resolvedCategory = null;
         if (familyInstance is null)
         {
             return false;
@@ -332,6 +344,8 @@ public sealed class UnitExtractor
         {
             return false;
         }
+
+        resolvedCategory = zoneInfo.Category;
 
         if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
         {
