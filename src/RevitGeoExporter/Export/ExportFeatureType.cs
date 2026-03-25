@@ -10,5 +10,6 @@ public enum ExportFeatureType
     Detail = 1 << 1,
     Opening = 1 << 2,
     Level = 1 << 3,
-    All = Unit | Detail | Opening | Level,
+    Fixture = 1 << 4,
+    All = Unit | Detail | Opening | Level | Fixture,
 }

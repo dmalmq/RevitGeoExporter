@@ -6,4 +6,5 @@ public enum SchemaLayerType
     Detail = 1,
     Opening = 2,
     Level = 3,
+    Fixture = 4,
 }

@@ -16,6 +16,7 @@ public sealed class PreparedViewExportData
         ExportLayer? detailLayer,
         ExportLayer? openingLayer,
         ExportLayer? levelLayer,
+        ExportLayer? fixtureLayer,
         GeometryRepairResult geometryRepair,
         IReadOnlyList<string> warnings)
     {
@@ -26,6 +27,7 @@ public sealed class PreparedViewExportData
         DetailLayer = detailLayer;
         OpeningLayer = openingLayer;
         LevelLayer = levelLayer;
+        FixtureLayer = fixtureLayer;
         GeometryRepair = geometryRepair ?? throw new ArgumentNullException(nameof(geometryRepair));
         Warnings = warnings ?? throw new ArgumentNullException(nameof(warnings));
     }
@@ -43,6 +45,8 @@ public sealed class PreparedViewExportData
     public ExportLayer? OpeningLayer { get; }
 
     public ExportLayer? LevelLayer { get; }
+
+    public ExportLayer? FixtureLayer { get; }
 
     public GeometryRepairResult GeometryRepair { get; }
 

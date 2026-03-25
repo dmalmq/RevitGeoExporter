@@ -80,29 +80,29 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FEFEF2", "rachi_nai"),
-            "ラチE��Eコンコース",
-            "改札冁E�E��E�ンコース",
+            "ラチE��Eコンコース",
+            "改札冁E�E��E�ンコース",
             "Circulation (inside fare gates)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "EFFAED", "rachi_nai"),
-            "ラチE��Eコンコース(JR東新幹緁E",
-            "改札冁E�E��E�ンコース(JR東新幹緁E",
+            "ラチE��Eコンコース(JR東新幹緁E",
+            "改札冁E�E��E�ンコース(JR東新幹緁E",
             "Circulation (JR East Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("walkway", "FFF4E0", "rachi_nai"),
-            "ラチE��Eコンコース(JR東海新幹緁E",
-            "改札冁E�E��E�ンコース(JR東海新幹緁E",
+            "ラチE��Eコンコース(JR東海新幹緁E",
+            "改札冁E�E��E�ンコース(JR東海新幹緁E",
             "Circulation (JR Central Shinkansen)");
 
         AddZoneAliases(
             zones,
             new ZoneInfo("retail", "E1F3F9", "rachi_nai"),
-            "ラチE��E店�E",
-            "改札冁E�E��E��E�E",
+            "ラチE��E店�E",
+            "改札冁E�E��E��E�E",
             "Retail (inside fare gates)");
 
         AddZoneAliases(
@@ -175,7 +175,7 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("restroom.unisex", "D9FFD9", null),
-            "多目皁E�E��E�イレ",
+            "多目皁E�E��E�イレ",
             "Accessible / multipurpose restroom");
 
         AddZoneAliases(
@@ -187,7 +187,7 @@ public sealed class ZoneCatalog
         AddZoneAliases(
             zones,
             new ZoneInfo("waitingroom", "BABABA", null),
-            "征E�E��E�室",
+            "征E�E��E�室",
             "Waiting room");
 
         AddZoneAliases(
@@ -202,6 +202,7 @@ public sealed class ZoneCatalog
             ["j EV"] = new ZoneInfo("elevator", "E0E0E0", null),
             ["j エスカレータ-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
             ["j エスカレーター-lightweight"] = new ZoneInfo("escalator", "D0D0D0", null),
+            ["j 自動改札"] = new ZoneInfo("fixture", "D4C5A9", null),
         };
 
         return new ZoneCatalog(zones, families);
