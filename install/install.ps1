@@ -1,16 +1,34 @@
 <#
 .SYNOPSIS
-    Installs the RevitGeoExporter add-in for Revit 2024 (all users).
+    Installs the RevitGeoExporter add-in for the selected Revit year (all users).
 .DESCRIPTION
-    Copies the add-in DLLs and manifest to the system-wide Revit add-ins folder.
+    Copies the add-in DLLs and manifest to the system-wide Revit add-ins folder
+    for the selected Revit year.
     Must be run as Administrator.
 
     The script looks for build output in this order:
       1. install/dist/ folder (from build-release.ps1)
       2. src/RevitGeoExporter/bin/Release/net48/ (direct build output)
 #>
+param(
+    [string]$RevitYear = "2024"
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Get-AddinManifestContents {
+    param(
+        [string]$TemplatePath,
+        [string]$TargetRevitYear
+    )
+
+    if (-not (Test-Path $TemplatePath)) {
+        throw "Cannot find .addin template at $TemplatePath."
+    }
+
+    return (Get-Content -Path $TemplatePath -Raw).Replace("__REVIT_YEAR__", $TargetRevitYear)
+}
 
 # --- Check for Administrator privileges ---
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -26,9 +44,10 @@ if (-not $isAdmin) {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot  = Split-Path -Parent $scriptDir
 
-$addinsRoot  = "C:\ProgramData\Autodesk\Revit\Addins\2024"
+$addinsRoot  = "C:\ProgramData\Autodesk\Revit\Addins\$RevitYear"
 $installDir  = Join-Path $addinsRoot "RevitGeoExporter"
-$addinSource = Join-Path $scriptDir "RevitGeoExporter.addin"
+$addinTemplate = Join-Path $scriptDir "RevitGeoExporter.addin.template"
+$addinFile = Join-Path $addinsRoot "RevitGeoExporter.addin"
 
 # --- Find build output ---
 $distDir = Join-Path $scriptDir "dist"
@@ -36,19 +55,19 @@ $binDir  = Join-Path $repoRoot "src\RevitGeoExporter\bin\Release\net48"
 
 if (Test-Path (Join-Path $distDir "RevitGeoExporter.dll")) {
     $sourceDir = $distDir
-    Write-Host "Using pre-built dist/ folder." -ForegroundColor Cyan
+    Write-Host "Using pre-built dist/ folder for Revit $RevitYear." -ForegroundColor Cyan
 } elseif (Test-Path (Join-Path $binDir "RevitGeoExporter.dll")) {
     $sourceDir = $binDir
-    Write-Host "Using build output from bin/Release/net48/." -ForegroundColor Cyan
+    Write-Host "Using build output from bin/Release/net48/ for Revit $RevitYear." -ForegroundColor Cyan
 } else {
     Write-Host "ERROR: No build output found." -ForegroundColor Red
-    Write-Host "Run build-release.ps1 first, or build the solution in Release configuration." -ForegroundColor Yellow
+    Write-Host "Run build-release.ps1 -RevitYear $RevitYear first, or build the solution in Release configuration." -ForegroundColor Yellow
     exit 1
 }
 
-# --- Validate .addin manifest ---
-if (-not (Test-Path $addinSource)) {
-    Write-Error "Cannot find .addin manifest at $addinSource"
+# --- Validate .addin template ---
+if (-not (Test-Path $addinTemplate)) {
+    Write-Error "Cannot find .addin template at $addinTemplate"
     exit 1
 }
 
@@ -56,8 +75,12 @@ if (-not (Test-Path $addinSource)) {
 $files = @(
     "RevitGeoExporter.dll",
     "RevitGeoExporter.Core.dll",
+    "RevitGeoExporter.pdb",
+    "RevitGeoExporter.Core.pdb",
     "Microsoft.Data.Sqlite.dll",
     "NetTopologySuite.dll",
+    "NetTopologySuite.Features.dll",
+    "NetTopologySuite.IO.ShapeFile.dll",
     "Newtonsoft.Json.dll",
     "ProjNET.dll",
     "SQLitePCLRaw.batteries_v2.dll",
@@ -66,7 +89,8 @@ $files = @(
     "System.Buffers.dll",
     "System.Memory.dll",
     "System.Numerics.Vectors.dll",
-    "System.Runtime.CompilerServices.Unsafe.dll"
+    "System.Runtime.CompilerServices.Unsafe.dll",
+    "System.Text.Encoding.CodePages.dll"
 )
 
 # --- Create install directory ---
@@ -117,14 +141,14 @@ foreach ($folder in $resourceFolders) {
     Write-Host "Copied resource folder: $($folder.Name)" -ForegroundColor Cyan
 }
 
-# --- Copy .addin manifest ---
-Copy-Item $addinSource $addinsRoot -Force
-Write-Host "Copied .addin manifest to $addinsRoot" -ForegroundColor Cyan
+# --- Generate .addin manifest ---
+Set-Content -Path $addinFile -Value (Get-AddinManifestContents -TemplatePath $addinTemplate -TargetRevitYear $RevitYear) -Encoding UTF8
+Write-Host "Generated .addin manifest for Revit $RevitYear at $addinFile" -ForegroundColor Cyan
 
 # --- Done ---
 Write-Host ""
-Write-Host "Installation complete! ($copied DLLs installed)" -ForegroundColor Green
+Write-Host "Installation complete! ($copied files installed)" -ForegroundColor Green
 Write-Host "  Add-in folder: $installDir" -ForegroundColor Green
-Write-Host "  Manifest:      $addinsRoot\RevitGeoExporter.addin" -ForegroundColor Green
+Write-Host "  Manifest:      $addinFile" -ForegroundColor Green
 Write-Host ""
-Write-Host "Please restart Revit 2024 to load the add-in." -ForegroundColor Yellow
+Write-Host "Please restart Revit $RevitYear to load the add-in." -ForegroundColor Yellow

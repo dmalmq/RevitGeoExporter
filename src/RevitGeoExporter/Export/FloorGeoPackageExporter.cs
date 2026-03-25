@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
@@ -11,6 +12,7 @@ using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
+using RevitGeoExporter.Core.Shapefile;
 using RevitGeoExporter.Core.Validation;
 using ProjNet.CoordinateSystems;
 
@@ -219,7 +221,8 @@ public sealed class FloorGeoPackageExporter
 
     public FloorGeoPackageExportResult WritePreparedExport(
         PreparedExportSession session,
-        Action<ExportProgressUpdate>? progressCallback = null)
+        Action<ExportProgressUpdate>? progressCallback = null,
+        CancellationToken cancellationToken = default)
     {
         if (session is null)
         {
@@ -286,19 +289,34 @@ public sealed class FloorGeoPackageExporter
         int completedSteps = 0;
         progressCallback?.Invoke(new ExportProgressUpdate(0, totalSteps, "Preparing export..."));
 
-        GpkgWriter writer = new();
+        GpkgWriter gpkgWriter = session.OutputFormat == ExportFormat.GeoPackage ? new GpkgWriter() : null;
+        ShapefileWriter shpWriter = session.OutputFormat == ExportFormat.Shapefile ? new ShapefileWriter() : null;
+
         foreach (ArtifactPlan plan in artifactPlans)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!plan.ShouldWrite)
             {
                 result.AddArtifactResult(plan.ToResult(ArtifactDisposition.ReusedFromBaseline));
                 continue;
             }
 
+            progressCallback?.Invoke(new ExportProgressUpdate(completedSteps, totalSteps, $"Writing {plan.ArtifactName}..."));
+
             ExportLayer[] layers = plan.Layers
                 .Select(layerPlan => PrepareLayerForWrite(layerPlan.Layer, shouldTransform, sourceCoordinateSystem, targetCoordinateSystem))
                 .ToArray();
-            writer.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+
+            if (shpWriter != null)
+            {
+                shpWriter.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+            }
+            else
+            {
+                gpkgWriter!.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+            }
+
             result.AddArtifactResult(plan.ToResult(ArtifactDisposition.Written));
             completedSteps++;
             progressCallback?.Invoke(new ExportProgressUpdate(completedSteps, totalSteps, $"Exported {plan.ArtifactName}"));
@@ -469,6 +487,8 @@ public sealed class FloorGeoPackageExporter
     private static List<ArtifactPlan> BuildArtifactPlans(PreparedExportSession session)
     {
         string safeModelName = SanitizeFileName(session.SourceModelName);
+        bool isShapefile = session.OutputFormat == ExportFormat.Shapefile;
+        string ext = isShapefile ? ".shp" : ".gpkg";
         HashSet<string> usedFileStems = new(StringComparer.OrdinalIgnoreCase);
         List<ArtifactPlan> plans = new();
 
@@ -484,7 +504,12 @@ public sealed class FloorGeoPackageExporter
                         usedFileStems);
                     foreach ((string layerName, ExportLayer layer) in GetLayerEntries(session.FeatureTypes, viewData))
                     {
-                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}_{layerName}.gpkg");
+                        if (isShapefile && layer.Features.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}_{layerName}{ext}");
                         plans.Add(new ArtifactPlan(
                             $"view:{viewData.View.Id.Value}|layer:{layerName}",
                             Path.GetFileName(outputFilePath),
@@ -513,14 +538,31 @@ public sealed class FloorGeoPackageExporter
                         SanitizeFileName(viewData.View.Name),
                         viewData.View.Id.Value,
                         usedFileStems);
-                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}.gpkg");
-                    plans.Add(new ArtifactPlan(
-                        $"view:{viewData.View.Id.Value}",
-                        Path.GetFileName(outputFilePath),
-                        outputFilePath,
-                        session.PackageOptions.PackagingMode,
-                        new[] { viewData },
-                        layers));
+                    if (isShapefile)
+                    {
+                        foreach (ArtifactLayerPlan layer in layers.Where(layer => layer.Layer.Features.Count > 0))
+                        {
+                            string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}_{layer.LayerName}{ext}");
+                            plans.Add(new ArtifactPlan(
+                                $"view:{viewData.View.Id.Value}|layer:{layer.LayerName}",
+                                Path.GetFileName(outputFilePath),
+                                outputFilePath,
+                                session.PackageOptions.PackagingMode,
+                                new[] { viewData },
+                                new[] { layer }));
+                        }
+                    }
+                    else
+                    {
+                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{fileStem}{ext}");
+                        plans.Add(new ArtifactPlan(
+                            $"view:{viewData.View.Id.Value}",
+                            Path.GetFileName(outputFilePath),
+                            outputFilePath,
+                            session.PackageOptions.PackagingMode,
+                            new[] { viewData },
+                            layers));
+                    }
                 }
 
                 break;
@@ -546,14 +588,31 @@ public sealed class FloorGeoPackageExporter
                         $"{SanitizeFileName(representative.Level.Name)}_level",
                         representative.Level.Id.Value,
                         usedFileStems);
-                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{stem}.gpkg");
-                    plans.Add(new ArtifactPlan(
-                        $"level:{representative.Level.Id.Value}",
-                        Path.GetFileName(outputFilePath),
-                        outputFilePath,
-                        session.PackageOptions.PackagingMode,
-                        viewGroup,
-                        layers));
+                    if (isShapefile)
+                    {
+                        foreach (ArtifactLayerPlan layer in layers.Where(layer => layer.Layer.Features.Count > 0))
+                        {
+                            string outputFilePath = Path.Combine(session.OutputDirectory, $"{stem}_{layer.LayerName}{ext}");
+                            plans.Add(new ArtifactPlan(
+                                $"level:{representative.Level.Id.Value}|layer:{layer.LayerName}",
+                                Path.GetFileName(outputFilePath),
+                                outputFilePath,
+                                session.PackageOptions.PackagingMode,
+                                viewGroup,
+                                new[] { layer }));
+                        }
+                    }
+                    else
+                    {
+                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{stem}{ext}");
+                        plans.Add(new ArtifactPlan(
+                            $"level:{representative.Level.Id.Value}",
+                            Path.GetFileName(outputFilePath),
+                            outputFilePath,
+                            session.PackageOptions.PackagingMode,
+                            viewGroup,
+                            layers));
+                    }
                 }
 
                 break;
@@ -562,14 +621,31 @@ public sealed class FloorGeoPackageExporter
                 List<ArtifactLayerPlan> buildingLayers = MergeLayerPlans(session.FeatureTypes, session.Prepared.Views);
                 if (buildingLayers.Count > 0)
                 {
-                    string outputFilePath = Path.Combine(session.OutputDirectory, $"{safeModelName}_building.gpkg");
-                    plans.Add(new ArtifactPlan(
-                        $"building:{session.SourceDocumentKey}",
-                        Path.GetFileName(outputFilePath),
-                        outputFilePath,
-                        session.PackageOptions.PackagingMode,
-                        session.Prepared.Views,
-                        buildingLayers));
+                    if (isShapefile)
+                    {
+                        foreach (ArtifactLayerPlan layer in buildingLayers.Where(layer => layer.Layer.Features.Count > 0))
+                        {
+                            string outputFilePath = Path.Combine(session.OutputDirectory, $"{safeModelName}_building_{layer.LayerName}{ext}");
+                            plans.Add(new ArtifactPlan(
+                                $"building:{session.SourceDocumentKey}|layer:{layer.LayerName}",
+                                Path.GetFileName(outputFilePath),
+                                outputFilePath,
+                                session.PackageOptions.PackagingMode,
+                                session.Prepared.Views,
+                                new[] { layer }));
+                        }
+                    }
+                    else
+                    {
+                        string outputFilePath = Path.Combine(session.OutputDirectory, $"{safeModelName}_building{ext}");
+                        plans.Add(new ArtifactPlan(
+                            $"building:{session.SourceDocumentKey}",
+                            Path.GetFileName(outputFilePath),
+                            outputFilePath,
+                            session.PackageOptions.PackagingMode,
+                            session.Prepared.Views,
+                            buildingLayers));
+                    }
                 }
 
                 break;

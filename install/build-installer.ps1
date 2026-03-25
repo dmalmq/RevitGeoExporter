@@ -12,7 +12,10 @@ param(
     [string]$Configuration = "Release",
     [string]$Version = "",
     [string]$IsccPath = "",
-    [switch]$SkipBuild
+    [string]$RevitYear = "2024",
+    [string]$RevitApiDir = "",
+    [switch]$SkipBuild,
+    [switch]$NoRestore
 )
 
 Set-StrictMode -Version Latest
@@ -80,7 +83,18 @@ if (-not $SkipBuild) {
     }
 
     Write-Host "Building add-in payload into install/dist ..." -ForegroundColor Cyan
-    & $buildReleaseScript -Configuration $Configuration
+    $buildReleaseArgs = @{
+        Configuration = $Configuration
+        RevitYear = $RevitYear
+    }
+    if (-not [string]::IsNullOrWhiteSpace($RevitApiDir)) {
+        $buildReleaseArgs.RevitApiDir = $RevitApiDir
+    }
+    if ($NoRestore) {
+        $buildReleaseArgs.NoRestore = $true
+    }
+
+    & $buildReleaseScript @buildReleaseArgs
     if ($LASTEXITCODE -ne 0) {
         throw "build-release.ps1 failed with exit code $LASTEXITCODE."
     }
@@ -114,12 +128,14 @@ Install Inno Setup 6, or pass -IsccPath "C:\Path\To\ISCC.exe".
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
 Write-Host "Compiling installer with Inno Setup..." -ForegroundColor Cyan
+Write-Host "  Revit:   $RevitYear" -ForegroundColor DarkGray
 Write-Host "  Version: $safeVersion" -ForegroundColor DarkGray
 Write-Host "  Marker:  $versionMarkerPath" -ForegroundColor DarkGray
 Write-Host "  ISCC:    $iscc" -ForegroundColor DarkGray
 
 & $iscc `
     "/DMyAppVersion=$safeVersion" `
+    "/DRevitYear=$RevitYear" `
     "/DDistDir=$distDir" `
     "/DOutputDir=$outputDir" `
     $issFile
@@ -128,7 +144,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Installer compilation failed with exit code $LASTEXITCODE."
 }
 
-$expectedPrefix = "RevitGeoExporter-Setup-$safeVersion"
+$expectedPrefix = "RevitGeoExporter-Setup-$RevitYear-$safeVersion"
 $installer = Get-ChildItem -Path $outputDir -File |
     Where-Object { $_.BaseName -eq $expectedPrefix } |
     Select-Object -First 1

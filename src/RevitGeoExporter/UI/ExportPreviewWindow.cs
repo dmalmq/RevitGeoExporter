@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Forms.Integration;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -43,9 +44,10 @@ internal sealed class ExportPreviewWindow : IDisposable
     private readonly TextBlock _viewSummaryText = new();
     private readonly TextBlock _viewCoordinateText = new();
     private readonly TextBlock _viewHelperText = new();
-    private readonly WrapPanel _legendPanel = new();
+    private readonly StackPanel _legendPanel = new();
     private readonly TextBlock _legendEmptyText = new();
-    private readonly TextBlock _legendHelperText = new();
+    private readonly ScrollViewer _legendScrollViewer = new();
+    private readonly Button _legendCollapseButton = new();
     private readonly TextBlock _warningsSummaryText = new();
     private readonly ListBox _warningsListBox = new();
     private readonly TextBlock _warningsEmptyText = new();
@@ -73,6 +75,8 @@ internal sealed class ExportPreviewWindow : IDisposable
 
     private bool _isLoadingView;
     private bool _suppressUnassignedSelectionChanged;
+    private GridLength _sidebarExpandedWidth = new(250);
+    private GridLength _inspectorExpandedWidth = new(360);
 
     public ExportPreviewWindow(
         ExportPreviewRequest request,
@@ -125,84 +129,166 @@ internal sealed class ExportPreviewWindow : IDisposable
         {
             Margin = new Thickness(16),
         };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        UIElement headerCard = BuildHeaderCard();
-        root.Children.Add(headerCard);
+        WpfGrid body = new();
+        ColumnDefinition sidebarColumn = new() { Width = new GridLength(250), MinWidth = 180 };
+        ColumnDefinition leftSplitterColumn = new() { Width = GridLength.Auto };
+        ColumnDefinition mapColumn = new() { Width = new GridLength(1, GridUnitType.Star), MinWidth = 200 };
+        ColumnDefinition rightSplitterColumn = new() { Width = GridLength.Auto };
+        ColumnDefinition inspectorColumn = new() { Width = new GridLength(360), MinWidth = 280 };
+        body.ColumnDefinitions.Add(sidebarColumn);
+        body.ColumnDefinitions.Add(leftSplitterColumn);
+        body.ColumnDefinitions.Add(mapColumn);
+        body.ColumnDefinitions.Add(rightSplitterColumn);
+        body.ColumnDefinitions.Add(inspectorColumn);
 
-        WpfGrid body = new()
-        {
-            Margin = new Thickness(0, 12, 0, 0),
-        };
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(250) });
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(360) });
+        // Sidebar with collapse button
+        UIElement sidebarContent = BuildSidebar();
+        GridSplitter leftSplitter = CreateGridSplitter();
+        WpfGrid.SetColumn(leftSplitter, 1);
 
-        UIElement sidebar = BuildSidebar();
-        body.Children.Add(sidebar);
+        UIElement sidebarPanel = BuildCollapsiblePanel(
+            sidebarContent, "\u25C0", "\u25B6", isLeftSide: true,
+            onToggle: (collapsed) =>
+            {
+                if (collapsed)
+                {
+                    _sidebarExpandedWidth = sidebarColumn.Width;
+                    sidebarColumn.Width = GridLength.Auto;
+                    sidebarColumn.MinWidth = 0;
+                    leftSplitter.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    sidebarColumn.Width = _sidebarExpandedWidth;
+                    sidebarColumn.MinWidth = 180;
+                    leftSplitter.Visibility = Visibility.Visible;
+                }
+            });
+        body.Children.Add(sidebarPanel);
+        body.Children.Add(leftSplitter);
 
+        // Map workspace
         UIElement workspace = BuildWorkspace();
-        WpfGrid.SetColumn(workspace, 1);
+        WpfGrid.SetColumn(workspace, 2);
         if (workspace is FrameworkElement workspaceElement)
         {
-            workspaceElement.Margin = new Thickness(12, 0, 12, 0);
+            workspaceElement.Margin = new Thickness(6, 0, 6, 0);
         }
 
         body.Children.Add(workspace);
 
-        UIElement inspector = BuildInspectorCard();
-        WpfGrid.SetColumn(inspector, 2);
-        body.Children.Add(inspector);
+        // Inspector with collapse button
+        GridSplitter rightSplitter = CreateGridSplitter();
+        WpfGrid.SetColumn(rightSplitter, 3);
 
-        WpfGrid.SetRow(body, 1);
+        UIElement inspectorContent = BuildInspectorCard();
+        UIElement inspectorPanel = BuildCollapsiblePanel(
+            inspectorContent, "\u25B6", "\u25C0", isLeftSide: false,
+            onToggle: (collapsed) =>
+            {
+                if (collapsed)
+                {
+                    _inspectorExpandedWidth = inspectorColumn.Width;
+                    inspectorColumn.Width = GridLength.Auto;
+                    inspectorColumn.MinWidth = 0;
+                    rightSplitter.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    inspectorColumn.Width = _inspectorExpandedWidth;
+                    inspectorColumn.MinWidth = 280;
+                    rightSplitter.Visibility = Visibility.Visible;
+                }
+            });
+        WpfGrid.SetColumn(inspectorPanel, 4);
+        body.Children.Add(rightSplitter);
+        body.Children.Add(inspectorPanel);
+
         root.Children.Add(body);
 
         UIElement footer = BuildFooter();
-        WpfGrid.SetRow(footer, 2);
+        WpfGrid.SetRow(footer, 1);
         root.Children.Add(footer);
 
         return root;
     }
 
-    private UIElement BuildHeaderCard()
+    private static GridSplitter CreateGridSplitter()
     {
-        TextBlock title = new();
-        TextBlock description = new();
-        StackPanel content = new();
+        return new GridSplitter
+        {
+            Width = 5,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Background = Brushes.Transparent,
+            Cursor = Cursors.SizeWE,
+            ResizeBehavior = GridResizeBehavior.PreviousAndNext,
+        };
+    }
 
-        _viewComboBox.MinHeight = 34;
-        _viewComboBox.SelectionChanged += (_, _) => LoadSelectedView(fitViewport: true);
+    private static UIElement BuildCollapsiblePanel(
+        UIElement content,
+        string collapseGlyph,
+        string expandGlyph,
+        bool isLeftSide,
+        Action<bool> onToggle)
+    {
+        WpfGrid container = new();
+        if (isLeftSide)
+        {
+            container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            container.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        }
+        else
+        {
+            container.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        }
 
-        TextBlock viewLabel = new();
-        content.Children.Add(WpfDialogChrome.CreateFieldBlock(viewLabel, _viewComboBox, 10));
+        int contentColumn = isLeftSide ? 0 : 1;
+        int buttonColumn = isLeftSide ? 1 : 0;
 
-        Border summaryCard = WpfDialogChrome.CreateCard(new Thickness(12));
-        summaryCard.Background = WpfDialogChrome.StatusBackgroundBrush;
-        summaryCard.BorderBrush = WpfDialogChrome.CardBorderBrush;
+        if (content is FrameworkElement fe)
+        {
+            WpfGrid.SetColumn(fe, contentColumn);
+        }
 
-        StackPanel summaryStack = new();
-        _viewSummaryText.FontWeight = FontWeights.SemiBold;
-        _viewSummaryText.Foreground = WpfDialogChrome.StatusTextBrush;
-        _viewSummaryText.TextWrapping = TextWrapping.Wrap;
-        summaryStack.Children.Add(_viewSummaryText);
+        container.Children.Add(content);
 
-        _viewCoordinateText.Margin = new Thickness(0, 6, 0, 0);
-        _viewCoordinateText.Foreground = WpfDialogChrome.MutedTextBrush;
-        _viewCoordinateText.TextWrapping = TextWrapping.Wrap;
-        summaryStack.Children.Add(_viewCoordinateText);
+        Button toggleButton = new()
+        {
+            Content = collapseGlyph,
+            Width = 20,
+            FontSize = 10,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            ToolTip = "Collapse",
+        };
+        WpfGrid.SetColumn(toggleButton, buttonColumn);
 
-        _viewHelperText.Margin = new Thickness(0, 8, 0, 0);
-        _viewHelperText.Foreground = WpfDialogChrome.MutedTextBrush;
-        _viewHelperText.TextWrapping = TextWrapping.Wrap;
-        summaryStack.Children.Add(_viewHelperText);
+        bool isCollapsed = false;
+        toggleButton.Click += (_, _) =>
+        {
+            isCollapsed = !isCollapsed;
+            if (content is FrameworkElement element)
+            {
+                element.Visibility = isCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            }
 
-        summaryCard.Child = summaryStack;
-        content.Children.Add(summaryCard);
+            toggleButton.Content = isCollapsed ? expandGlyph : collapseGlyph;
+            toggleButton.ToolTip = isCollapsed ? "Expand" : "Collapse";
+            onToggle(isCollapsed);
+        };
 
-        ApplyHeaderLanguage(title, description, viewLabel);
-        return WpfDialogChrome.CreateSectionCard(title, description, content);
+        container.Children.Add(toggleButton);
+        return container;
     }
 
     private UIElement BuildSidebar()
@@ -329,45 +415,13 @@ internal sealed class ExportPreviewWindow : IDisposable
 
     private UIElement BuildWorkspace()
     {
-        WpfGrid workspace = new();
-        workspace.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        workspace.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        UIElement legendCard = BuildLegendCard();
-        workspace.Children.Add(legendCard);
-
         Border mapCard = WpfDialogChrome.CreateCard(new Thickness(0));
         mapCard.Child = new WindowsFormsHost
         {
             Child = _canvas,
         };
-        WpfGrid.SetRow(mapCard, 1);
-        mapCard.Margin = new Thickness(0, 12, 0, 0);
-        workspace.Children.Add(mapCard);
 
-        return workspace;
-    }
-
-    private UIElement BuildLegendCard()
-    {
-        TextBlock title = new();
-        TextBlock description = new();
-        StackPanel content = new();
-
-        _legendHelperText.Foreground = WpfDialogChrome.MutedTextBrush;
-        _legendHelperText.TextWrapping = TextWrapping.Wrap;
-        _legendHelperText.Margin = new Thickness(0, 0, 0, 8);
-        content.Children.Add(_legendHelperText);
-
-        content.Children.Add(_legendPanel);
-
-        _legendEmptyText.Foreground = WpfDialogChrome.MutedTextBrush;
-        _legendEmptyText.TextWrapping = TextWrapping.Wrap;
-        _legendEmptyText.Visibility = Visibility.Collapsed;
-        content.Children.Add(_legendEmptyText);
-
-        ApplyLegendLanguage(title, description);
-        return WpfDialogChrome.CreateSectionCard(title, description, content);
+        return mapCard;
     }
 
     private UIElement BuildInspectorCard()
@@ -375,6 +429,60 @@ internal sealed class ExportPreviewWindow : IDisposable
         Border card = WpfDialogChrome.CreateCard();
 
         StackPanel layout = new();
+
+        // --- View selector (moved from header) ---
+        TextBlock viewTitle = new();
+        WpfDialogChrome.StyleSectionTitle(viewTitle);
+        viewTitle.Text = T("Preview view", "プレビュー ビュー");
+        layout.Children.Add(viewTitle);
+
+        TextBlock viewDescription = new();
+        WpfDialogChrome.StyleDescriptionText(viewDescription);
+        viewDescription.Text = T(
+            "Switch between the selected plan views and inspect the export output before writing files.",
+            "選択した平面ビューを切り替えながら、出力前の内容を確認します。");
+        layout.Children.Add(viewDescription);
+
+        _viewComboBox.MinHeight = 34;
+        _viewComboBox.SelectionChanged += (_, _) => LoadSelectedView(fitViewport: true);
+        TextBlock viewLabel = new() { Text = T("View", "ビュー") };
+        layout.Children.Add(WpfDialogChrome.CreateFieldBlock(viewLabel, _viewComboBox, 10));
+
+        Border summaryCard = WpfDialogChrome.CreateCard(new Thickness(12));
+        summaryCard.Background = WpfDialogChrome.StatusBackgroundBrush;
+        summaryCard.BorderBrush = WpfDialogChrome.CardBorderBrush;
+
+        StackPanel summaryStack = new();
+        _viewSummaryText.FontWeight = FontWeights.SemiBold;
+        _viewSummaryText.Foreground = WpfDialogChrome.StatusTextBrush;
+        _viewSummaryText.TextWrapping = TextWrapping.Wrap;
+        summaryStack.Children.Add(_viewSummaryText);
+
+        _viewCoordinateText.Margin = new Thickness(0, 6, 0, 0);
+        _viewCoordinateText.Foreground = WpfDialogChrome.MutedTextBrush;
+        _viewCoordinateText.TextWrapping = TextWrapping.Wrap;
+        summaryStack.Children.Add(_viewCoordinateText);
+
+        _viewHelperText.Margin = new Thickness(0, 8, 0, 0);
+        _viewHelperText.Foreground = WpfDialogChrome.MutedTextBrush;
+        _viewHelperText.TextWrapping = TextWrapping.Wrap;
+        summaryStack.Children.Add(_viewHelperText);
+
+        summaryCard.Child = summaryStack;
+        layout.Children.Add(summaryCard);
+
+        // --- Collapsible legend ---
+        layout.Children.Add(BuildLegendSection());
+
+        // --- Separator ---
+        layout.Children.Add(new Border
+        {
+            BorderBrush = WpfDialogChrome.CardBorderBrush,
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Margin = new Thickness(0, 14, 0, 14),
+        });
+
+        // --- Inspector ---
         TextBlock title = new();
         TextBlock description = new();
         WpfDialogChrome.StyleSectionTitle(title);
@@ -412,8 +520,74 @@ internal sealed class ExportPreviewWindow : IDisposable
             "Inspect metadata, staged assignments, and warnings for the current preview.",
             "現在のプレビューに対するメタデータ、保留中の割り当て、警告を確認します。");
 
-        card.Child = layout;
+        card.Child = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Content = layout,
+        };
         return card;
+    }
+
+    private UIElement BuildLegendSection()
+    {
+        StackPanel section = new()
+        {
+            Margin = new Thickness(0, 12, 0, 0),
+        };
+
+        // Header row with title and collapse toggle
+        DockPanel header = new() { LastChildFill = false };
+
+        TextBlock legendTitle = new()
+        {
+            Text = T("Legend", "凡例"),
+            FontWeight = FontWeights.SemiBold,
+            Foreground = WpfDialogChrome.StatusTextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        DockPanel.SetDock(legendTitle, Dock.Left);
+        header.Children.Add(legendTitle);
+
+        _legendCollapseButton.Content = "\u25BC";
+        _legendCollapseButton.FontSize = 10;
+        _legendCollapseButton.Padding = new Thickness(6, 2, 6, 2);
+        _legendCollapseButton.Background = Brushes.Transparent;
+        _legendCollapseButton.BorderThickness = new Thickness(0);
+        _legendCollapseButton.Cursor = System.Windows.Input.Cursors.Hand;
+        _legendCollapseButton.VerticalAlignment = VerticalAlignment.Center;
+        DockPanel.SetDock(_legendCollapseButton, Dock.Right);
+        _legendCollapseButton.Click += (_, _) =>
+        {
+            if (_legendScrollViewer.Visibility == Visibility.Visible)
+            {
+                _legendScrollViewer.Visibility = Visibility.Collapsed;
+                _legendCollapseButton.Content = "\u25B6";
+            }
+            else
+            {
+                _legendScrollViewer.Visibility = Visibility.Visible;
+                _legendCollapseButton.Content = "\u25BC";
+            }
+        };
+        header.Children.Add(_legendCollapseButton);
+
+        section.Children.Add(header);
+
+        // Legend entries in a scrollable vertical list
+        _legendPanel.Orientation = Orientation.Vertical;
+        _legendScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+        _legendScrollViewer.MaxHeight = 180;
+        _legendScrollViewer.Margin = new Thickness(0, 6, 0, 0);
+        _legendScrollViewer.Content = _legendPanel;
+        section.Children.Add(_legendScrollViewer);
+
+        _legendEmptyText.Foreground = WpfDialogChrome.MutedTextBrush;
+        _legendEmptyText.TextWrapping = TextWrapping.Wrap;
+        _legendEmptyText.Margin = new Thickness(0, 6, 0, 0);
+        _legendEmptyText.Visibility = Visibility.Collapsed;
+        section.Children.Add(_legendEmptyText);
+
+        return section;
     }
 
     private UIElement BuildDetailsTab()
@@ -722,7 +896,6 @@ internal sealed class ExportPreviewWindow : IDisposable
         _viewSummaryText.Text = _controller.BuildQuickSummaryText();
         _viewCoordinateText.Text = _controller.BuildCoordinateSummaryText();
         _viewHelperText.Text = _controller.BuildViewInstructionText();
-        _legendHelperText.Text = _controller.BuildCoordinateSummaryText();
     }
 
     private void PopulateLegend()
@@ -1147,7 +1320,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         StackPanel item = new()
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 16, 8),
+            Margin = new Thickness(0, 0, 0, 4),
         };
 
         Border swatch = new()
@@ -1191,15 +1364,6 @@ internal sealed class ExportPreviewWindow : IDisposable
         }
     }
 
-    private void ApplyHeaderLanguage(TextBlock title, TextBlock description, TextBlock viewLabel)
-    {
-        title.Text = T("Preview view", "プレビュー ビュー");
-        description.Text = T(
-            "Switch between the selected plan views and inspect the export output before writing files.",
-            "選択した平面ビューを切り替えながら、出力前の内容を確認します。");
-        viewLabel.Text = T("View", "ビュー");
-    }
-
     private void ApplySearchLanguage(TextBlock title, TextBlock description, TextBlock label)
     {
         title.Text = T("Search", "検索");
@@ -1233,14 +1397,6 @@ internal sealed class ExportPreviewWindow : IDisposable
             "現在のプレビューに合わせるか、表示位置をリセットします。");
         _fitButton.Content = T("Fit", "全体表示");
         _resetButton.Content = T("Reset", "リセット");
-    }
-
-    private void ApplyLegendLanguage(TextBlock title, TextBlock description)
-    {
-        title.Text = T("Legend", "凡例");
-        description.Text = T(
-            "Visible unit categories for the selected preview view.",
-            "選択中のプレビュー ビューで表示されている unit カテゴリです。");
     }
 
     private void ApplyAssignmentsLanguage()
