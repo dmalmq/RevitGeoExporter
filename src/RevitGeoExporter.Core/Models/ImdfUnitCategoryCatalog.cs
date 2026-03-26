@@ -19,6 +19,7 @@ public static class ImdfUnitCategoryCatalog
         ["escalator"] = new ZoneInfo("escalator", "D0D0D0", null),
         ["fieldofplay"] = new ZoneInfo("fieldofplay", "CFE8C6", null),
         ["firstaid"] = new ZoneInfo("firstaid", "FFD3D3", null),
+        ["fixture"] = new ZoneInfo("fixture", "D4C5A9", null),
         ["fitnessroom"] = new ZoneInfo("fitnessroom", "E2FFD7", null),
         ["foodservice"] = new ZoneInfo("foodservice", "FFE4C6", null),
         ["footbridge"] = new ZoneInfo("footbridge", "E6F3FF", null),

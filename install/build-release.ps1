@@ -42,7 +42,6 @@ if (-not (Test-Path $projectFile)) {
     Write-Error "Cannot find project file at $projectFile. Run this script from the repo."
     exit 1
 }
-
 # Clean dist folder
 if (Test-Path $distDir) {
     Remove-Item -Recurse -Force $distDir
@@ -71,7 +70,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Error "Build failed."
     exit 1
 }
-
 $binDir = Join-Path $projectDir "bin\$Configuration\net48"
 
 if (-not (Test-Path $binDir)) {
@@ -100,7 +98,6 @@ $files = @(
     "System.Runtime.CompilerServices.Unsafe.dll",
     "System.Text.Encoding.CodePages.dll"
 )
-
 $missing = @()
 foreach ($f in $files) {
     $src = Join-Path $binDir $f

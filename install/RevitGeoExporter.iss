@@ -10,7 +10,6 @@
 #ifndef DistDir
   #define DistDir "dist"
 #endif
-
 #ifndef OutputDir
   #define OutputDir "output"
 #endif
@@ -46,7 +45,6 @@ WizardStyle=modern
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-
 [InstallDelete]
 Type: filesandordirs; Name: "{app}"
 
@@ -54,7 +52,6 @@ Type: filesandordirs; Name: "{app}"
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "RevitGeoExporter.addin"
 Source: "examples\*"; DestDir: "{app}\Examples"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#DistDir}\RevitGeoExporter.addin"; DestDir: "{#AddinsRoot}"; Flags: ignoreversion
-
 [Code]
 function InitializeSetup(): Boolean;
 begin

@@ -78,14 +78,13 @@ public static class CoordinateSystemCatalog
 
     public static string DescribeEpsg(int epsg)
     {
-        return epsg switch
+        string? presetName = CrsPresetCatalog.TryGetDisplayName(epsg);
+        if (presetName != null)
         {
-            3857 => "EPSG:3857 - WGS 84 / Pseudo-Mercator",
-            4326 => "EPSG:4326 - WGS 84",
-            _ when JapanPlaneRectangular.TryGetZone(epsg, out JapanPlaneRectangularZoneDefinition? zone)
-                => $"EPSG:{epsg} - {zone!.DisplayName}",
-            _ => $"EPSG:{epsg}",
-        };
+            return $"EPSG:{epsg} - {presetName}";
+        }
+
+        return $"EPSG:{epsg}";
     }
 
     public static bool TryCreateSourceCoordinateSystem(

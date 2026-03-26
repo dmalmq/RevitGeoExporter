@@ -262,6 +262,25 @@ public sealed class ExportPreviewService
             }
         }
 
+        if (prepared.FixtureLayer != null)
+        {
+            foreach (ExportPolygon feature in prepared.FixtureLayer.Features.OfType<ExportPolygon>())
+            {
+                features.Add(
+                    new PreviewFeatureData(
+                        ExportFeatureType.Fixture,
+                        feature,
+                        null,
+                        ReadString(feature.Attributes, "id"),
+                        "fixture",
+                        null,
+                        ReadString(feature.Attributes, "name"),
+                        ReadNullableString(feature.Attributes, "name"),
+                        "D4C5A9",
+                        "8D6E63"));
+            }
+        }
+
         Bounds2D bounds = FeatureBoundsCalculator.FromFeatures(features.Select(x => x.Feature));
         List<PreviewUnassignedFloorGroup> unassignedFloors = features
             .Where(feature => feature.FeatureType == ExportFeatureType.Unit &&

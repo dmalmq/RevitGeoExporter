@@ -34,6 +34,7 @@ public sealed class ExportValidationSnapshotBuilder
                 AddLayerFeatures(features, "detail", prepared.DetailLayer?.Features);
                 AddLayerFeatures(features, "opening", prepared.OpeningLayer?.Features);
                 AddLayerFeatures(features, "level", prepared.LevelLayer?.Features);
+                AddLayerFeatures(features, "fixture", prepared.FixtureLayer?.Features);
             }
 
             List<UnsupportedOpeningFamilySnapshot> unsupportedOpenings = context.UnsupportedOpenings
@@ -78,7 +79,8 @@ public sealed class ExportValidationSnapshotBuilder
             session.SourceDocumentKey,
             session.UnitGeometrySource,
             session.UnitAttributeSource,
-            session.ActiveValidationPolicyProfile);
+            session.ActiveValidationPolicyProfile,
+            includeFixtures: session.FeatureTypes.HasFlag(ExportFeatureType.Fixture));
     }
 
     private static void AddLayerFeatures(

@@ -170,4 +170,6 @@ public sealed class ExportDialogResult
     public SchemaProfile ActiveSchemaProfile { get; }
 
     public ValidationPolicyProfile ActiveValidationPolicyProfile { get; }
+
+    public ExportFormat OutputFormat { get; set; } = ExportFormat.GeoPackage;
 }

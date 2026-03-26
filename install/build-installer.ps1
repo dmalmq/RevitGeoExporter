@@ -17,7 +17,6 @@ param(
     [switch]$SkipBuild,
     [switch]$NoRestore
 )
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -76,7 +75,6 @@ $buildReleaseScript = Join-Path $scriptDir "build-release.ps1"
 if (-not (Test-Path $issFile)) {
     throw "Installer script not found: $issFile"
 }
-
 if (-not $SkipBuild) {
     if (-not (Test-Path $buildReleaseScript)) {
         throw "build-release.ps1 not found at $buildReleaseScript"
@@ -99,7 +97,6 @@ if (-not $SkipBuild) {
         throw "build-release.ps1 failed with exit code $LASTEXITCODE."
     }
 }
-
 $payloadDll = Join-Path $distDir "RevitGeoExporter.dll"
 if (-not (Test-Path $payloadDll)) {
     throw "Payload missing: $payloadDll. Run build-release.ps1 first or remove -SkipBuild."
@@ -126,7 +123,6 @@ Install Inno Setup 6, or pass -IsccPath "C:\Path\To\ISCC.exe".
 }
 
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-
 Write-Host "Compiling installer with Inno Setup..." -ForegroundColor Cyan
 Write-Host "  Revit:   $RevitYear" -ForegroundColor DarkGray
 Write-Host "  Version: $safeVersion" -ForegroundColor DarkGray
@@ -139,11 +135,9 @@ Write-Host "  ISCC:    $iscc" -ForegroundColor DarkGray
     "/DDistDir=$distDir" `
     "/DOutputDir=$outputDir" `
     $issFile
-
 if ($LASTEXITCODE -ne 0) {
     throw "Installer compilation failed with exit code $LASTEXITCODE."
 }
-
 $expectedPrefix = "RevitGeoExporter-Setup-$RevitYear-$safeVersion"
 $installer = Get-ChildItem -Path $outputDir -File |
     Where-Object { $_.BaseName -eq $expectedPrefix } |

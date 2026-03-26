@@ -63,6 +63,8 @@ public sealed class ExportProfile
 
     public string ActiveValidationPolicyProfileName { get; set; } = ValidationPolicyProfile.RecommendedProfileName;
 
+    public ExportFormat OutputFormat { get; set; } = ExportFormat.GeoPackage;
+
     public ExportDialogSettings ToSettings()
     {
         List<SchemaProfile> schemaProfiles = CloneSchemaProfiles(SchemaProfiles);
@@ -95,6 +97,7 @@ public sealed class ExportProfile
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, ActiveSchemaProfileName),
             ValidationPolicyProfiles = validationPolicyProfiles,
             ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(validationPolicyProfiles, ActiveValidationPolicyProfileName),
+            OutputFormat = OutputFormat,
         };
     }
 
@@ -138,6 +141,7 @@ public sealed class ExportProfile
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, settings.ActiveSchemaProfileName),
             ValidationPolicyProfiles = validationPolicyProfiles,
             ActiveValidationPolicyProfileName = ValidationPolicyProfile.ResolveActiveName(validationPolicyProfiles, settings.ActiveValidationPolicyProfileName),
+            OutputFormat = settings.OutputFormat,
         };
     }
 

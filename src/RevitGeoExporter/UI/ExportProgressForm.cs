@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using RevitGeoExporter.Export;
@@ -11,6 +13,10 @@ public sealed class ExportProgressForm : IDisposable
     private readonly TextBlock _statusLabel;
     private readonly ProgressBar _progressBar;
     private readonly TextBlock _countLabel;
+    private readonly TextBlock _timingLabel;
+    private readonly Button _cancelButton;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly Stopwatch _stopwatch = new();
 
     public ExportProgressForm()
     {
@@ -32,9 +38,34 @@ public sealed class ExportProgressForm : IDisposable
         _countLabel = new TextBlock
         {
             Text = "0 / 1",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12,
+        };
+
+        _timingLabel = new TextBlock
+        {
+            Text = string.Empty,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             FontSize = 12,
+            Foreground = WpfDialogChrome.MutedTextBrush,
+        };
+
+        _cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 80,
+            Padding = new Thickness(12, 4, 12, 4),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 10, 0, 0),
+        };
+        _cancelButton.Click += (_, _) =>
+        {
+            _cancellationTokenSource.Cancel();
+            _cancelButton.IsEnabled = false;
+            _cancelButton.Content = "Cancelling...";
+            Refresh();
         };
 
         Grid root = new()
@@ -44,20 +75,31 @@ public sealed class ExportProgressForm : IDisposable
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         root.Children.Add(_statusLabel);
         Grid.SetRow(_progressBar, 1);
         _progressBar.Margin = new Thickness(0, 12, 0, 0);
         root.Children.Add(_progressBar);
-        Grid.SetRow(_countLabel, 2);
-        _countLabel.Margin = new Thickness(0, 8, 0, 0);
-        root.Children.Add(_countLabel);
+
+        Grid infoRow = new();
+        infoRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        infoRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        infoRow.Children.Add(_countLabel);
+        Grid.SetColumn(_timingLabel, 1);
+        infoRow.Children.Add(_timingLabel);
+        infoRow.Margin = new Thickness(0, 8, 0, 0);
+        Grid.SetRow(infoRow, 2);
+        root.Children.Add(infoRow);
+
+        Grid.SetRow(_cancelButton, 3);
+        root.Children.Add(_cancelButton);
 
         _window = new Window
         {
             Title = "Exporting GeoPackages",
             Width = 540,
-            Height = 160,
+            Height = 200,
             ResizeMode = ResizeMode.NoResize,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             ShowInTaskbar = false,
@@ -65,8 +107,11 @@ public sealed class ExportProgressForm : IDisposable
         };
     }
 
+    public CancellationToken CancellationToken => _cancellationTokenSource.Token;
+
     public void Show()
     {
+        _stopwatch.Start();
         _window.Show();
     }
 
@@ -77,6 +122,7 @@ public sealed class ExportProgressForm : IDisposable
 
     public void Close()
     {
+        _stopwatch.Stop();
         _window.Close();
     }
 
@@ -96,6 +142,7 @@ public sealed class ExportProgressForm : IDisposable
         _progressBar.Maximum = total;
         _progressBar.Value = completed;
         _countLabel.Text = $"{completed} / {total}";
+        _timingLabel.Text = FormatTiming(completed, total);
         Refresh();
     }
 
@@ -105,5 +152,30 @@ public sealed class ExportProgressForm : IDisposable
         {
             _window.Close();
         }
+
+        _cancellationTokenSource.Dispose();
+    }
+
+    private string FormatTiming(int completed, int total)
+    {
+        TimeSpan elapsed = _stopwatch.Elapsed;
+        string elapsedText = FormatTimeSpan(elapsed);
+
+        if (completed < 2 || completed >= total)
+        {
+            return $"Elapsed: {elapsedText}";
+        }
+
+        double secondsPerStep = elapsed.TotalSeconds / completed;
+        int remainingSteps = total - completed;
+        TimeSpan estimated = TimeSpan.FromSeconds(secondsPerStep * remainingSteps);
+        return $"Elapsed: {elapsedText} | Remaining: ~{FormatTimeSpan(estimated)}";
+    }
+
+    private static string FormatTimeSpan(TimeSpan timeSpan)
+    {
+        return timeSpan.TotalHours >= 1
+            ? $"{(int)timeSpan.TotalHours}:{timeSpan.Minutes:D2}:{timeSpan.Seconds:D2}"
+            : $"{(int)timeSpan.TotalMinutes}:{timeSpan.Seconds:D2}";
     }
 }

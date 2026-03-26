@@ -1,10 +1,15 @@
 <#
 .SYNOPSIS
-    Uninstalls the RevitGeoExporter add-in for Revit 2024.
+    Uninstalls the RevitGeoExporter add-in for the selected Revit year.
 .DESCRIPTION
-    Removes the add-in DLLs and manifest from the system-wide Revit add-ins folder.
+    Removes the add-in DLLs and manifest from the system-wide Revit add-ins folder
+    for the selected Revit year.
     Must be run as Administrator.
 #>
+param(
+    [string]$RevitYear = "2024"
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -18,7 +23,7 @@ if (-not $isAdmin) {
     exit 1
 }
 
-$addinsRoot = "C:\ProgramData\Autodesk\Revit\Addins\2024"
+$addinsRoot = "C:\ProgramData\Autodesk\Revit\Addins\$RevitYear"
 $installDir = Join-Path $addinsRoot "RevitGeoExporter"
 $addinFile  = Join-Path $addinsRoot "RevitGeoExporter.addin"
 
@@ -46,7 +51,7 @@ if (Test-Path $addinFile) {
 Write-Host ""
 if ($removed) {
     Write-Host "Uninstall complete." -ForegroundColor Green
-    Write-Host "Please restart Revit 2024 to fully unload the add-in." -ForegroundColor Yellow
+    Write-Host "Please restart Revit $RevitYear to fully unload the add-in." -ForegroundColor Yellow
 } else {
     Write-Host "Nothing to uninstall. RevitGeoExporter does not appear to be installed." -ForegroundColor Yellow
 }

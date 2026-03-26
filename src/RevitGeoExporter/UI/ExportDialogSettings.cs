@@ -63,4 +63,6 @@ public sealed class ExportDialogSettings
     public string PreviewBasemapAttribution { get; set; } = PreviewBasemapSettings.DefaultAttribution;
 
     public string QgisExecutablePath { get; set; } = string.Empty;
+
+    public ExportFormat OutputFormat { get; set; } = ExportFormat.GeoPackage;
 }

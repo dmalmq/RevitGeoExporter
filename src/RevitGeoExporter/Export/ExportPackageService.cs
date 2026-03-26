@@ -68,7 +68,7 @@ public sealed class ExportPackageService
                     string.Equals(result.ArtifactKey, artifact.ArtifactKey, StringComparison.Ordinal));
                 if (sourceArtifact != null && !string.IsNullOrWhiteSpace(artifact.OutputFilePath))
                 {
-                    File.Copy(sourceArtifact.OutputFilePath, artifact.OutputFilePath, overwrite: true);
+                    CopyArtifactOutput(sourceArtifact.OutputFilePath, artifact.OutputFilePath);
                 }
             }
 
@@ -147,10 +147,13 @@ public sealed class ExportPackageService
 
         foreach (ExportArtifactResult artifact in exportResult.ArtifactResults)
         {
+            string kind = string.Equals(Path.GetExtension(artifact.OutputFilePath), ".shp", StringComparison.OrdinalIgnoreCase)
+                ? "shapefile"
+                : "gpkg";
             manifest.Files.Add(new ExportPackageManifestFile
             {
                 ArtifactKey = artifact.ArtifactKey,
-                Kind = "gpkg",
+                Kind = kind,
                 RelativePath = Path.GetFileName(artifact.OutputFilePath),
                 OutputFilePath = string.IsNullOrWhiteSpace(packageDirectory)
                     ? artifact.OutputFilePath
@@ -168,6 +171,43 @@ public sealed class ExportPackageService
         }
 
         return manifest;
+    }
+
+    private static void CopyArtifactOutput(string sourcePath, string destinationPath)
+    {
+        if (string.Equals(Path.GetExtension(sourcePath), ".shp", StringComparison.OrdinalIgnoreCase))
+        {
+            CopyShapefileSet(sourcePath, destinationPath);
+            return;
+        }
+
+        File.Copy(sourcePath, destinationPath, overwrite: true);
+    }
+
+    private static void CopyShapefileSet(string sourceShapefilePath, string destinationShapefilePath)
+    {
+        string sourceDirectory = Path.GetDirectoryName(sourceShapefilePath) ?? string.Empty;
+        string destinationDirectory = Path.GetDirectoryName(destinationShapefilePath) ?? string.Empty;
+        string sourceStem = Path.GetFileNameWithoutExtension(sourceShapefilePath);
+        string destinationStem = Path.GetFileNameWithoutExtension(destinationShapefilePath);
+
+        if (string.IsNullOrWhiteSpace(sourceDirectory) || string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            throw new FileNotFoundException("Could not resolve shapefile source or destination directory.", sourceShapefilePath);
+        }
+
+        string[] sourceFiles = Directory.GetFiles(sourceDirectory, sourceStem + ".*");
+        if (sourceFiles.Length == 0)
+        {
+            throw new FileNotFoundException("Could not find any shapefile components for the exported artifact.", sourceShapefilePath);
+        }
+
+        Directory.CreateDirectory(destinationDirectory);
+        foreach (string sourceFile in sourceFiles)
+        {
+            string destinationFile = Path.Combine(destinationDirectory, destinationStem + Path.GetExtension(sourceFile));
+            File.Copy(sourceFile, destinationFile, overwrite: true);
+        }
     }
 
     private static void WritePreviewImages(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)

@@ -440,6 +440,11 @@ public sealed class ExportValidationService
             count += features.Count(feature => string.Equals(feature.FeatureType, "level", StringComparison.OrdinalIgnoreCase));
         }
 
+        if (request.IncludeFixtures)
+        {
+            count += features.Count(feature => string.Equals(feature.FeatureType, "fixture", StringComparison.OrdinalIgnoreCase));
+        }
+
         return count;
     }
 }

@@ -17,7 +17,7 @@ namespace RevitGeoExporter.Extractors;
 public sealed class DetailExtractor
 {
     private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
-    private const double StairDetailSpacingMeters = 0.60d;
+    private const double StairStepFallbackSpacingMeters = 0.30d;
     private static readonly GeometryFactory GeometryFactory = new();
 
     private readonly Document _document;
@@ -237,25 +237,15 @@ public sealed class DetailExtractor
         ICollection<string> warnings)
     {
         lines = new List<LineString2D>();
-        CurveLoop footprintBoundary;
+
         CurveLoop stairsPath;
         try
         {
-            footprintBoundary = run.GetFootprintBoundary();
             stairsPath = run.GetStairsPath();
         }
         catch (Exception)
         {
-            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} path/boundary could not be read for detail export.");
-            return false;
-        }
-
-        if (!TryCreatePolygonFromCurveLoop(
-                footprintBoundary,
-                out Polygon footprintPolygon,
-                warnings,
-                $"{BuildStairRunWarningPrefix(stair, run)} footprint boundary"))
-        {
+            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} path could not be read for detail export.");
             return false;
         }
 
@@ -271,13 +261,180 @@ public sealed class DetailExtractor
             return false;
         }
 
-        double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
-        double halfCutLengthMeters = runWidthMeters * 1.5d;
-        HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
+        if (TryBuildModeledRunStepLines(stair, run, pathPoints, pathLengthMeters, warnings, out lines))
+        {
+            return true;
+        }
 
-        IReadOnlyList<double> linePositions = StairDetailLayout.BuildCenteredLinePositions(
-            pathLengthMeters,
-            StairDetailSpacingMeters);
+        CurveLoop footprintBoundary;
+        try
+        {
+            footprintBoundary = run.GetFootprintBoundary();
+        }
+        catch (Exception)
+        {
+            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} footprint boundary could not be read for detail export.");
+            return false;
+        }
+
+        if (!TryCreatePolygonFromCurveLoop(
+                footprintBoundary,
+                out Polygon footprintPolygon,
+                warnings,
+                $"{BuildStairRunWarningPrefix(stair, run)} footprint boundary"))
+        {
+            return false;
+        }
+
+        if (TryBuildSchematicRunStepLines(run, pathPoints, pathLengthMeters, footprintPolygon, geometryRepair, out lines))
+        {
+            geometryRepair.SimplifiedDetails++;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryBuildModeledRunStepLines(
+        Stairs stair,
+        StairsRun run,
+        IReadOnlyList<Point2D> pathPoints,
+        double pathLengthMeters,
+        ICollection<string> warnings,
+        out List<LineString2D> lines)
+    {
+        lines = new List<LineString2D>();
+
+        GeometryElement? geometry;
+        try
+        {
+            geometry = run.get_Geometry(CreateGeometryOptions());
+        }
+        catch (Exception)
+        {
+            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} tread geometry could not be read; using schematic stair detail lines.");
+            return false;
+        }
+
+        if (geometry == null)
+        {
+            return false;
+        }
+
+        List<Solid> solids = CollectSolids(geometry);
+        if (solids.Count == 0)
+        {
+            return false;
+        }
+
+        double runWidthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters);
+        double minLineLengthMeters = _geometryRepairOptions.MinimumOpeningLengthMeters;
+        double maxDistanceToPathMeters = Math.Max(minLineLengthMeters, runWidthMeters * 0.35d);
+        List<StairTreadLineCandidate> candidates = new();
+
+        for (int solidIndex = 0; solidIndex < solids.Count; solidIndex++)
+        {
+            Solid solid = solids[solidIndex];
+            foreach (Face face in solid.Faces)
+            {
+                if (face is not PlanarFace planarFace || planarFace.FaceNormal.Z < 0.98d)
+                {
+                    continue;
+                }
+
+                if (TryBuildTreadFaceLineCandidate(
+                        planarFace,
+                        pathPoints,
+                        minLineLengthMeters,
+                        maxDistanceToPathMeters,
+                        out StairTreadLineCandidate candidate))
+                {
+                    candidates.Add(candidate);
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        IReadOnlyList<LineString2D> selected = StairTreadLineSelector.SelectDistinctOrderedLines(
+            candidates,
+            BuildStationMergeThreshold(run, pathLengthMeters));
+        if (selected.Count == 0)
+        {
+            return false;
+        }
+
+        lines.AddRange(selected);
+        return true;
+    }
+
+    private bool TryBuildTreadFaceLineCandidate(
+        PlanarFace face,
+        IReadOnlyList<Point2D> pathPoints,
+        double minimumLineLengthMeters,
+        double maxDistanceToPathMeters,
+        out StairTreadLineCandidate candidate)
+    {
+        candidate = default;
+        List<StairTreadLineCandidate> edgeCandidates = new();
+        List<Point2D> facePoints = new();
+
+        foreach (EdgeArray edgeArray in face.EdgeLoops)
+        {
+            foreach (Edge edge in edgeArray)
+            {
+                if (!TryExtractEdgeLineString(edge, out LineString2D line))
+                {
+                    continue;
+                }
+
+                if (!TryInterpolateOnPolyline(line.Points, 0.5d, out Point2D midpoint, out _))
+                {
+                    continue;
+                }
+
+                if (!TryLocateOnPolyline(pathPoints, midpoint, out double stationMeters, out _, out double distanceToPathMeters) ||
+                    distanceToPathMeters > maxDistanceToPathMeters)
+                {
+                    continue;
+                }
+
+                edgeCandidates.Add(new StairTreadLineCandidate(line, stationMeters));
+                facePoints.AddRange(line.Points);
+            }
+        }
+
+        if (edgeCandidates.Count == 0 || facePoints.Count < 3)
+        {
+            return false;
+        }
+
+        Point2D centroid = GetAveragePoint(facePoints);
+        if (!TryLocateOnPolyline(pathPoints, centroid, out _, out Point2D tangent, out double faceDistanceToPathMeters) ||
+            faceDistanceToPathMeters > maxDistanceToPathMeters)
+        {
+            return false;
+        }
+
+        return StairTreadLineSelector.TrySelectFrontEdge(edgeCandidates, tangent, minimumLineLengthMeters, out candidate);
+    }
+
+    private bool TryBuildSchematicRunStepLines(
+        StairsRun run,
+        IReadOnlyList<Point2D> pathPoints,
+        double pathLengthMeters,
+        Polygon footprintPolygon,
+        GeometryRepairResult geometryRepair,
+        out List<LineString2D> lines)
+    {
+        lines = new List<LineString2D>();
+
+        IReadOnlyList<double> linePositions = BuildActualStepPositions(run, pathLengthMeters);
+        double halfCutLengthMeters = Math.Max(0.5d, run.ActualRunWidth * FeetToMeters) * 1.5d;
+        HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
         for (int i = 0; i < linePositions.Count; i++)
         {
             double distanceMeters = linePositions[i];
@@ -315,6 +472,115 @@ public sealed class DetailExtractor
         }
 
         return lines.Count > 0;
+    }
+
+    private static double BuildStationMergeThreshold(StairsRun run, double pathLengthMeters)
+    {
+        int treadCount = Math.Max(run.ActualTreadsNumber, Math.Max(1, run.ActualRisersNumber - 1));
+        if (treadCount <= 0 || pathLengthMeters <= 0d)
+        {
+            return 0.05d;
+        }
+
+        double nominalTreadDepthMeters = pathLengthMeters / treadCount;
+        return Math.Max(0.03d, nominalTreadDepthMeters * 0.2d);
+    }
+
+    private static IReadOnlyList<double> BuildActualStepPositions(StairsRun run, double pathLengthMeters)
+    {
+        int riserCount = run.ActualRisersNumber;
+
+        if (riserCount < 2)
+        {
+            return StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
+        }
+
+        double treadDepthMeters = pathLengthMeters / (riserCount - 1);
+        if (treadDepthMeters <= 1e-6d)
+        {
+            return StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
+        }
+
+        List<double> positions = new(riserCount - 1);
+        for (int i = 1; i < riserCount; i++)
+        {
+            double position = i * treadDepthMeters;
+            if (position < pathLengthMeters - 1e-6d)
+            {
+                positions.Add(position);
+            }
+        }
+
+        return positions.Count > 0
+            ? positions
+            : StairDetailLayout.BuildCenteredLinePositions(pathLengthMeters, StairStepFallbackSpacingMeters);
+    }
+
+    private bool TryExtractEdgeLineString(Edge edge, out LineString2D line)
+    {
+        line = null!;
+        IList<XYZ> tessellated = edge.Tessellate();
+        if (tessellated.Count < 2)
+        {
+            Curve? curve = edge.AsCurve();
+            if (curve == null)
+            {
+                return false;
+            }
+
+            tessellated = new[]
+            {
+                curve.GetEndPoint(0),
+                curve.GetEndPoint(1),
+            };
+        }
+
+        List<Point2D> points = new(tessellated.Count);
+        for (int i = 0; i < tessellated.Count; i++)
+        {
+            Point2D point = ProjectPoint(tessellated[i]);
+            if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], point))
+            {
+                points.Add(point);
+            }
+        }
+
+        if (points.Count < 2)
+        {
+            return false;
+        }
+
+        line = new LineString2D(points);
+        return true;
+    }
+
+    private static Options CreateGeometryOptions()
+    {
+        return new Options
+        {
+            ComputeReferences = false,
+            IncludeNonVisibleObjects = true,
+            DetailLevel = ViewDetailLevel.Fine,
+        };
+    }
+
+    private static List<Solid> CollectSolids(GeometryElement geometry)
+    {
+        List<Solid> solids = new();
+        foreach (GeometryObject geometryObject in geometry)
+        {
+            switch (geometryObject)
+            {
+                case Solid solid when solid.Volume > 0d:
+                    solids.Add(solid);
+                    break;
+                case GeometryInstance instance:
+                    solids.AddRange(CollectSolids(instance.GetInstanceGeometry()));
+                    break;
+            }
+        }
+
+        return solids;
     }
 
     private bool TryCreatePolygonFromCurveLoop(
@@ -545,6 +811,60 @@ public sealed class DetailExtractor
         return true;
     }
 
+    private static bool TryLocateOnPolyline(
+        IReadOnlyList<Point2D> polyline,
+        Point2D point,
+        out double stationMeters,
+        out Point2D tangent,
+        out double distanceToPathMeters)
+    {
+        stationMeters = 0d;
+        tangent = default;
+        distanceToPathMeters = double.MaxValue;
+
+        if (polyline == null || polyline.Count < 2)
+        {
+            return false;
+        }
+
+        bool found = false;
+        double traversed = 0d;
+        double bestDistanceSquared = double.MaxValue;
+        for (int i = 0; i < polyline.Count - 1; i++)
+        {
+            Point2D start = polyline[i];
+            Point2D end = polyline[i + 1];
+            double dx = end.X - start.X;
+            double dy = end.Y - start.Y;
+            double segmentLengthSquared = (dx * dx) + (dy * dy);
+            if (segmentLengthSquared <= 1e-9d)
+            {
+                continue;
+            }
+
+            double segmentLength = Math.Sqrt(segmentLengthSquared);
+            double projection = (((point.X - start.X) * dx) + ((point.Y - start.Y) * dy)) / segmentLengthSquared;
+            double clampedProjection = Math.Max(0d, Math.Min(1d, projection));
+            double projectedX = start.X + (dx * clampedProjection);
+            double projectedY = start.Y + (dy * clampedProjection);
+            double distanceX = point.X - projectedX;
+            double distanceY = point.Y - projectedY;
+            double distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+            if (distanceSquared < bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                stationMeters = traversed + (segmentLength * clampedProjection);
+                tangent = new Point2D(dx / segmentLength, dy / segmentLength);
+                distanceToPathMeters = Math.Sqrt(distanceSquared);
+                found = true;
+            }
+
+            traversed += segmentLength;
+        }
+
+        return found;
+    }
+
     private static bool TryGetLongestIntersectionSegment(
         Polygon polygon,
         LineString cutLine,
@@ -615,7 +935,20 @@ public sealed class DetailExtractor
     {
         Point2D start = line.Points[0];
         Point2D end = line.Points[line.Points.Count - 1];
+        return ComparePoints(start, end) <= 0
+            ? BuildLineKey(start, end)
+            : BuildLineKey(end, start);
+    }
+
+    private static string BuildLineKey(Point2D start, Point2D end)
+    {
         return $"{Math.Round(start.X, 4)}:{Math.Round(start.Y, 4)}:{Math.Round(end.X, 4)}:{Math.Round(end.Y, 4)}";
+    }
+
+    private static int ComparePoints(Point2D left, Point2D right)
+    {
+        int xComparison = left.X.CompareTo(right.X);
+        return xComparison != 0 ? xComparison : left.Y.CompareTo(right.Y);
     }
 
     private static double GetLength(IReadOnlyList<Point2D> points)
@@ -629,6 +962,20 @@ public sealed class DetailExtractor
         }
 
         return total;
+    }
+
+    private static Point2D GetAveragePoint(IReadOnlyList<Point2D> points)
+    {
+        double x = 0d;
+        double y = 0d;
+        for (int i = 0; i < points.Count; i++)
+        {
+            x += points[i].X;
+            y += points[i].Y;
+        }
+
+        double scale = points.Count == 0 ? 0d : 1d / points.Count;
+        return new Point2D(x * scale, y * scale);
     }
 
     private string BuildStairRunWarningPrefix(Stairs stair, StairsRun run)

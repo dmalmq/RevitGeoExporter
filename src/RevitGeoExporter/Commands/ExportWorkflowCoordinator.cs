@@ -143,6 +143,7 @@ internal sealed class ExportWorkflowCoordinator
                     request.LinkExportOptions,
                     request.ActiveSchemaProfile,
                     request.ActiveValidationPolicyProfile);
+                session.OutputFormat = request.OutputFormat;
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
                 validationResult = validationService.Validate(validationRequest);
@@ -216,6 +217,13 @@ internal sealed class ExportWorkflowCoordinator
             using ExportResultForm resultForm = new(result, request.OutputDirectory, request.UiLanguage);
             _ = resultForm.ShowDialog();
             return Result.Succeeded;
+        }
+        catch (OperationCanceledException)
+        {
+            TaskDialog.Show(
+                ProjectInfo.Name,
+                UiLanguageText.Get(request.UiLanguage, "Command.ExportCancelled", "Export was cancelled. Partial output may have been written to the output directory."));
+            return Result.Cancelled;
         }
         catch (Exception ex)
         {
@@ -325,7 +333,10 @@ internal sealed class ExportWorkflowCoordinator
                 .First(profileItem => string.Equals(
                     profileItem.Name,
                     ValidationPolicyProfile.ResolveActiveName(settings.ValidationPolicyProfiles, settings.ActiveValidationPolicyProfileName),
-                    StringComparison.OrdinalIgnoreCase)));
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            OutputFormat = settings.OutputFormat,
+        };
 
         try
         {
@@ -359,6 +370,7 @@ internal sealed class ExportWorkflowCoordinator
                 request.LinkExportOptions,
                 request.ActiveSchemaProfile,
                 request.ActiveValidationPolicyProfile);
+            session.OutputFormat = request.OutputFormat;
 
             ExportValidationResult validationResult = new ExportValidationService()
                 .Validate(new ExportValidationSnapshotBuilder().Build(session));
@@ -390,7 +402,8 @@ internal sealed class ExportWorkflowCoordinator
 
             result = exporter.WritePreparedExport(
                 session,
-                progressCallback: update => progressForm.UpdateProgress(update));
+                progressCallback: update => progressForm.UpdateProgress(update),
+                cancellationToken: progressForm.CancellationToken);
 
             progressForm.Close();
         }
@@ -461,16 +474,17 @@ internal sealed class ExportWorkflowCoordinator
 
     private static void ShowBatchSummary(BatchExecutionSummary summary)
     {
-        string message = string.Join(
-            Environment.NewLine,
-            summary.Jobs.Select(job =>
-                job.Succeeded
-                    ? $"{job.ProfileName}: succeeded (written: {job.WrittenArtifactCount}, reused: {job.ReusedArtifactCount}, warnings: {job.WarningCount})"
-                    : $"{job.ProfileName}: failed - {job.Message}"));
+        List<BatchJobResultRow> rows = summary.Jobs.Select(job =>
+            new BatchJobResultRow(
+                job.ProfileName,
+                job.Succeeded,
+                job.WrittenArtifactCount,
+                job.ReusedArtifactCount,
+                job.WarningCount,
+                job.Message)).ToList();
 
-        TaskDialog.Show(
-            ProjectInfo.Name,
-            $"Batch export finished.{Environment.NewLine}{Environment.NewLine}{message}");
+        using BatchExportResultForm form = new(rows);
+        _ = form.ShowDialog();
     }
 
     private sealed class BatchExecutionSummary

@@ -904,7 +904,6 @@ public sealed class OpeningExtractor
         {
             return 0d;
         }
-
         return parameter.AsDouble();
     }
 

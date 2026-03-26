@@ -172,6 +172,7 @@ internal sealed class ExportPreviewWindow : IDisposable
         body.Children.Add(sidebarPanel);
         body.Children.Add(leftSplitter);
 
+        // Map workspace
         UIElement workspace = BuildWorkspace();
         WpfGrid.SetColumn(workspace, 2);
         if (workspace is FrameworkElement workspaceElement)
@@ -254,9 +255,9 @@ internal sealed class ExportPreviewWindow : IDisposable
         int contentColumn = isLeftSide ? 0 : 1;
         int buttonColumn = isLeftSide ? 1 : 0;
 
-        if (content is FrameworkElement element)
+        if (content is FrameworkElement fe)
         {
-            WpfGrid.SetColumn(element, contentColumn);
+            WpfGrid.SetColumn(fe, contentColumn);
         }
 
         container.Children.Add(content);
@@ -280,9 +281,9 @@ internal sealed class ExportPreviewWindow : IDisposable
         toggleButton.Click += (_, _) =>
         {
             isCollapsed = !isCollapsed;
-            if (content is FrameworkElement contentElement)
+            if (content is FrameworkElement element)
             {
-                contentElement.Visibility = isCollapsed ? Visibility.Collapsed : Visibility.Visible;
+                element.Visibility = isCollapsed ? Visibility.Collapsed : Visibility.Visible;
             }
 
             toggleButton.Content = isCollapsed ? expandGlyph : collapseGlyph;
@@ -472,7 +473,6 @@ internal sealed class ExportPreviewWindow : IDisposable
         layout.Children.Add(summaryCard);
 
         layout.Children.Add(BuildLegendSection());
-
         layout.Children.Add(new Border
         {
             BorderBrush = WpfDialogChrome.CardBorderBrush,

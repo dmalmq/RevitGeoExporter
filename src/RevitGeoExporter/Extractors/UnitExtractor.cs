@@ -15,6 +15,7 @@ using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Models;
+using RevitGeoExporter.Core.Preview;
 using RevitGeoExporter.Core.Schema;
 using RevitGeoExporter.Export;
 
@@ -54,6 +55,7 @@ public sealed class UnitExtractor
     private readonly IReadOnlyDictionary<string, string> _familyCategoryOverrides;
     private readonly string _source;
     private readonly SchemaProfile _schemaProfile;
+    private readonly PreviewPaletteResolver _paletteResolver = new();
 
     public UnitExtractor(
         Document document,
@@ -319,7 +321,19 @@ public sealed class UnitExtractor
         ICollection<string> warnings,
         out ExportPolygon? feature)
     {
+        return TryCreateFamilyUnit(familyInstance, view, levelId, warnings, out feature, out _);
+    }
+
+    public bool TryCreateFamilyUnit(
+        FamilyInstance familyInstance,
+        ViewPlan? view,
+        string levelId,
+        ICollection<string> warnings,
+        out ExportPolygon? feature,
+        out string? resolvedCategory)
+    {
         feature = null;
+        resolvedCategory = null;
         if (familyInstance is null)
         {
             return false;
@@ -330,6 +344,8 @@ public sealed class UnitExtractor
         {
             return false;
         }
+
+        resolvedCategory = zoneInfo.Category;
 
         if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
         {
@@ -420,14 +436,14 @@ public sealed class UnitExtractor
         {
             ["id"] = id,
             ["category"] = zoneInfo.Category,
-            ["restrict"] = zoneInfo.Restriction,
+            ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,
             ["alt_name"] = altName,
             ["level_id"] = levelId,
             ["source"] = _source,
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
-            ["preview_fill_color"] = zoneInfo.FillColor,
+            ["preview_fill_color"] = $"#{_paletteResolver.ResolveFillColor(zoneInfo.Category, zoneInfo.FillColor)}",
             ["source_label"] = sourceLabel,
         };
         AddSourceMetadata(attributes, metadata);
@@ -473,14 +489,14 @@ public sealed class UnitExtractor
         {
             ["id"] = id,
             ["category"] = zoneInfo.Category,
-            ["restrict"] = zoneInfo.Restriction,
+            ["restrict"] = ImdfRestrictionNormalizer.NormalizeUnitRestriction(zoneInfo.Restriction),
             ["name"] = name,
             ["alt_name"] = altName,
             ["level_id"] = levelId,
             ["source"] = _source,
             ["display_point"] = displayPoint,
             ["source_element_id"] = sourceElementId,
-            ["preview_fill_color"] = zoneInfo.FillColor,
+            ["preview_fill_color"] = $"#{_paletteResolver.ResolveFillColor(zoneInfo.Category, zoneInfo.FillColor)}",
             ["source_label"] = sourceLabel,
         };
         AddSourceMetadata(attributes, metadata);
@@ -1936,5 +1952,3 @@ public sealed class UnitExtractor
         return Math.Max(0d, area);
     }
 }
-
-

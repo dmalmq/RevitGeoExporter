@@ -18,13 +18,15 @@ public sealed class ExportValidationRequest
         string? sourceDocumentKey = null,
         UnitGeometrySource unitGeometrySource = UnitGeometrySource.Unset,
         UnitAttributeSource unitAttributeSource = UnitAttributeSource.Unset,
-        ValidationPolicyProfile? validationPolicyProfile = null)
+        ValidationPolicyProfile? validationPolicyProfile = null,
+        bool includeFixtures = false)
     {
         TargetEpsg = targetEpsg;
         IncludeUnits = includeUnits;
         IncludeDetails = includeDetails;
         IncludeOpenings = includeOpenings;
         IncludeLevels = includeLevels;
+        IncludeFixtures = includeFixtures;
         Views = views ?? throw new ArgumentNullException(nameof(views));
         UnitSource = unitSource;
         UnitGeometrySource = UnitExportSettingsResolver.ResolveGeometrySource(unitSource, unitGeometrySource);
@@ -44,6 +46,8 @@ public sealed class ExportValidationRequest
     public bool IncludeOpenings { get; }
 
     public bool IncludeLevels { get; }
+
+    public bool IncludeFixtures { get; }
 
     public IReadOnlyList<ValidationViewSnapshot> Views { get; }
 

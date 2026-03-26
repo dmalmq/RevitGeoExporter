@@ -12,7 +12,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2024</RevitApiDir>
+    <RevitYear Condition="'$(RevitYear)' == ''">2024</RevitYear>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitYear)</RevitApiDir>
+    <DefineConstants>$(DefineConstants);REVIT$(RevitYear)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

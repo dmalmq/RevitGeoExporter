@@ -24,6 +24,7 @@ public static class LayerDefinition
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("source", ExportAttributeType.Text),
                 new AttributeDefinition("display_point", ExportAttributeType.Text),
+                new AttributeDefinition("preview_fill_color", ExportAttributeType.Text),
             },
             schemaProfile,
             warnings);
@@ -57,6 +58,26 @@ public static class LayerDefinition
                 new AttributeDefinition("category", ExportAttributeType.Text),
                 new AttributeDefinition("level_id", ExportAttributeType.Text),
                 new AttributeDefinition("element_id", ExportAttributeType.Integer),
+            },
+            schemaProfile,
+            warnings);
+    }
+
+    public static ExportLayer CreateFixtureLayer(SchemaProfile? schemaProfile = null, System.Collections.Generic.ICollection<string>? warnings = null)
+    {
+        return CreateLayer(
+            "fixture",
+            GpkgGeometryType.MultiPolygon,
+            SchemaLayerType.Fixture,
+            new[]
+            {
+                new AttributeDefinition("id", ExportAttributeType.Text),
+                new AttributeDefinition("type", ExportAttributeType.Text),
+                new AttributeDefinition("name", ExportAttributeType.Text),
+                new AttributeDefinition("alt_name", ExportAttributeType.Text),
+                new AttributeDefinition("level_id", ExportAttributeType.Text),
+                new AttributeDefinition("source", ExportAttributeType.Text),
+                new AttributeDefinition("display_point", ExportAttributeType.Text),
             },
             schemaProfile,
             warnings);
