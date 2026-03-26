@@ -151,9 +151,10 @@ public sealed class ExportDialog : WinFormsForm
 
     private void InitializeComponents()
     {
+        Size defaultDialogSize = GetDefaultDialogSize();
         Text = "Export GeoPackage";
-        Width = 900;
-        Height = 700;
+        Width = defaultDialogSize.Width;
+        Height = defaultDialogSize.Height;
         StartPosition = FormStartPosition.CenterScreen;
         MinimizeBox = false;
         MaximizeBox = false;
@@ -1611,6 +1612,16 @@ public sealed class ExportDialog : WinFormsForm
             OpenOutputFolder = _openOutputFolderCheckBox.Checked,
             LaunchQgis = _launchQgisCheckBox.Checked,
         };
+    }
+
+    private static Size GetDefaultDialogSize()
+    {
+        System.Drawing.Rectangle workingArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        int widthFloor = Math.Max(0, Math.Min(900, workingArea.Width - 40));
+        int heightFloor = Math.Max(0, Math.Min(700, workingArea.Height - 40));
+        int width = Math.Max(Math.Min(1200, (int)(workingArea.Width * 0.76)), widthFloor);
+        int height = Math.Max(Math.Min(860, (int)(workingArea.Height * 0.82)), heightFloor);
+        return new Size(width, height);
     }
 
     private sealed class ViewSelectionItem

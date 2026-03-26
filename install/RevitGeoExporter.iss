@@ -15,24 +15,28 @@
   #define OutputDir "output"
 #endif
 
+#ifndef RevitYear
+  #define RevitYear "2024"
+#endif
+
 #define AppName "RevitGeoExporter"
 #define AppPublisher "RevitGeoExporter"
-#define RevitYear "2024"
+#define AppId "RevitGeoExporter.Revit" + RevitYear
 #define AddinsRoot "{commonappdata}\Autodesk\Revit\Addins\" + RevitYear
 #define InstallSubDir "RevitGeoExporter"
 
 [Setup]
-AppId={{69D307D9-6A11-4BD8-9B6A-8AA7D25A4E44}
+AppId={#AppId}
 AppName={#AppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#AppPublisher}
 DefaultDirName={#AddinsRoot}\{#InstallSubDir}
 DisableDirPage=yes
 DisableProgramGroupPage=yes
-UninstallDisplayName={#AppName}
+UninstallDisplayName={#AppName} for Revit {#RevitYear}
 UninstallDisplayIcon={app}\RevitGeoExporter.dll
 OutputDir={#OutputDir}
-OutputBaseFilename=RevitGeoExporter-Setup-{#MyAppVersion}
+OutputBaseFilename=RevitGeoExporter-Setup-{#RevitYear}-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -47,9 +51,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Type: filesandordirs; Name: "{app}"
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "RevitGeoExporter.addin"
 Source: "examples\*"; DestDir: "{app}\Examples"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "RevitGeoExporter.addin"; DestDir: "{#AddinsRoot}"; Flags: ignoreversion
+Source: "{#DistDir}\RevitGeoExporter.addin"; DestDir: "{#AddinsRoot}"; Flags: ignoreversion
 
 [Code]
 function InitializeSetup(): Boolean;

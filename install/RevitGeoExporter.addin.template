@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>RevitGeoExporter</Name>
+    <Assembly>C:\ProgramData\Autodesk\Revit\Addins\__REVIT_YEAR__\RevitGeoExporter\RevitGeoExporter.dll</Assembly>
+    <AddInId>7E0E17CF-16EC-4F84-B95D-C5E8AB3B858F</AddInId>
+    <FullClassName>RevitGeoExporter.App</FullClassName>
+    <VendorId>RGE</VendorId>
+    <VendorDescription>RevitGeoExporter</VendorDescription>
+  </AddIn>
+</RevitAddIns>

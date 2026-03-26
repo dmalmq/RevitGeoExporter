@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Data;
 using Autodesk.Revit.DB;
 using RevitGeoExporter.Help;
 using RevitGeoExporter.Core;
@@ -42,10 +44,13 @@ namespace RevitGeoExporter.UI;
     private readonly List<ExportProfile> _profiles;
     private readonly ModelCoordinateInfo? _coordinateInfo;
     private readonly PreviewBasemapSettings _previewBasemapSettings;
+    private readonly ICollectionView _viewCollectionView;
 
     private UiLanguage _language = UiLanguage.English;
     private bool _isInitializing;
     private readonly ListBox _viewList = new();
+    private readonly TextBox _viewFilterTextBox = new();
+    private readonly TextBlock _viewFilterPlaceholderText = new();
     private readonly TextBox _outputDirectoryTextBox = new();
     private readonly TextBox _targetEpsgTextBox = new();
     private readonly ComboBox _languageComboBox = new();
@@ -174,6 +179,9 @@ namespace RevitGeoExporter.UI;
             }
         }
 
+        _viewCollectionView = CollectionViewSource.GetDefaultView(_views);
+        _viewCollectionView.Filter = MatchesViewFilter;
+
         _profiles = (profiles ?? Array.Empty<ExportProfile>()).ToList();
         _previewRequested = previewRequested;
         _openMappingsRequested = openMappingsRequested;
@@ -181,11 +189,12 @@ namespace RevitGeoExporter.UI;
         _coordinateInfo = coordinateInfo;
         _previewBasemapSettings = new PreviewBasemapSettings(settings.PreviewBasemapUrlTemplate, settings.PreviewBasemapAttribution);
         _linkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions();
+        (double windowWidth, double windowHeight) = GetDefaultWindowSize();
 
         _window = new Window
         {
-            Width = 980,
-            Height = 760,
+            Width = windowWidth,
+            Height = windowHeight,
             MinWidth = 900,
             MinHeight = 680,
             Background = WindowBackgroundBrush,
@@ -200,6 +209,7 @@ namespace RevitGeoExporter.UI;
 
     public WinForms.DialogResult ShowDialog()
     {
+        RefreshViewFilter();
         bool? result = _window.ShowDialog();
         return result == true ? WinForms.DialogResult.OK : WinForms.DialogResult.Cancel;
     }
@@ -331,6 +341,10 @@ namespace RevitGeoExporter.UI;
         DockPanel.SetDock(header, Dock.Top);
         layout.Children.Add(header);
 
+        UIElement filterBox = BuildViewFilterBox();
+        DockPanel.SetDock(filterBox, Dock.Top);
+        layout.Children.Add(filterBox);
+
         StackPanel actions = new()
         {
             Orientation = Orientation.Horizontal,
@@ -349,7 +363,7 @@ namespace RevitGeoExporter.UI;
         DockPanel.SetDock(actions, Dock.Bottom);
         layout.Children.Add(actions);
 
-        _viewList.ItemsSource = _views;
+        _viewList.ItemsSource = _viewCollectionView;
         _viewList.ItemTemplate = BuildViewSelectionTemplate();
         _viewList.BorderThickness = new Thickness(0);
         _viewList.Background = Brushes.Transparent;
@@ -370,6 +384,30 @@ namespace RevitGeoExporter.UI;
 
         card.Child = layout;
         return card;
+    }
+
+    private UIElement BuildViewFilterBox()
+    {
+        WpfGrid grid = new()
+        {
+            Margin = new Thickness(0, 0, 0, 10),
+        };
+
+        _viewFilterTextBox.MinHeight = 32;
+        _viewFilterTextBox.Padding = new Thickness(10, 6, 10, 6);
+        _viewFilterTextBox.TextChanged += (_, _) => RefreshViewFilter();
+        _viewFilterTextBox.GotKeyboardFocus += (_, _) => UpdateViewFilterPlaceholder();
+        _viewFilterTextBox.LostKeyboardFocus += (_, _) => UpdateViewFilterPlaceholder();
+        grid.Children.Add(_viewFilterTextBox);
+
+        _viewFilterPlaceholderText.Margin = new Thickness(12, 0, 0, 0);
+        _viewFilterPlaceholderText.VerticalAlignment = VerticalAlignment.Center;
+        _viewFilterPlaceholderText.Foreground = MutedTextBrush;
+        _viewFilterPlaceholderText.IsHitTestVisible = false;
+        grid.Children.Add(_viewFilterPlaceholderText);
+
+        UpdateViewFilterPlaceholder();
+        return grid;
     }
 
     private UIElement BuildOptionsColumn()
@@ -838,6 +876,7 @@ namespace RevitGeoExporter.UI;
             _technicalDetailsExpander.IsExpanded = false;
             _advancedOptionsExpander.IsExpanded = false;
 
+            RefreshViewFilter();
             _viewList.Items.Refresh();
             _unitSourceComboBox.Items.Refresh();
             _unitAttributeSourceComboBox.Items.Refresh();
@@ -1072,6 +1111,7 @@ namespace RevitGeoExporter.UI;
 
         _language = item.Language;
         UpdateDisplayLanguages();
+        RefreshViewFilter();
         _viewList.Items.Refresh();
         _unitSourceComboBox.Items.Refresh();
         _unitAttributeSourceComboBox.Items.Refresh();
@@ -1525,6 +1565,9 @@ namespace RevitGeoExporter.UI;
         _helpButton.Content = T("Help", "ヘルプ");
         _languageLabel.Text = T("Language", "言語");
         _versionText.Text = TF("Version {0}", "バージョン {0}", ProjectInfo.VersionTag);
+        _viewFilterTextBox.ToolTip = T("Filter the plan view list.", "平面ビューの一覧を絞り込みます。");
+        _viewFilterPlaceholderText.Text = T("Filter views...", "ビューを絞り込み...");
+        UpdateViewFilterPlaceholder();
 
         _unitCheckBox.ToolTip = T("Exports the `unit` layer.", "`unit` レイヤーを出力します。");
         _detailCheckBox.ToolTip = T("Exports the `detail` layer.", "`detail` レイヤーを出力します。");
@@ -1616,6 +1659,48 @@ namespace RevitGeoExporter.UI;
     private string TF(string englishFormat, string japaneseFormat, params object[] args)
     {
         return string.Format(T(englishFormat, japaneseFormat), args);
+    }
+
+    private void RefreshViewFilter()
+    {
+        _viewCollectionView.Refresh();
+        UpdateViewFilterPlaceholder();
+    }
+
+    private bool MatchesViewFilter(object item)
+    {
+        if (item is not ViewSelectionRow row)
+        {
+            return false;
+        }
+
+        string filterText = (_viewFilterTextBox.Text ?? string.Empty).Trim();
+        if (filterText.Length == 0)
+        {
+            return true;
+        }
+
+        return row.DisplayText.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+               row.View.Name.IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+               (row.View.GenLevel?.Name ?? string.Empty).IndexOf(filterText, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private void UpdateViewFilterPlaceholder()
+    {
+        _viewFilterPlaceholderText.Visibility =
+            string.IsNullOrWhiteSpace(_viewFilterTextBox.Text) && !_viewFilterTextBox.IsKeyboardFocusWithin
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
+    }
+
+    private static (double Width, double Height) GetDefaultWindowSize()
+    {
+        Rect workArea = SystemParameters.WorkArea;
+        double widthFloor = Math.Max(0d, Math.Min(980d, workArea.Width - 40d));
+        double heightFloor = Math.Max(0d, Math.Min(760d, workArea.Height - 40d));
+        double width = Math.Max(Math.Min(1260d, workArea.Width * 0.78d), widthFloor);
+        double height = Math.Max(Math.Min(900d, workArea.Height * 0.84d), heightFloor);
+        return (width, height);
     }
 
     private sealed class Win32WindowOwner : WinForms.IWin32Window

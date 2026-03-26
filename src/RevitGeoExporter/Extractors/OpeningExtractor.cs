@@ -16,7 +16,9 @@ public sealed class OpeningExtractor
 {
     private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
     private const double EndpointInsetMeters = 0.05d;
+    private const double MaxEscalatorWidthMeters = 1.50d;
     private const double StairLevelElevationToleranceFeet = 0.75d;
+    private static readonly string[] EscalatorWidthParameterNames = { "Width", "幅" };
 
     private readonly Document _document;
     private readonly SharedCoordinateProjector _sharedCoordinateProjector;
@@ -365,7 +367,7 @@ public sealed class OpeningExtractor
             explicitWidthMeters *= FeetToMeters;
         }
 
-        List<Point2D>? fallbackPoints = box == null
+        List<Point2D>? boundingBoxPoints = box == null
             ? null
             : GetBoundingBoxCorners(box).Select(ProjectPoint).ToList();
 
@@ -375,7 +377,7 @@ public sealed class OpeningExtractor
                 geometryPoints,
                 explicitLengthMeters,
                 explicitWidthMeters,
-                fallbackPoints,
+                boundingBoxPoints,
                 minLengthMeters: 0.05d,
                 minWidthMeters: 0.05d,
                 out EscalatorFootprintProjection footprint))
@@ -383,6 +385,7 @@ public sealed class OpeningExtractor
             return false;
         }
 
+        footprint = footprint.ClampWidth(MaxEscalatorWidthMeters);
         direction = footprint.Axis;
         start = footprint.Start;
         end = footprint.End;
@@ -880,22 +883,19 @@ public sealed class OpeningExtractor
 
     private static double? TryGetWidthFeetFromParameter(FamilyInstance opening)
     {
-        double width = TryReadWidth(opening.LookupParameter("Width"));
+        double width = TryReadWidthFromElement(opening);
         if (width > 1e-6d)
         {
             return width;
         }
 
-        if (opening.Symbol != null)
+        if (opening.Symbol == null)
         {
-            width = TryReadWidth(opening.Symbol.LookupParameter("Width"));
-            if (width > 1e-6d)
-            {
-                return width;
-            }
+            return null;
         }
 
-        return null;
+        width = TryReadWidthFromElement(opening.Symbol);
+        return width > 1e-6d ? width : null;
     }
 
     private static double TryReadWidth(Parameter? parameter)
@@ -906,6 +906,20 @@ public sealed class OpeningExtractor
         }
 
         return parameter.AsDouble();
+    }
+
+    private static double TryReadWidthFromElement(Element element)
+    {
+        for (int i = 0; i < EscalatorWidthParameterNames.Length; i++)
+        {
+            double width = TryReadWidth(element.LookupParameter(EscalatorWidthParameterNames[i]));
+            if (width > 1e-6d)
+            {
+                return width;
+            }
+        }
+
+        return 0d;
     }
 
     private static XYZ GetOpeningAxis(FamilyInstance opening)

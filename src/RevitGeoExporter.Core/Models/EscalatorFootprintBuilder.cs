@@ -12,7 +12,8 @@ public readonly struct EscalatorFootprintProjection
         double maxAlong,
         double minAcross,
         double maxAcross,
-        bool usedFallbackPoints)
+        bool usedBoundingBoxLength,
+        bool usedBoundingBoxWidth)
     {
         Center = center;
         Axis = axis;
@@ -21,7 +22,8 @@ public readonly struct EscalatorFootprintProjection
         MaxAlong = maxAlong;
         MinAcross = minAcross;
         MaxAcross = maxAcross;
-        UsedFallbackPoints = usedFallbackPoints;
+        UsedBoundingBoxLength = usedBoundingBoxLength;
+        UsedBoundingBoxWidth = usedBoundingBoxWidth;
     }
 
     public Point2D Center { get; }
@@ -38,7 +40,9 @@ public readonly struct EscalatorFootprintProjection
 
     public double MaxAcross { get; }
 
-    public bool UsedFallbackPoints { get; }
+    public bool UsedBoundingBoxLength { get; }
+
+    public bool UsedBoundingBoxWidth { get; }
 
     public double LengthMeters => MaxAlong - MinAlong;
 
@@ -47,6 +51,44 @@ public readonly struct EscalatorFootprintProjection
     public Point2D Start => ToWorldPoint(MinAlong, 0d);
 
     public Point2D End => ToWorldPoint(MaxAlong, 0d);
+
+    public EscalatorFootprintProjection ClampWidth(double maxWidthMeters)
+    {
+        if (maxWidthMeters <= 0d || WidthMeters <= maxWidthMeters)
+        {
+            return this;
+        }
+
+        double acrossCenter = (MinAcross + MaxAcross) * 0.5d;
+        double halfWidth = maxWidthMeters * 0.5d;
+        return new EscalatorFootprintProjection(
+            Center,
+            Axis,
+            MinAlong,
+            MaxAlong,
+            acrossCenter - halfWidth,
+            acrossCenter + halfWidth,
+            UsedBoundingBoxLength,
+            UsedBoundingBoxWidth);
+    }
+
+    public EscalatorFootprintProjection OrientLongerSideAlongAxis()
+    {
+        if (LengthMeters >= WidthMeters)
+        {
+            return this;
+        }
+
+        return new EscalatorFootprintProjection(
+            Center,
+            Perpendicular,
+            MinAcross,
+            MaxAcross,
+            -MaxAlong,
+            -MinAlong,
+            UsedBoundingBoxLength,
+            UsedBoundingBoxWidth);
+    }
 
     public Polygon2D ToPolygon(double paddingMeters = 0d)
     {
@@ -78,7 +120,7 @@ public static class EscalatorFootprintBuilder
         IReadOnlyList<Point2D>? geometryPoints,
         double? explicitLengthMeters,
         double? explicitWidthMeters,
-        IReadOnlyList<Point2D>? fallbackPoints,
+        IReadOnlyList<Point2D>? boundingBoxPoints,
         double minLengthMeters,
         double minWidthMeters,
         out EscalatorFootprintProjection footprint)
@@ -91,16 +133,17 @@ public static class EscalatorFootprintBuilder
         }
 
         Point2D perpendicular = new(-normalizedAxis.Y, normalizedAxis.X);
-        bool usedFallbackPoints = false;
+        bool usedBoundingBoxLength = false;
+        bool usedBoundingBoxWidth = false;
 
         if (!TryResolveAlongExtent(
                 center,
                 normalizedAxis,
                 geometryPoints,
                 explicitLengthMeters,
-                fallbackPoints,
+                boundingBoxPoints,
                 minLengthMeters,
-                ref usedFallbackPoints,
+                out usedBoundingBoxLength,
                 out double minAlong,
                 out double maxAlong))
         {
@@ -112,9 +155,9 @@ public static class EscalatorFootprintBuilder
                 perpendicular,
                 geometryPoints,
                 explicitWidthMeters,
-                fallbackPoints,
+                boundingBoxPoints,
                 minWidthMeters,
-                ref usedFallbackPoints,
+                out usedBoundingBoxWidth,
                 out double minAcross,
                 out double maxAcross))
         {
@@ -134,7 +177,9 @@ public static class EscalatorFootprintBuilder
             maxAlong,
             minAcross,
             maxAcross,
-            usedFallbackPoints);
+            usedBoundingBoxLength,
+            usedBoundingBoxWidth)
+            .OrientLongerSideAlongAxis();
         return true;
     }
 
@@ -143,20 +188,19 @@ public static class EscalatorFootprintBuilder
         Point2D axis,
         IReadOnlyList<Point2D>? geometryPoints,
         double? explicitLengthMeters,
-        IReadOnlyList<Point2D>? fallbackPoints,
+        IReadOnlyList<Point2D>? boundingBoxPoints,
         double minimumLengthMeters,
-        ref bool usedFallbackPoints,
+        out bool usedBoundingBoxLength,
         out double minAlong,
         out double maxAlong)
     {
+        usedBoundingBoxLength = false;
         minAlong = 0d;
         maxAlong = 0d;
 
-        if (explicitLengthMeters.HasValue && explicitLengthMeters.Value >= minimumLengthMeters)
+        if (TryGetAxisExtent(boundingBoxPoints, center, axis, minimumLengthMeters, out minAlong, out maxAlong))
         {
-            double halfLength = explicitLengthMeters.Value * 0.5d;
-            minAlong = -halfLength;
-            maxAlong = halfLength;
+            usedBoundingBoxLength = true;
             return true;
         }
 
@@ -165,9 +209,11 @@ public static class EscalatorFootprintBuilder
             return true;
         }
 
-        if (TryGetAxisExtent(fallbackPoints, center, axis, minimumLengthMeters, out minAlong, out maxAlong))
+        if (explicitLengthMeters.HasValue && explicitLengthMeters.Value >= minimumLengthMeters)
         {
-            usedFallbackPoints = true;
+            double halfLength = explicitLengthMeters.Value * 0.5d;
+            minAlong = -halfLength;
+            maxAlong = halfLength;
             return true;
         }
 
@@ -179,17 +225,19 @@ public static class EscalatorFootprintBuilder
         Point2D perpendicular,
         IReadOnlyList<Point2D>? geometryPoints,
         double? explicitWidthMeters,
-        IReadOnlyList<Point2D>? fallbackPoints,
+        IReadOnlyList<Point2D>? boundingBoxPoints,
         double minimumWidthMeters,
-        ref bool usedFallbackPoints,
+        out bool usedBoundingBoxWidth,
         out double minAcross,
         out double maxAcross)
     {
+        usedBoundingBoxWidth = false;
         minAcross = 0d;
         maxAcross = 0d;
 
-        if (TryGetAxisExtent(geometryPoints, center, perpendicular, minimumWidthMeters, out minAcross, out maxAcross))
+        if (TryGetAxisExtent(boundingBoxPoints, center, perpendicular, minimumWidthMeters, out minAcross, out maxAcross))
         {
+            usedBoundingBoxWidth = true;
             return true;
         }
 
@@ -201,9 +249,8 @@ public static class EscalatorFootprintBuilder
             return true;
         }
 
-        if (TryGetAxisExtent(fallbackPoints, center, perpendicular, minimumWidthMeters, out minAcross, out maxAcross))
+        if (TryGetAxisExtent(geometryPoints, center, perpendicular, minimumWidthMeters, out minAcross, out maxAcross))
         {
-            usedFallbackPoints = true;
             return true;
         }
 

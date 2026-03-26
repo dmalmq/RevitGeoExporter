@@ -10,7 +10,7 @@ public sealed class EscalatorFootprintBuilderTests
     private const double ComparisonTolerance = 1e-6d;
 
     [Fact]
-    public void TryCreate_WhenUsingRotatedFootprintPoints_PreservesActualLengthAndWidth()
+    public void TryCreate_WhenUsingRotatedFootprintPointsWithoutBoundingBox_PreservesActualLengthAndWidth()
     {
         Point2D center = new(12d, -3d);
         Point2D axis = Normalize(0.9659258262890683d, 0.2588190451025207d);
@@ -22,19 +22,46 @@ public sealed class EscalatorFootprintBuilderTests
             geometryPoints,
             explicitLengthMeters: null,
             explicitWidthMeters: null,
-            fallbackPoints: null,
+            boundingBoxPoints: null,
             minLengthMeters: 0.5d,
             minWidthMeters: 0.3d,
             out EscalatorFootprintProjection footprint);
 
         Assert.True(created);
-        Assert.False(footprint.UsedFallbackPoints);
+        Assert.False(footprint.UsedBoundingBoxLength);
+        Assert.False(footprint.UsedBoundingBoxWidth);
         AssertApproximatelyEqual(10d, footprint.LengthMeters);
         AssertApproximatelyEqual(2d, footprint.WidthMeters);
     }
 
     [Fact]
-    public void TryCreate_WhenCurveFootprintUsesWidthParameterFallback_UsesExplicitLengthAndWidth()
+    public void TryCreate_WhenBoundingBoxExists_PrefersBoundingBoxLengthAndWidth()
+    {
+        Point2D center = new(3d, 7d);
+        Point2D axis = Normalize(0.8660254037844386d, 0.5d);
+        IReadOnlyList<Point2D> geometryPoints = CreateRectanglePoints(center, axis, length: 1.0d, width: 1.2d);
+        IReadOnlyList<Point2D> boundingBoxPoints = CreateRectanglePoints(center, axis, length: 8.8d, width: 4.6d);
+
+        bool created = EscalatorFootprintBuilder.TryCreate(
+            center,
+            axis,
+            geometryPoints,
+            explicitLengthMeters: 1.0d,
+            explicitWidthMeters: 1.4d,
+            boundingBoxPoints,
+            minLengthMeters: 0.5d,
+            minWidthMeters: 0.3d,
+            out EscalatorFootprintProjection footprint);
+
+        Assert.True(created);
+        Assert.True(footprint.UsedBoundingBoxLength);
+        Assert.True(footprint.UsedBoundingBoxWidth);
+        AssertApproximatelyEqual(8.8d, footprint.LengthMeters);
+        AssertApproximatelyEqual(4.6d, footprint.WidthMeters);
+    }
+
+    [Fact]
+    public void TryCreate_WhenBoundingBoxIsUnavailable_FallsBackToExplicitLengthAndWidth()
     {
         Point2D center = new(0d, 0d);
         Point2D axis = Normalize(4d, 3d);
@@ -45,40 +72,81 @@ public sealed class EscalatorFootprintBuilderTests
             geometryPoints: Array.Empty<Point2D>(),
             explicitLengthMeters: 9d,
             explicitWidthMeters: 1.6d,
-            fallbackPoints: null,
+            boundingBoxPoints: null,
             minLengthMeters: 0.5d,
             minWidthMeters: 0.3d,
             out EscalatorFootprintProjection footprint);
 
         Assert.True(created);
-        Assert.False(footprint.UsedFallbackPoints);
+        Assert.False(footprint.UsedBoundingBoxLength);
+        Assert.False(footprint.UsedBoundingBoxWidth);
         AssertApproximatelyEqual(9d, footprint.LengthMeters);
         AssertApproximatelyEqual(1.6d, footprint.WidthMeters);
     }
 
     [Fact]
-    public void TryCreate_WhenPointBasedFootprintHasGeometry_DoesNotExpandToFallbackBounds()
+    public void ClampWidth_WhenBoundingBoxWidthExceedsLimit_CapsWidthAndPreservesLength()
     {
-        Point2D center = new(3d, 7d);
-        Point2D axis = Normalize(0.8660254037844386d, 0.5d);
-        IReadOnlyList<Point2D> geometryPoints = CreateRectanglePoints(center, axis, length: 8d, width: 1.4d);
-        IReadOnlyList<Point2D> fallbackPoints = CreateRectanglePoints(center, axis, length: 8.8d, width: 4.6d);
+        EscalatorFootprintProjection footprint = new(
+            center: new Point2D(5d, 2d),
+            axis: Normalize(0.8660254037844386d, 0.5d),
+            minAlong: -4.4d,
+            maxAlong: 4.4d,
+            minAcross: -2.3d,
+            maxAcross: 2.3d,
+            usedBoundingBoxLength: true,
+            usedBoundingBoxWidth: true);
 
-        bool created = EscalatorFootprintBuilder.TryCreate(
-            center,
-            axis,
-            geometryPoints,
-            explicitLengthMeters: null,
-            explicitWidthMeters: null,
-            fallbackPoints,
-            minLengthMeters: 0.5d,
-            minWidthMeters: 0.3d,
-            out EscalatorFootprintProjection footprint);
+        EscalatorFootprintProjection clamped = footprint.ClampWidth(1.5d);
 
-        Assert.True(created);
-        Assert.False(footprint.UsedFallbackPoints);
-        AssertApproximatelyEqual(8d, footprint.LengthMeters);
-        AssertApproximatelyEqual(1.4d, footprint.WidthMeters);
+        Assert.True(clamped.UsedBoundingBoxLength);
+        Assert.True(clamped.UsedBoundingBoxWidth);
+        AssertApproximatelyEqual(8.8d, clamped.LengthMeters);
+        AssertApproximatelyEqual(1.5d, clamped.WidthMeters);
+        AssertApproximatelyEqual(0d, clamped.MinAcross + clamped.MaxAcross);
+    }
+
+    [Fact]
+    public void ClampWidth_WhenWidthIsAlreadyBelowLimit_LeavesFootprintUnchanged()
+    {
+        EscalatorFootprintProjection footprint = new(
+            center: new Point2D(5d, 2d),
+            axis: Normalize(0.8660254037844386d, 0.5d),
+            minAlong: -4.4d,
+            maxAlong: 4.4d,
+            minAcross: -0.6d,
+            maxAcross: 0.6d,
+            usedBoundingBoxLength: true,
+            usedBoundingBoxWidth: true);
+
+        EscalatorFootprintProjection clamped = footprint.ClampWidth(1.5d);
+
+        AssertApproximatelyEqual(8.8d, clamped.LengthMeters);
+        AssertApproximatelyEqual(1.2d, clamped.WidthMeters);
+        AssertApproximatelyEqual(footprint.MinAcross, clamped.MinAcross);
+        AssertApproximatelyEqual(footprint.MaxAcross, clamped.MaxAcross);
+    }
+
+    [Fact]
+    public void OrientLongerSideAlongAxis_WhenWidthExceedsLength_SwapsTheAxesSoLengthIsLonger()
+    {
+        EscalatorFootprintProjection footprint = new(
+            center: new Point2D(5d, 2d),
+            axis: Normalize(1d, 0d),
+            minAlong: -0.6d,
+            maxAlong: 0.6d,
+            minAcross: -4.4d,
+            maxAcross: 4.4d,
+            usedBoundingBoxLength: true,
+            usedBoundingBoxWidth: true);
+
+        EscalatorFootprintProjection oriented = footprint.OrientLongerSideAlongAxis();
+
+        Assert.True(oriented.UsedBoundingBoxLength);
+        Assert.True(oriented.UsedBoundingBoxWidth);
+        AssertApproximatelyEqual(8.8d, oriented.LengthMeters);
+        AssertApproximatelyEqual(1.2d, oriented.WidthMeters);
+        AssertApproximatelyEqual(1d, oriented.Axis.Y);
     }
 
     private static IReadOnlyList<Point2D> CreateRectanglePoints(
