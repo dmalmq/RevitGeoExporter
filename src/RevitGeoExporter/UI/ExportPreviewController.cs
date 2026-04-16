@@ -174,6 +174,27 @@ internal sealed class ExportPreviewController
             entries.Add(new PreviewDetailEntry(T("Unassigned", "未割り当て"), feature.IsUnassignedFloor ? T("Yes", "はい") : T("No", "いいえ")));
         }
 
+        if (!string.IsNullOrWhiteSpace(feature.StairVisibilitySource) ||
+            feature.StairVisibilityEvidenceCount.HasValue ||
+            feature.StairVisibilityCandidateCount.HasValue ||
+            feature.StairVisibilityMaskApplied.HasValue ||
+            !string.IsNullOrWhiteSpace(feature.StairVisibilityWarning))
+        {
+            entries.Add(new PreviewDetailEntry(T("Stair visibility source", "階段表示ソース"), NullToPlaceholder(feature.StairVisibilitySource)));
+            entries.Add(new PreviewDetailEntry(
+                T("Stair evidence count", "階段根拠数"),
+                feature.StairVisibilityEvidenceCount?.ToString(CultureInfo.InvariantCulture) ?? "-"));
+            entries.Add(new PreviewDetailEntry(
+                T("Stair candidate count", "階段候補数"),
+                feature.StairVisibilityCandidateCount?.ToString(CultureInfo.InvariantCulture) ?? "-"));
+            entries.Add(new PreviewDetailEntry(
+                T("Stair mask applied", "階段マスク適用"),
+                feature.StairVisibilityMaskApplied.HasValue
+                    ? (feature.StairVisibilityMaskApplied.Value ? T("Yes", "はい") : T("No", "いいえ"))
+                    : "-"));
+            entries.Add(new PreviewDetailEntry(T("Stair visibility warning", "階段表示警告"), NullToPlaceholder(feature.StairVisibilityWarning)));
+        }
+
         return new PreviewDetailsSnapshot(entries, string.Empty);
     }
 

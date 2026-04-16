@@ -19,6 +19,7 @@ namespace RevitGeoExporter.Export;
 public sealed class FloorExportDataPreparer
 {
     private static readonly bool RawFloorOnlyDebugMode = false;
+    private const double MinimumVerticalCirculationAreaSquareMeters = 0.05d;
 
     private static readonly GeometryFactory GeometryFactory = new();
 
@@ -154,6 +155,38 @@ public sealed class FloorExportDataPreparer
             ExportLayer? fixtureLayer = featureTypes.HasFlag(ExportFeatureType.Fixture)
                 ? LayerDefinition.CreateFixtureLayer(activeSchemaProfile, viewWarnings)
                 : null;
+            Dictionary<long, VerticalCirculationVisibilityResult> hostVerticalCirculationResults = new();
+            Dictionary<long, VerticalCirculationVisibilityResult> hostStairVisibilityResults = new();
+            if (!RawFloorOnlyDebugMode &&
+                (NeedsUnitContext(featureTypes) || featureTypes.HasFlag(ExportFeatureType.Detail)))
+            {
+                HostStairOcclusionContext hostVerticalCirculationContext = BuildHostStairOcclusionContext(
+                    levelId,
+                    context.Floors,
+                    context.HostOpenings,
+                    unitExtractor,
+                    hostSourceDescriptor,
+                    context.View.Name,
+                    viewWarnings);
+                hostStairVisibilityResults = BuildHostStairVisibilityResults(
+                    levelId,
+                    context.View,
+                    context.Stairs,
+                    unitExtractor,
+                    hostVerticalCirculationContext,
+                    viewWarnings);
+                Dictionary<long, VerticalCirculationVisibilityResult> hostEscalatorVisibilityResults = BuildHostEscalatorVisibilityResults(
+                    levelId,
+                    context.View,
+                    context.FamilyUnits,
+                    unitExtractor,
+                    hostVerticalCirculationContext,
+                    viewWarnings);
+                hostVerticalCirculationResults = MergeVerticalCirculationResults(
+                    hostStairVisibilityResults,
+                    hostEscalatorVisibilityResults);
+            }
+
             if (NeedsUnitContext(featureTypes))
             {
                 bool collectFloorCandidates =
@@ -188,8 +221,21 @@ public sealed class FloorExportDataPreparer
 
                 if (!RawFloorOnlyDebugMode)
                 {
-                    AddStairsUnits(levelId, context.View, context.Stairs, unitExtractor, supplementalUnitLayer, viewWarnings);
-                    AddFamilyUnits(levelId, context.View, context.FamilyUnits, unitExtractor, supplementalUnitLayer, fixtureLayer, viewWarnings);
+                    AddVerticalCirculationUnits(
+                        hostVerticalCirculationResults.Values
+                            .Select(result => result.ExportFeature)
+                            .OfType<ExportPolygon>(),
+                        supplementalUnitLayer);
+                    HashSet<long> precomputedHostVerticalIds = new(hostVerticalCirculationResults.Keys);
+                    AddFamilyUnits(
+                        levelId,
+                        context.View,
+                        context.FamilyUnits,
+                        unitExtractor,
+                        supplementalUnitLayer,
+                        fixtureLayer,
+                        viewWarnings,
+                        precomputedHostVerticalIds);
                 }
 
                 AddLinkedUnitFeatures(
@@ -236,7 +282,9 @@ public sealed class FloorExportDataPreparer
                              context.Stairs,
                              geometryRepair,
                              viewWarnings,
-                             context.View.Name))
+                             context.View,
+                             context.View.Name,
+                             hostStairVisibilityResults))
                 {
                     detailLayer.AddFeature(detailFeature);
                 }
@@ -393,21 +441,13 @@ public sealed class FloorExportDataPreparer
         }
     }
 
-    private static void AddStairsUnits(
-        string levelId,
-        ViewPlan view,
-        IReadOnlyList<Stairs> stairs,
-        UnitExtractor extractor,
-        ExportLayer unitLayer,
-        ICollection<string> warnings)
+    private static void AddVerticalCirculationUnits(
+        IEnumerable<ExportPolygon> features,
+        ExportLayer unitLayer)
     {
-        foreach (Stairs stair in stairs)
+        foreach (ExportPolygon feature in features)
         {
-            if (extractor.TryCreateStairsUnit(stair, view, levelId, warnings, out ExportPolygon? feature) &&
-                feature != null)
-            {
-                unitLayer.AddFeature(feature);
-            }
+            unitLayer.AddFeature(feature);
         }
     }
 
@@ -418,10 +458,16 @@ public sealed class FloorExportDataPreparer
         UnitExtractor extractor,
         ExportLayer unitLayer,
         ExportLayer? fixtureLayer,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        ICollection<long>? skippedSourceElementIds = null)
     {
         foreach (FamilyInstance familyUnit in familyUnits)
         {
+            if (skippedSourceElementIds != null && skippedSourceElementIds.Contains(familyUnit.Id.Value))
+            {
+                continue;
+            }
+
             if (extractor.TryCreateFamilyUnit(familyUnit, view, levelId, warnings, out ExportPolygon? feature, out string? resolvedCategory) &&
                 feature != null)
             {
@@ -441,6 +487,504 @@ public sealed class FloorExportDataPreparer
         }
     }
 
+    private static Geometry? BuildFloorCoverageMask(
+        string levelId,
+        IReadOnlyList<Floor> floors,
+        UnitExtractor extractor,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        if (floors.Count == 0)
+        {
+            return null;
+        }
+
+        List<Geometry> geometries = new();
+        foreach (Floor floor in floors)
+        {
+            if (!extractor.TryCreateFloorUnits(floor, levelId, viewName, warnings, out IReadOnlyList<ExportPolygon> features))
+            {
+                continue;
+            }
+
+            for (int i = 0; i < features.Count; i++)
+            {
+                Geometry geometry = ToMultiPolygonGeometry(features[i]);
+                if (!geometry.IsEmpty)
+                {
+                    geometries.Add(geometry);
+                }
+            }
+        }
+
+        if (geometries.Count == 0)
+        {
+            return null;
+        }
+
+        Geometry unioned = SafeUnion(geometries, warnings);
+        return unioned.IsEmpty ? null : unioned;
+    }
+
+    private HostStairOcclusionContext BuildHostStairOcclusionContext(
+        string levelId,
+        IReadOnlyList<Floor> floors,
+        IReadOnlyList<Opening> hostOpenings,
+        UnitExtractor extractor,
+        ExportSourceDescriptor hostSourceDescriptor,
+        string? viewName,
+        ICollection<string> warnings)
+    {
+        Geometry? floorCoverageMask = BuildFloorCoverageMask(levelId, floors, extractor, viewName, warnings);
+        if (floorCoverageMask == null || floorCoverageMask.IsEmpty)
+        {
+            return new HostStairOcclusionContext(null, null, null);
+        }
+
+        if (hostOpenings.Count == 0)
+        {
+            return new HostStairOcclusionContext(floorCoverageMask, null, floorCoverageMask);
+        }
+
+        Geometry? openingMask = BuildOpeningCoverageMask(hostOpenings, hostSourceDescriptor, warnings);
+        if (openingMask == null || openingMask.IsEmpty)
+        {
+            return new HostStairOcclusionContext(floorCoverageMask, null, floorCoverageMask);
+        }
+
+        Geometry occlusionMask = SafeOverlay(
+            floorCoverageMask,
+            openingMask,
+            (a, b) => a.Difference(b).Buffer(0d),
+            warnings);
+
+        return new HostStairOcclusionContext(
+            floorCoverageMask,
+            openingMask,
+            occlusionMask.IsEmpty ? null : occlusionMask);
+    }
+
+    private Dictionary<long, VerticalCirculationVisibilityResult> BuildHostStairVisibilityResults(
+        string levelId,
+        ViewPlan view,
+        IReadOnlyList<Stairs> stairs,
+        UnitExtractor extractor,
+        HostStairOcclusionContext occlusionContext,
+        ICollection<string> warnings)
+    {
+        Dictionary<long, VerticalCirculationVisibilityResult> results = new();
+        foreach (Stairs stair in stairs)
+        {
+            if (!extractor.TryResolveStairVisibility(stair, view, warnings, out VerticalCirculationVisibilityResult? visibility))
+            {
+                continue;
+            }
+
+            VerticalCirculationVisibilityResult? shaftClipped = TryApplyShaftOpeningClip(
+                "Stairs",
+                stair.Id.Value,
+                visibility,
+                occlusionContext.FloorCoverageMask,
+                occlusionContext.OpeningMask,
+                warnings);
+            VerticalCirculationVisibilityResult finalVisibility = shaftClipped ?? extractor.ApplyStairOcclusionMask(
+                stair,
+                visibility,
+                occlusionContext.OcclusionMask,
+                warnings);
+            if (!extractor.TryCreateStairsUnit(
+                    stair,
+                    finalVisibility.VisiblePolygons,
+                    levelId,
+                    view.Name,
+                    warnings,
+                    out ExportPolygon? feature) ||
+                feature == null)
+            {
+                continue;
+            }
+
+            ExportPolygon attributedFeature = ApplyVerticalCirculationVisibilityAttributes(feature, finalVisibility);
+            results[stair.Id.Value] = finalVisibility.WithExportFeature(attributedFeature);
+        }
+
+        return results;
+    }
+
+    private Dictionary<long, VerticalCirculationVisibilityResult> BuildHostEscalatorVisibilityResults(
+        string levelId,
+        ViewPlan view,
+        IReadOnlyList<FamilyInstance> familyUnits,
+        UnitExtractor extractor,
+        HostStairOcclusionContext occlusionContext,
+        ICollection<string> warnings)
+    {
+        Dictionary<long, VerticalCirculationVisibilityResult> results = new();
+        foreach (FamilyInstance familyUnit in familyUnits)
+        {
+            if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
+                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility))
+            {
+                continue;
+            }
+
+            VerticalCirculationVisibilityResult? shaftClipped = TryApplyShaftOpeningClip(
+                "Escalator",
+                familyUnit.Id.Value,
+                visibility,
+                occlusionContext.FloorCoverageMask,
+                occlusionContext.OpeningMask,
+                warnings);
+            VerticalCirculationVisibilityResult finalVisibility = shaftClipped ?? ApplyHostVerticalCirculationOcclusionMask(
+                "Escalator",
+                familyUnit.Id.Value,
+                visibility,
+                occlusionContext.OcclusionMask,
+                warnings);
+            if (!extractor.TryCreateEscalatorUnit(
+                    familyUnit,
+                    finalVisibility.VisiblePolygons,
+                    levelId,
+                    view.Name,
+                    warnings,
+                    out ExportPolygon? feature) ||
+                feature == null)
+            {
+                continue;
+            }
+
+            ExportPolygon attributedFeature = ApplyVerticalCirculationVisibilityAttributes(feature, finalVisibility);
+            results[familyUnit.Id.Value] = finalVisibility.WithExportFeature(attributedFeature);
+        }
+
+        return results;
+    }
+
+    private static Dictionary<long, VerticalCirculationVisibilityResult> MergeVerticalCirculationResults(
+        IReadOnlyDictionary<long, VerticalCirculationVisibilityResult> stairs,
+        IReadOnlyDictionary<long, VerticalCirculationVisibilityResult> escalators)
+    {
+        Dictionary<long, VerticalCirculationVisibilityResult> merged = new();
+        foreach (KeyValuePair<long, VerticalCirculationVisibilityResult> kvp in stairs)
+        {
+            merged[kvp.Key] = kvp.Value;
+        }
+
+        foreach (KeyValuePair<long, VerticalCirculationVisibilityResult> kvp in escalators)
+        {
+            merged[kvp.Key] = kvp.Value;
+        }
+
+        return merged;
+    }
+
+    private Dictionary<long, ExportPolygon> BuildStairVisibilityFeatures(
+        string levelId,
+        ViewPlan view,
+        IReadOnlyList<Stairs> stairs,
+        UnitExtractor extractor,
+        Geometry? stairOcclusionMask,
+        ICollection<string> warnings)
+    {
+        Dictionary<long, ExportPolygon> features = new();
+        foreach (Stairs stair in stairs)
+        {
+            if (!extractor.TryCreateStairsUnit(stair, view, levelId, warnings, out ExportPolygon? feature) ||
+                feature == null)
+            {
+                continue;
+            }
+
+            ExportPolygon? finalFeature = ApplyLinkedStairOcclusionMask(stair, feature, stairOcclusionMask, warnings);
+            if (finalFeature != null)
+            {
+                features[stair.Id.Value] = finalFeature;
+            }
+        }
+
+        return features;
+    }
+
+    private static ExportPolygon? ApplyLinkedStairOcclusionMask(
+        Stairs stair,
+        ExportPolygon feature,
+        Geometry? stairOcclusionMask,
+        ICollection<string> warnings)
+    {
+        if (stairOcclusionMask == null || stairOcclusionMask.IsEmpty)
+        {
+            return feature;
+        }
+
+        Geometry geometry = ToMultiPolygonGeometry(feature);
+        if (geometry.IsEmpty)
+        {
+            return null;
+        }
+
+        Geometry visible = SafeOverlay(
+            geometry,
+            stairOcclusionMask,
+            (a, b) => a.Difference(b).Buffer(0d),
+            warnings);
+
+        if (visible.IsEmpty)
+        {
+            warnings.Add(
+                $"Stairs {stair.Id.Value} floor occlusion removed the entire visible stair footprint. Keeping the stair footprint from the export view.");
+            return feature;
+        }
+
+        ExportPolygon? clipped = ToExportPolygon(
+            visible,
+            feature.Attributes,
+            0d,
+            0d,
+            new GeometryRepairResult());
+        if (clipped != null)
+        {
+            return clipped;
+        }
+
+        warnings.Add(
+            $"Stairs {stair.Id.Value} floor occlusion produced invalid stair geometry. Keeping the stair footprint from the export view.");
+        return feature;
+    }
+
+    private static Geometry? BuildOpeningCoverageMask(
+        IReadOnlyList<Opening> hostOpenings,
+        ExportSourceDescriptor hostSourceDescriptor,
+        ICollection<string> warnings)
+    {
+        if (hostOpenings.Count == 0)
+        {
+            return null;
+        }
+
+        SharedCoordinateProjector projector = new(hostSourceDescriptor.ProjectionProjectLocation);
+        List<Geometry> geometries = new();
+        foreach (Opening opening in hostOpenings)
+        {
+            if (TryExtractOpeningCoverageGeometry(opening, projector, out Geometry? geometry) &&
+                geometry != null &&
+                !geometry.IsEmpty)
+            {
+                geometries.Add(geometry);
+            }
+            else
+            {
+                warnings.Add($"Opening {opening.Id.Value} coverage could not be extracted for stair visibility.");
+            }
+        }
+
+        if (geometries.Count == 0)
+        {
+            return null;
+        }
+
+        Geometry unioned = SafeUnion(geometries, warnings);
+        return unioned.IsEmpty ? null : unioned;
+    }
+
+    private static bool TryExtractOpeningCoverageGeometry(
+        Opening opening,
+        SharedCoordinateProjector projector,
+        out Geometry? geometry)
+    {
+        geometry = null;
+        if (opening == null)
+        {
+            return false;
+        }
+
+        if (TryExtractOpeningCoverageGeometryFromSketch(opening, projector, out Geometry? sketchGeometry) &&
+            sketchGeometry != null &&
+            !sketchGeometry.IsEmpty)
+        {
+            geometry = sketchGeometry;
+            return true;
+        }
+
+        CurveArray? boundaryCurves = opening.BoundaryCurves;
+        if (boundaryCurves != null &&
+            TryCreatePolygonFromCurveArray(boundaryCurves, projector, out Polygon2D polygonFromCurves))
+        {
+            geometry = ToMultiPolygonGeometry(new ExportPolygon(new[] { polygonFromCurves }, new Dictionary<string, object?>()));
+            return !geometry.IsEmpty;
+        }
+
+        IList<XYZ>? boundaryRect = opening.BoundaryRect;
+        if (boundaryRect == null || boundaryRect.Count == 0)
+        {
+            return false;
+        }
+
+        if (!TryCreatePolygonFromOpeningRect(boundaryRect, projector, out Polygon2D polygonFromRect))
+        {
+            return false;
+        }
+
+        geometry = ToMultiPolygonGeometry(new ExportPolygon(new[] { polygonFromRect }, new Dictionary<string, object?>()));
+        return !geometry.IsEmpty;
+    }
+
+    private static bool TryExtractOpeningCoverageGeometryFromSketch(
+        Opening opening,
+        SharedCoordinateProjector projector,
+        out Geometry? geometry)
+    {
+        geometry = null;
+        if (opening.SketchId == ElementId.InvalidElementId)
+        {
+            return false;
+        }
+
+        if (opening.Document.GetElement(opening.SketchId) is not Sketch sketch)
+        {
+            return false;
+        }
+
+        List<Geometry> geometries = new();
+        foreach (CurveArray curveArray in sketch.Profile)
+        {
+            if (TryCreatePolygonFromCurveArray(curveArray, projector, out Polygon2D polygon))
+            {
+                Geometry polygonGeometry = ToMultiPolygonGeometry(
+                    new ExportPolygon(new[] { polygon }, new Dictionary<string, object?>()));
+                if (!polygonGeometry.IsEmpty)
+                {
+                    geometries.Add(polygonGeometry);
+                }
+            }
+        }
+
+        if (geometries.Count == 0)
+        {
+            return false;
+        }
+
+        Geometry unioned = SafeUnion(geometries, new List<string>());
+        if (unioned.IsEmpty)
+        {
+            return false;
+        }
+
+        geometry = unioned;
+        return true;
+    }
+
+    private static bool TryCreatePolygonFromCurveArray(
+        CurveArray boundaryCurves,
+        SharedCoordinateProjector projector,
+        out Polygon2D polygon)
+    {
+        polygon = null!;
+        List<Point2D> points = new();
+        foreach (Curve curve in boundaryCurves)
+        {
+            IList<XYZ> tessellated = curve.Tessellate();
+            if (tessellated.Count == 0)
+            {
+                tessellated = new[] { curve.GetEndPoint(0), curve.GetEndPoint(1) };
+            }
+
+            for (int i = 0; i < tessellated.Count; i++)
+            {
+                if (points.Count > 0 && i == 0)
+                {
+                    continue;
+                }
+
+                Point2D projected = projector.ProjectPoint(tessellated[i]);
+                if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], projected))
+                {
+                    points.Add(projected);
+                }
+            }
+        }
+
+        return TryCreatePolygonFromPoints(points, out polygon);
+    }
+
+    private static bool TryCreatePolygonFromOpeningRect(
+        IList<XYZ> boundaryRect,
+        SharedCoordinateProjector projector,
+        out Polygon2D polygon)
+    {
+        polygon = null!;
+        List<Point2D> points = boundaryRect
+            .Select(projector.ProjectPoint)
+            .ToList();
+        if (TryCreatePolygonFromPoints(points, out polygon))
+        {
+            return true;
+        }
+
+        if (boundaryRect.Count < 2)
+        {
+            return false;
+        }
+
+        Point2D first = projector.ProjectPoint(boundaryRect[0]);
+        Point2D second = projector.ProjectPoint(boundaryRect[1]);
+        List<Point2D> rectangle = new()
+        {
+            new(first.X, first.Y),
+            new(second.X, first.Y),
+            new(second.X, second.Y),
+            new(first.X, second.Y),
+        };
+
+        return TryCreatePolygonFromPoints(rectangle, out polygon);
+    }
+
+    private static bool TryCreatePolygonFromPoints(
+        IReadOnlyList<Point2D> rawPoints,
+        out Polygon2D polygon)
+    {
+        polygon = null!;
+        if (rawPoints == null || rawPoints.Count < 3)
+        {
+            return false;
+        }
+
+        List<Point2D> points = new(rawPoints.Count + 1);
+        for (int i = 0; i < rawPoints.Count; i++)
+        {
+            Point2D point = rawPoints[i];
+            if (points.Count == 0 || !IsSamePoint(points[points.Count - 1], point))
+            {
+                points.Add(point);
+            }
+        }
+
+        if (points.Count < 3)
+        {
+            return false;
+        }
+
+        if (!IsSamePoint(points[0], points[points.Count - 1]))
+        {
+            points.Add(points[0]);
+        }
+
+        if (points.Count < 4)
+        {
+            return false;
+        }
+
+        polygon = new Polygon2D(points);
+        return true;
+    }
+
+    private static bool IsSamePoint(Point2D a, Point2D b)
+    {
+        const double tolerance = 1e-6d;
+        return Math.Abs(a.X - b.X) <= tolerance &&
+               Math.Abs(a.Y - b.Y) <= tolerance;
+    }
+
     private static ExportPolygon RemapToFixtureAttributes(ExportPolygon unitFeature)
     {
         Dictionary<string, object?> attributes = new()
@@ -455,6 +999,158 @@ public sealed class FloorExportDataPreparer
         };
 
         return new ExportPolygon(unitFeature.Polygons, attributes);
+    }
+
+    private const double ShaftOpeningClipMinimumFloorCoverageRatio = 0.90d;
+
+    private static VerticalCirculationVisibilityResult? TryApplyShaftOpeningClip(
+        string elementLabel,
+        long elementId,
+        VerticalCirculationVisibilityResult visibility,
+        Geometry? floorCoverageMask,
+        Geometry? openingMask,
+        ICollection<string> warnings)
+    {
+        if (floorCoverageMask == null || floorCoverageMask.IsEmpty ||
+            openingMask == null || openingMask.IsEmpty)
+        {
+            return null;
+        }
+
+        Geometry source = visibility.Geometry;
+        double sourceArea = source.Area;
+        if (sourceArea <= MinimumVerticalCirculationAreaSquareMeters)
+        {
+            return null;
+        }
+
+        Geometry floorIntersection = SafeOverlay(
+            source,
+            floorCoverageMask,
+            (a, b) => a.Intersection(b).Buffer(0d),
+            warnings);
+        if (floorIntersection.IsEmpty)
+        {
+            return null;
+        }
+
+        double coverageRatio = floorIntersection.Area / sourceArea;
+        if (coverageRatio < ShaftOpeningClipMinimumFloorCoverageRatio)
+        {
+            return null;
+        }
+
+        Geometry openingIntersection = SafeOverlay(
+            source,
+            openingMask,
+            (a, b) => a.Intersection(b).Buffer(0d),
+            warnings);
+        if (openingIntersection.IsEmpty ||
+            openingIntersection.Area < MinimumVerticalCirculationAreaSquareMeters)
+        {
+            return null;
+        }
+
+        List<Polygon2D> polygons = ExtractPolygons(openingIntersection, 0d, new GeometryRepairResult(), 0d);
+        if (polygons.Count == 0)
+        {
+            return null;
+        }
+
+        string warning =
+            $"{elementLabel} {elementId} shaft-opening clip applied " +
+            $"(floor coverage {coverageRatio:P0}, clipped area {openingIntersection.Area:0.00} m\u00B2).";
+        warnings.Add(warning);
+
+        return visibility.WithMaskApplied(
+            polygons,
+            openingIntersection,
+            openingIntersection.Area,
+            visibility.CoveredEvidenceCount,
+            visibility.EvidenceCoverageRatio,
+            visibility.OverCoverageArea,
+            warning);
+    }
+
+    private static VerticalCirculationVisibilityResult ApplyHostVerticalCirculationOcclusionMask(
+        string elementLabel,
+        long elementId,
+        VerticalCirculationVisibilityResult visibility,
+        Geometry? verticalCirculationOcclusionMask,
+        ICollection<string> warnings)
+    {
+        if (verticalCirculationOcclusionMask == null || verticalCirculationOcclusionMask.IsEmpty)
+        {
+            return visibility;
+        }
+
+        Geometry clipped = SafeOverlay(
+            visibility.Geometry,
+            verticalCirculationOcclusionMask,
+            (a, b) => a.Difference(b).Buffer(0d),
+            warnings);
+        if (clipped.IsEmpty)
+        {
+            return HandleCollapsedHostVerticalCirculationOcclusion(elementLabel, elementId, visibility, warnings);
+        }
+
+        List<Polygon2D> polygons = ExtractPolygons(clipped, 0d, new GeometryRepairResult(), 0d);
+        if (polygons.Count == 0 || clipped.Area < MinimumVerticalCirculationAreaSquareMeters)
+        {
+            return HandleCollapsedHostVerticalCirculationOcclusion(
+                elementLabel,
+                elementId,
+                visibility,
+                warnings,
+                clipped.Area < MinimumVerticalCirculationAreaSquareMeters
+                    ? "collapsed below minimum area"
+                    : "produced no valid polygons");
+        }
+
+        if (Math.Abs(clipped.Area - visibility.Area) <= 1e-6d)
+        {
+            return visibility;
+        }
+
+        return visibility.WithMaskApplied(
+            polygons,
+            clipped,
+            clipped.Area,
+            visibility.CoveredEvidenceCount,
+            visibility.EvidenceCoverageRatio,
+            visibility.OverCoverageArea,
+            null);
+    }
+
+    private static VerticalCirculationVisibilityResult HandleCollapsedHostVerticalCirculationOcclusion(
+        string elementLabel,
+        long elementId,
+        VerticalCirculationVisibilityResult visibility,
+        ICollection<string> warnings,
+        string collapseReason = "removed the clipped footprint")
+    {
+        string warning =
+            $"{elementLabel} {elementId} floor/shaft occlusion {collapseReason}. Keeping the pre-mask result.";
+        warnings.Add(warning);
+        return visibility.WithWarning(warning);
+    }
+
+    private static ExportPolygon ApplyVerticalCirculationVisibilityAttributes(
+        ExportPolygon feature,
+        VerticalCirculationVisibilityResult visibility)
+    {
+        Dictionary<string, object?> attributes = new(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, object?> kvp in feature.Attributes)
+        {
+            attributes[kvp.Key] = kvp.Value;
+        }
+
+        foreach (KeyValuePair<string, object?> kvp in visibility.BuildDebugAttributes())
+        {
+            attributes[kvp.Key] = kvp.Value;
+        }
+
+        return new ExportPolygon(feature.Polygons, attributes);
     }
 
     private void AddLinkedUnitFeatures(
@@ -513,7 +1209,20 @@ public sealed class FloorExportDataPreparer
                 continue;
             }
 
-            AddStairsUnits(levelId, context.View, linkedSource.Stairs, linkedUnitExtractor, supplementalUnitLayer, warnings);
+            Geometry? linkedFloorCoverageMask = BuildFloorCoverageMask(
+                levelId,
+                linkedSource.Floors,
+                linkedUnitExtractor,
+                context.View.Name,
+                warnings);
+            Dictionary<long, ExportPolygon> linkedStairVisibilityFeatures = BuildStairVisibilityFeatures(
+                levelId,
+                context.View,
+                linkedSource.Stairs,
+                linkedUnitExtractor,
+                linkedFloorCoverageMask,
+                warnings);
+            AddVerticalCirculationUnits(linkedStairVisibilityFeatures.Values, supplementalUnitLayer);
             AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, supplementalUnitLayer, fixtureLayer, warnings);
         }
     }
@@ -546,7 +1255,9 @@ public sealed class FloorExportDataPreparer
                          linkedSource.Stairs,
                          geometryRepair,
                          warnings,
-                         context.View.Name,
+                         view: null,
+                         viewName: context.View.Name,
+                         stairVisibilityResults: null,
                          skipLevelFilter: true))
             {
                 detailLayer.AddFeature(detailFeature);
@@ -1240,6 +1951,25 @@ public sealed class FloorExportDataPreparer
                 return a;
             }
         }
+    }
+
+    private readonly struct HostStairOcclusionContext
+    {
+        public HostStairOcclusionContext(
+            Geometry? floorCoverageMask,
+            Geometry? openingMask,
+            Geometry? occlusionMask)
+        {
+            FloorCoverageMask = floorCoverageMask;
+            OpeningMask = openingMask;
+            OcclusionMask = occlusionMask;
+        }
+
+        public Geometry? FloorCoverageMask { get; }
+
+        public Geometry? OpeningMask { get; }
+
+        public Geometry? OcclusionMask { get; }
     }
 
     private readonly struct UnitGeometryRecord

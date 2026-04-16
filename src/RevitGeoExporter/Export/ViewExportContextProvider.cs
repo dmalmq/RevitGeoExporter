@@ -54,6 +54,7 @@ public sealed class ViewExportContextProvider
                     view,
                     level,
                     CollectFloorsInView(view.Id),
+                    CollectHostOpeningsInView(view.Id),
                     CollectRoomsInView(view.Id),
                     CollectStairsInView(view.Id),
                     CollectFamilyUnitsInView(view.Id, zoneCatalog, familyCategoryOverrides),
@@ -84,6 +85,16 @@ public sealed class ViewExportContextProvider
             .OfClass(typeof(Floor))
             .WhereElementIsNotElementType()
             .Cast<Floor>()
+            .ToList();
+    }
+
+    private List<Opening> CollectHostOpeningsInView(ElementId viewId)
+    {
+        return new FilteredElementCollector(_document, viewId)
+            .OfClass(typeof(Opening))
+            .WhereElementIsNotElementType()
+            .Cast<Opening>()
+            .Where(opening => opening.Host is Floor || opening.Host == null)
             .ToList();
     }
 

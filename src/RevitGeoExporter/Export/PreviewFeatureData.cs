@@ -24,7 +24,12 @@ public sealed class PreviewFeatureData
         string? assignmentParameterName = null,
         bool isUnassigned = false,
         FloorCategoryResolutionSource? categoryResolutionSource = null,
-        bool hasWarning = false)
+        bool hasWarning = false,
+        string? stairVisibilitySource = null,
+        int? stairVisibilityEvidenceCount = null,
+        int? stairVisibilityCandidateCount = null,
+        bool? stairVisibilityMaskApplied = null,
+        string? stairVisibilityWarning = null)
     {
         FeatureType = featureType;
         Feature = feature ?? throw new ArgumentNullException(nameof(feature));
@@ -43,6 +48,11 @@ public sealed class PreviewFeatureData
         IsUnassigned = isUnassigned;
         CategoryResolutionSource = categoryResolutionSource;
         HasWarning = hasWarning;
+        StairVisibilitySource = string.IsNullOrWhiteSpace(stairVisibilitySource) ? null : stairVisibilitySource.Trim();
+        StairVisibilityEvidenceCount = stairVisibilityEvidenceCount;
+        StairVisibilityCandidateCount = stairVisibilityCandidateCount;
+        StairVisibilityMaskApplied = stairVisibilityMaskApplied;
+        StairVisibilityWarning = string.IsNullOrWhiteSpace(stairVisibilityWarning) ? null : stairVisibilityWarning.Trim();
     }
 
     public ExportFeatureType FeatureType { get; }
@@ -78,6 +88,16 @@ public sealed class PreviewFeatureData
     public FloorCategoryResolutionSource? CategoryResolutionSource { get; }
 
     public bool HasWarning { get; }
+
+    public string? StairVisibilitySource { get; }
+
+    public int? StairVisibilityEvidenceCount { get; }
+
+    public int? StairVisibilityCandidateCount { get; }
+
+    public bool? StairVisibilityMaskApplied { get; }
+
+    public string? StairVisibilityWarning { get; }
 
     public bool UsesCategoryOverride => CategoryResolutionSource == FloorCategoryResolutionSource.Override;
 
@@ -119,7 +139,12 @@ public sealed class PreviewFeatureData
             AssignmentParameterName,
             IsUnassigned,
             CategoryResolutionSource,
-            HasWarning);
+            HasWarning,
+            StairVisibilitySource,
+            StairVisibilityEvidenceCount,
+            StairVisibilityCandidateCount,
+            StairVisibilityMaskApplied,
+            StairVisibilityWarning);
     }
 
     public string SearchText =>
@@ -136,6 +161,8 @@ public sealed class PreviewFeatureData
                 AssignmentParsedCandidate,
                 AssignmentParameterName,
                 ExportId,
+                StairVisibilitySource,
+                StairVisibilityWarning,
             }.Where(value => !string.IsNullOrWhiteSpace(value)));
 }
 

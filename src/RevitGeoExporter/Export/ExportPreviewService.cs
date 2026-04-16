@@ -182,6 +182,7 @@ public sealed class ExportPreviewService
             {
                 string category = ReadString(feature.Attributes, "category");
                 string? fallbackFillColor = ReadString(feature.Attributes, "preview_fill_color");
+                string? stairVisibilityWarning = ReadNullableString(feature.Attributes, "stair_visibility_warning");
                 features.Add(
                     new PreviewFeatureData(
                         ExportFeatureType.Unit,
@@ -200,7 +201,12 @@ public sealed class ExportPreviewService
                         ReadNullableString(feature.Attributes, "assignment_parameter_name"),
                         ReadBool(feature.Attributes, "is_unassigned"),
                         ReadResolutionSource(feature.Attributes, "category_resolution_source"),
-                        ReadBool(feature.Attributes, "is_unassigned")));
+                        ReadBool(feature.Attributes, "is_unassigned") || !string.IsNullOrWhiteSpace(stairVisibilityWarning),
+                        ReadNullableString(feature.Attributes, "stair_visibility_source"),
+                        ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                        ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                        ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                        stairVisibilityWarning));
             }
         }
 
@@ -228,6 +234,7 @@ public sealed class ExportPreviewService
         {
             foreach (ExportLineString feature in prepared.DetailLayer.Features.OfType<ExportLineString>())
             {
+                string? stairVisibilityWarning = ReadNullableString(feature.Attributes, "stair_visibility_warning");
                 features.Add(
                     new PreviewFeatureData(
                         ExportFeatureType.Detail,
@@ -239,7 +246,13 @@ public sealed class ExportPreviewService
                         null,
                         ReadNullableString(feature.Attributes, "source_label"),
                         "666666",
-                        "666666"));
+                        "666666",
+                        hasWarning: !string.IsNullOrWhiteSpace(stairVisibilityWarning),
+                        stairVisibilitySource: ReadNullableString(feature.Attributes, "stair_visibility_source"),
+                        stairVisibilityEvidenceCount: ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                        stairVisibilityCandidateCount: ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                        stairVisibilityMaskApplied: ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                        stairVisibilityWarning: stairVisibilityWarning));
             }
         }
 
@@ -375,6 +388,37 @@ public sealed class ExportPreviewService
             long longValue => longValue,
             int intValue => intValue,
             string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static int? ReadNullableInt(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNullableBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
             _ => null,
         };
     }

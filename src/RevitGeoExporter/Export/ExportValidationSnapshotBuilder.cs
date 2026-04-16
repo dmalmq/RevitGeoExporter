@@ -130,7 +130,12 @@ public sealed class ExportValidationSnapshotBuilder
             ReadString(feature.Attributes, "source_document_name"),
             ReadBool(feature.Attributes, "is_linked_source"),
             ReadBool(feature.Attributes, "has_persisted_export_id", defaultValue: true),
-            ReadSchemaIssues(feature.Attributes));
+            ReadSchemaIssues(feature.Attributes),
+            ReadString(feature.Attributes, "stair_visibility_source"),
+            ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+            ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+            ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+            ReadString(feature.Attributes, "stair_visibility_warning"));
     }
 
     private int CountSourceFamilyUnits(IReadOnlyList<FamilyInstance> familyUnits, string category)
@@ -225,6 +230,37 @@ public sealed class ExportValidationSnapshotBuilder
             long longValue => longValue,
             int intValue => intValue,
             string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static int? ReadNullableInt(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNullableBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
             _ => null,
         };
     }

@@ -6,6 +6,7 @@ using RevitGeoExporter.Core.Assignments;
 using RevitGeoExporter.Core.Diagnostics;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Validation;
+using System.Globalization;
 
 namespace RevitGeoExporter.Export;
 
@@ -161,6 +162,22 @@ public sealed class ExportDiagnosticsReportBuilder
             .OrderBy(group => group.FloorTypeName, StringComparer.OrdinalIgnoreCase)
             .ToList() ?? new List<ExportDiagnosticsFloorOverride>();
 
+        report.StairVisibility = prepared.UnitLayer?.Features
+            .OfType<ExportPolygon>()
+            .Where(feature => !string.IsNullOrWhiteSpace(ReadString(feature.Attributes, "stair_visibility_source")))
+            .Select(feature => new ExportDiagnosticsStairVisibilityInfo
+            {
+                SourceElementId = ReadNullableLong(feature.Attributes, "source_element_id"),
+                ExportId = ReadString(feature.Attributes, "id"),
+                Source = ReadString(feature.Attributes, "stair_visibility_source"),
+                EvidenceCount = ReadNullableInt(feature.Attributes, "stair_visibility_evidence_count"),
+                CandidateCount = ReadNullableInt(feature.Attributes, "stair_visibility_candidate_count"),
+                MaskApplied = ReadNullableBool(feature.Attributes, "stair_visibility_mask_applied"),
+                Warning = ReadString(feature.Attributes, "stair_visibility_warning"),
+            })
+            .OrderBy(entry => entry.SourceElementId ?? long.MaxValue)
+            .ToList() ?? new List<ExportDiagnosticsStairVisibilityInfo>();
+
         return report;
     }
 
@@ -208,6 +225,53 @@ public sealed class ExportDiagnosticsReportBuilder
             bool boolValue => boolValue,
             string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
             _ => defaultValue,
+        };
+    }
+
+    private static long? ReadNullableLong(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            long longValue => longValue,
+            int intValue => intValue,
+            string stringValue when long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static int? ReadNullableInt(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            int intValue => intValue,
+            long longValue when longValue >= int.MinValue && longValue <= int.MaxValue => (int)longValue,
+            string stringValue when int.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed) => parsed,
+            _ => null,
+        };
+    }
+
+    private static bool? ReadNullableBool(IReadOnlyDictionary<string, object?> attributes, string key)
+    {
+        if (!attributes.TryGetValue(key, out object? value) || value == null)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            bool boolValue => boolValue,
+            string stringValue when bool.TryParse(stringValue, out bool parsed) => parsed,
+            _ => null,
         };
     }
 }

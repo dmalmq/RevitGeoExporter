@@ -4,6 +4,8 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Operation.Union;
+using NetTopologySuite.Precision;
 using RevitGeoExporter.Core;
 using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
@@ -27,6 +29,7 @@ public sealed class DetailExtractor
     private readonly string _sourceDocumentKey;
     private readonly string _sourceDocumentName;
     private readonly SchemaProfile _schemaProfile;
+    private readonly StairVisibilityResolver _stairVisibilityResolver;
 
     public DetailExtractor(
         Document document,
@@ -41,16 +44,19 @@ public sealed class DetailExtractor
         _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        _stairVisibilityResolver = new StairVisibilityResolver(_document, ProjectPoint);
     }
 
-    public IReadOnlyList<ExportLineString> ExtractForLevel(
+    internal IReadOnlyList<ExportLineString> ExtractForLevel(
         Level level,
         string levelId,
         IReadOnlyList<CurveElement> detailCurves,
         IReadOnlyList<Stairs> stairs,
         GeometryRepairResult geometryRepair,
         ICollection<string> warnings,
+        ViewPlan? view = null,
         string? viewName = null,
+        IReadOnlyDictionary<long, VerticalCirculationVisibilityResult>? stairVisibilityResults = null,
         bool skipLevelFilter = false)
     {
         if (level is null)
@@ -113,7 +119,7 @@ public sealed class DetailExtractor
                     warnings));
         }
 
-        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings, viewName));
+        features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings, view, viewName, stairVisibilityResults));
         return features;
     }
 
@@ -193,11 +199,42 @@ public sealed class DetailExtractor
         string levelId,
         GeometryRepairResult geometryRepair,
         ICollection<string> warnings,
-        string? viewName)
+        ViewPlan? view,
+        string? viewName,
+        IReadOnlyDictionary<long, VerticalCirculationVisibilityResult>? stairVisibilityResults)
     {
         List<ExportLineString> features = new();
         foreach (Stairs stair in stairs)
         {
+            VerticalCirculationVisibilityResult? stairVisibility = null;
+            Geometry? visibleFootprintMask = null;
+            if (stairVisibilityResults != null)
+            {
+                if (!stairVisibilityResults.TryGetValue(stair.Id.Value, out stairVisibility))
+                {
+                    continue;
+                }
+
+                visibleFootprintMask = CreatePolygonMask(stairVisibility.VisiblePolygons);
+                if (visibleFootprintMask == null || visibleFootprintMask.IsEmpty)
+                {
+                    continue;
+                }
+            }
+            else if (view != null &&
+                     ReferenceEquals(view.Document, _document) &&
+                     _stairVisibilityResolver.TryResolveVisibleStair(
+                         stair,
+                         view,
+                         warnings,
+                         out stairVisibility) &&
+                     stairVisibility.VisiblePolygons.Count > 0)
+            {
+                visibleFootprintMask = CreatePolygonMask(stairVisibility.VisiblePolygons);
+            }
+
+            IReadOnlyDictionary<string, object?>? stairVisibilityAttributes = stairVisibility?.BuildDebugAttributes();
+
             foreach (ElementId runId in stair.GetStairsRuns())
             {
                 if (_document.GetElement(runId) is not StairsRun run)
@@ -205,7 +242,14 @@ public sealed class DetailExtractor
                     continue;
                 }
 
-                if (!TryBuildRunStepLines(stair, run, out List<LineString2D> stepLines, geometryRepair, warnings))
+                if (!TryBuildRunStepLines(
+                        stair,
+                        run,
+                        view,
+                        visibleFootprintMask,
+                        out List<LineString2D> stepLines,
+                        geometryRepair,
+                        warnings))
                 {
                     continue;
                 }
@@ -221,7 +265,8 @@ public sealed class DetailExtractor
                             levelId,
                             "stair-step",
                             viewName,
-                            warnings));
+                            warnings,
+                            stairVisibilityAttributes));
                 }
             }
         }
@@ -232,6 +277,8 @@ public sealed class DetailExtractor
     private bool TryBuildRunStepLines(
         Stairs stair,
         StairsRun run,
+        ViewPlan? view,
+        Geometry? visibleFootprintMask,
         out List<LineString2D> lines,
         GeometryRepairResult geometryRepair,
         ICollection<string> warnings)
@@ -261,9 +308,9 @@ public sealed class DetailExtractor
             return false;
         }
 
-        if (TryBuildModeledRunStepLines(stair, run, pathPoints, pathLengthMeters, warnings, out lines))
+        if (TryBuildModeledRunStepLines(stair, run, view, pathPoints, pathLengthMeters, warnings, out lines))
         {
-            return true;
+            return TryClipRunStepLines(lines, visibleFootprintMask, geometryRepair, out lines);
         }
 
         CurveLoop footprintBoundary;
@@ -289,7 +336,7 @@ public sealed class DetailExtractor
         if (TryBuildSchematicRunStepLines(run, pathPoints, pathLengthMeters, footprintPolygon, geometryRepair, out lines))
         {
             geometryRepair.SimplifiedDetails++;
-            return true;
+            return TryClipRunStepLines(lines, visibleFootprintMask, geometryRepair, out lines);
         }
 
         return false;
@@ -298,6 +345,7 @@ public sealed class DetailExtractor
     private bool TryBuildModeledRunStepLines(
         Stairs stair,
         StairsRun run,
+        ViewPlan? view,
         IReadOnlyList<Point2D> pathPoints,
         double pathLengthMeters,
         ICollection<string> warnings,
@@ -305,14 +353,38 @@ public sealed class DetailExtractor
     {
         lines = new List<LineString2D>();
 
+        if (view != null &&
+            ReferenceEquals(view.Document, _document) &&
+            TryBuildModeledRunStepLines(run, pathPoints, pathLengthMeters, CreateGeometryOptions(view), out lines))
+        {
+            return true;
+        }
+
+        if (TryBuildModeledRunStepLines(run, pathPoints, pathLengthMeters, CreateGeometryOptions(), out lines))
+        {
+            return true;
+        }
+
+        warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} tread geometry could not be read; using schematic stair detail lines.");
+        return false;
+    }
+
+    private bool TryBuildModeledRunStepLines(
+        StairsRun run,
+        IReadOnlyList<Point2D> pathPoints,
+        double pathLengthMeters,
+        Options geometryOptions,
+        out List<LineString2D> lines)
+    {
+        lines = new List<LineString2D>();
+
         GeometryElement? geometry;
         try
         {
-            geometry = run.get_Geometry(CreateGeometryOptions());
+            geometry = run.get_Geometry(geometryOptions);
         }
         catch (Exception)
         {
-            warnings.Add($"{BuildStairRunWarningPrefix(stair, run)} tread geometry could not be read; using schematic stair detail lines.");
             return false;
         }
 
@@ -369,6 +441,47 @@ public sealed class DetailExtractor
 
         lines.AddRange(selected);
         return true;
+    }
+
+    private bool TryClipRunStepLines(
+        IReadOnlyList<LineString2D> sourceLines,
+        Geometry? visibleFootprintMask,
+        GeometryRepairResult geometryRepair,
+        out List<LineString2D> clippedLines)
+    {
+        clippedLines = new List<LineString2D>(sourceLines);
+        if (visibleFootprintMask == null || sourceLines.Count == 0)
+        {
+            return clippedLines.Count > 0;
+        }
+
+        List<LineString2D> visibleLines = new();
+        HashSet<string> emittedLineKeys = new(StringComparer.Ordinal);
+        for (int i = 0; i < sourceLines.Count; i++)
+        {
+            if (!TryClipLineToPolygonMask(sourceLines[i], visibleFootprintMask, out List<LineString2D> segments))
+            {
+                continue;
+            }
+
+            for (int j = 0; j < segments.Count; j++)
+            {
+                LineString2D segment = segments[j];
+                if (GetLength(segment.Points) < _geometryRepairOptions.MinimumOpeningLengthMeters)
+                {
+                    geometryRepair.SimplifiedDetails++;
+                    continue;
+                }
+
+                if (emittedLineKeys.Add(BuildLineKey(segment)))
+                {
+                    visibleLines.Add(segment);
+                }
+            }
+        }
+
+        clippedLines = visibleLines;
+        return clippedLines.Count > 0;
     }
 
     private bool TryBuildTreadFaceLineCandidate(
@@ -554,14 +667,22 @@ public sealed class DetailExtractor
         return true;
     }
 
-    private static Options CreateGeometryOptions()
+    private static Options CreateGeometryOptions(View? view = null)
     {
-        return new Options
+        Options options = new()
         {
             ComputeReferences = false,
             IncludeNonVisibleObjects = true,
             DetailLevel = ViewDetailLevel.Fine,
         };
+
+        if (view != null)
+        {
+            options.View = view;
+            options.IncludeNonVisibleObjects = false;
+        }
+
+        return options;
     }
 
     private static List<Solid> CollectSolids(GeometryElement geometry)
@@ -710,7 +831,8 @@ public sealed class DetailExtractor
         string levelId,
         string sourceLabel,
         string? viewName,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        IReadOnlyDictionary<string, object?>? additionalAttributes = null)
     {
         Dictionary<string, object?> attributes = new()
         {
@@ -732,6 +854,15 @@ public sealed class DetailExtractor
             sourceElement,
             viewName,
             warnings);
+
+        if (additionalAttributes != null)
+        {
+            foreach (KeyValuePair<string, object?> kvp in additionalAttributes)
+            {
+                attributes[kvp.Key] = kvp.Value;
+            }
+        }
+
         return new ExportLineString(lineString, attributes);
     }
 
@@ -902,6 +1033,154 @@ public sealed class DetailExtractor
 
         segment = new LineString2D(points);
         return true;
+    }
+
+    private static Geometry? CreatePolygonMask(IReadOnlyList<Polygon2D> polygons)
+    {
+        List<Geometry> geometries = new();
+        for (int i = 0; i < polygons.Count; i++)
+        {
+            Geometry? geometry = ToNtsPolygon(polygons[i]);
+            if (geometry != null && !geometry.IsEmpty)
+            {
+                geometries.Add(geometry);
+            }
+        }
+
+        if (geometries.Count == 0)
+        {
+            return null;
+        }
+
+        Geometry unioned = UnaryUnionOp.Union(geometries);
+        return unioned.IsEmpty ? null : unioned.Buffer(0d);
+    }
+
+    private static Geometry SafeDifference(Geometry source, Geometry mask)
+    {
+        try
+        {
+            return source.Difference(mask).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reducedSource = reducer.Reduce(source);
+                Geometry reducedMask = reducer.Reduce(mask);
+                return reducedSource.Difference(reducedMask).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                return source;
+            }
+        }
+    }
+
+    private static Geometry? ToNtsPolygon(Polygon2D polygon)
+    {
+        if (!TryCreateLinearRing(polygon.ExteriorRing, out LinearRing? shell))
+        {
+            return null;
+        }
+
+        List<LinearRing> holes = new();
+        for (int i = 0; i < polygon.InteriorRings.Count; i++)
+        {
+            if (TryCreateLinearRing(polygon.InteriorRings[i], out LinearRing? hole) && hole != null)
+            {
+                holes.Add(hole);
+            }
+        }
+
+        Polygon created = GeometryFactory.CreatePolygon(shell, holes.ToArray());
+        return created.IsValid ? created : created.Buffer(0d);
+    }
+
+    private static bool TryCreateLinearRing(IReadOnlyList<Point2D> ringPoints, out LinearRing? ring)
+    {
+        ring = null;
+        if (ringPoints == null || ringPoints.Count < 4)
+        {
+            return false;
+        }
+
+        List<Coordinate> coordinates = new(ringPoints.Count + 1);
+        for (int i = 0; i < ringPoints.Count; i++)
+        {
+            coordinates.Add(new Coordinate(ringPoints[i].X, ringPoints[i].Y));
+        }
+
+        Coordinate first = coordinates[0];
+        Coordinate last = coordinates[coordinates.Count - 1];
+        if (!first.Equals2D(last))
+        {
+            coordinates.Add(new Coordinate(first.X, first.Y));
+        }
+
+        if (coordinates.Count < 4)
+        {
+            return false;
+        }
+
+        ring = GeometryFactory.CreateLinearRing(coordinates.ToArray());
+        return !ring.IsEmpty;
+    }
+
+    private static bool TryClipLineToPolygonMask(
+        LineString2D line,
+        Geometry visibleFootprintMask,
+        out List<LineString2D> clippedSegments)
+    {
+        clippedSegments = new List<LineString2D>();
+        if (line == null || line.Points.Count < 2)
+        {
+            return false;
+        }
+
+        LineString lineString = GeometryFactory.CreateLineString(
+            line.Points.Select(point => new Coordinate(point.X, point.Y)).ToArray());
+
+        Geometry intersection;
+        try
+        {
+            intersection = visibleFootprintMask.Intersection(lineString);
+        }
+        catch (TopologyException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                Geometry reducedMask = reducer.Reduce(visibleFootprintMask);
+                Geometry reducedLine = reducer.Reduce(lineString);
+                intersection = reducedMask.Intersection(reducedLine);
+            }
+            catch (TopologyException)
+            {
+                return false;
+            }
+        }
+
+        if (intersection.IsEmpty)
+        {
+            return false;
+        }
+
+        List<LineString> lineStrings = new();
+        CollectLineStrings(intersection, lineStrings);
+        for (int i = 0; i < lineStrings.Count; i++)
+        {
+            List<Point2D> points = lineStrings[i].Coordinates
+                .Select(coord => new Point2D(coord.X, coord.Y))
+                .ToList();
+            if (points.Count >= 2)
+            {
+                clippedSegments.Add(new LineString2D(points));
+            }
+        }
+
+        return clippedSegments.Count > 0;
     }
 
     private static void CollectLineStrings(Geometry geometry, ICollection<LineString> target)

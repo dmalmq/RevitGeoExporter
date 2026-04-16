@@ -18,6 +18,8 @@ public sealed class ExportDiagnosticsViewReport
 
     public List<ExportDiagnosticsUnassignedFloorGroup> UnassignedFloorTypes { get; set; } = new();
 
+    public List<ExportDiagnosticsStairVisibilityInfo> StairVisibility { get; set; } = new();
+
     public int UnsnappedOpeningCount { get; set; }
 
     public int DroppedPolygonCount { get; set; }

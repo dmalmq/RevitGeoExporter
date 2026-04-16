@@ -26,7 +26,12 @@ public sealed class ExportFeatureValidationSnapshot
         string? sourceDocumentName = null,
         bool isLinkedSource = false,
         bool hasPersistedExportId = true,
-        IReadOnlyList<SchemaAttributeIssue>? schemaIssues = null)
+        IReadOnlyList<SchemaAttributeIssue>? schemaIssues = null,
+        string? stairVisibilitySource = null,
+        int? stairVisibilityEvidenceCount = null,
+        int? stairVisibilityCandidateCount = null,
+        bool? stairVisibilityMaskApplied = null,
+        string? stairVisibilityWarning = null)
     {
         FeatureType = string.IsNullOrWhiteSpace(featureType)
             ? throw new ArgumentException("A feature type is required.", nameof(featureType))
@@ -51,6 +56,11 @@ public sealed class ExportFeatureValidationSnapshot
         SchemaIssues = (schemaIssues ?? Array.Empty<SchemaAttributeIssue>())
             .Where(issue => issue != null)
             .ToList();
+        StairVisibilitySource = Normalize(stairVisibilitySource);
+        StairVisibilityEvidenceCount = stairVisibilityEvidenceCount;
+        StairVisibilityCandidateCount = stairVisibilityCandidateCount;
+        StairVisibilityMaskApplied = stairVisibilityMaskApplied;
+        StairVisibilityWarning = Normalize(stairVisibilityWarning);
     }
 
     public string FeatureType { get; }
@@ -90,6 +100,16 @@ public sealed class ExportFeatureValidationSnapshot
     public bool HasPersistedExportId { get; }
 
     public IReadOnlyList<SchemaAttributeIssue> SchemaIssues { get; }
+
+    public string? StairVisibilitySource { get; }
+
+    public int? StairVisibilityEvidenceCount { get; }
+
+    public int? StairVisibilityCandidateCount { get; }
+
+    public bool? StairVisibilityMaskApplied { get; }
+
+    public string? StairVisibilityWarning { get; }
 
     private static string? Normalize(string? value)
     {
