@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using Microsoft.Data.Sqlite;
 using RevitGeoExporter.Core.Models;
 
@@ -18,7 +19,7 @@ public sealed class GpkgWriter
         SQLitePCL.Batteries_V2.Init();
     }
 
-    public void Write(string filePath, int srsId, IReadOnlyCollection<ExportLayer> layers)
+    public void Write(string filePath, int srsId, IReadOnlyCollection<ExportLayer> layers, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
@@ -41,11 +42,25 @@ public sealed class GpkgWriter
             Directory.CreateDirectory(directory);
         }
 
-        if (File.Exists(filePath))
+        string tempFilePath = CreateTempFilePath(filePath);
+        try
         {
-            File.Delete(filePath);
+            WriteCore(tempFilePath, srsId, layers, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReplaceFile(tempFilePath, filePath);
         }
+        finally
+        {
+            DeleteFileIfExists(tempFilePath);
+        }
+    }
 
+    private static void WriteCore(
+        string filePath,
+        int srsId,
+        IReadOnlyCollection<ExportLayer> layers,
+        CancellationToken cancellationToken)
+    {
         using SqliteConnection connection = new($"Data Source={filePath};Pooling=False");
         connection.Open();
         using SqliteTransaction transaction = connection.BeginTransaction();
@@ -55,11 +70,13 @@ public sealed class GpkgWriter
 
         foreach (ExportLayer layer in layers)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             CreateLayerTable(connection, transaction, layer);
             InsertLayerMetadata(connection, transaction, layer, srsId);
-            InsertFeatures(connection, transaction, layer, srsId);
+            InsertFeatures(connection, transaction, layer, srsId, cancellationToken);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit();
     }
 
@@ -129,7 +146,8 @@ public sealed class GpkgWriter
         SqliteConnection connection,
         SqliteTransaction transaction,
         ExportLayer layer,
-        int srsId)
+        int srsId,
+        CancellationToken cancellationToken)
     {
         if (layer.Features.Count == 0)
         {
@@ -172,6 +190,7 @@ public sealed class GpkgWriter
 
         foreach (IExportFeature feature in layer.Features)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             geometryParameter.Value = EncodeGeometry(layer.GeometryType, feature, srsId);
 
             for (int i = 0; i < layer.Attributes.Count; i++)
@@ -298,6 +317,32 @@ public sealed class GpkgWriter
         command.Transaction = transaction;
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+
+    private static string CreateTempFilePath(string filePath)
+    {
+        string directory = Path.GetDirectoryName(filePath) ?? string.Empty;
+        string fileName = Path.GetFileName(filePath);
+        return Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
+    }
+
+    private static void ReplaceFile(string sourcePath, string destinationPath)
+    {
+        if (File.Exists(destinationPath))
+        {
+            File.Replace(sourcePath, destinationPath, null);
+            return;
+        }
+
+        File.Move(sourcePath, destinationPath);
+    }
+
+    private static void DeleteFileIfExists(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
     }
 
     private sealed class LayerBounds

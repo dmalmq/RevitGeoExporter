@@ -43,25 +43,27 @@ public sealed class ExportPackageService
 
         ExportPackageManifest manifest = BuildManifest(session, exportResult, packageDirectory, report.ExportedAtUtc);
 
-        if (!string.IsNullOrWhiteSpace(exportResult.DiagnosticsReportPath) && File.Exists(exportResult.DiagnosticsReportPath))
+        string? diagnosticsReportPath = exportResult.DiagnosticsReportPath;
+        if (!string.IsNullOrWhiteSpace(diagnosticsReportPath) && File.Exists(diagnosticsReportPath))
         {
-            string diagnosticsOutputPath = exportResult.DiagnosticsReportPath;
+            string diagnosticsOutputPath = diagnosticsReportPath!;
             if (!string.IsNullOrWhiteSpace(packageDirectory))
             {
-                diagnosticsOutputPath = Path.Combine(packageDirectory, Path.GetFileName(exportResult.DiagnosticsReportPath));
-                File.Copy(exportResult.DiagnosticsReportPath, diagnosticsOutputPath, overwrite: true);
+                diagnosticsOutputPath = Path.Combine(packageDirectory!, Path.GetFileName(diagnosticsReportPath));
+                File.Copy(diagnosticsReportPath, diagnosticsOutputPath, overwrite: true);
             }
 
             manifest.Files.Add(new ExportPackageManifestFile
             {
                 Kind = "diagnostics",
-                RelativePath = Path.GetFileName(diagnosticsOutputPath),
+                RelativePath = Path.GetFileName(diagnosticsOutputPath) ?? string.Empty,
                 OutputFilePath = diagnosticsOutputPath,
             });
         }
 
         if (!string.IsNullOrWhiteSpace(packageDirectory))
         {
+            string packageDirectoryPath = packageDirectory!;
             foreach (ExportPackageManifestFile artifact in manifest.Files.Where(file => file.IsArtifact))
             {
                 ExportArtifactResult? sourceArtifact = exportResult.ArtifactResults.FirstOrDefault(result =>
@@ -72,17 +74,30 @@ public sealed class ExportPackageService
                 }
             }
 
-            WritePreviewImages(session, manifest, packageDirectory);
+            WritePreviewImages(session, manifest, packageDirectoryPath);
 
             if (session.PackageOptions.IncludeLegendFile)
             {
-                WriteLegendFile(session, manifest, packageDirectory);
+                WriteLegendFile(session, manifest, packageDirectoryPath);
             }
 
             if (session.PackageOptions.GenerateQgisArtifacts)
             {
-                WriteQgisArtifacts(session, manifest, packageDirectory);
+                WriteQgisArtifacts(session, manifest, packageDirectoryPath);
             }
+        }
+
+        string? manifestPath = null;
+        if (!string.IsNullOrWhiteSpace(packageDirectory))
+        {
+            string packageDirectoryPath = packageDirectory!;
+            manifestPath = Path.Combine(packageDirectoryPath, "package-manifest.json");
+            manifest.Files.Add(new ExportPackageManifestFile
+            {
+                Kind = "manifest",
+                RelativePath = "package-manifest.json",
+                OutputFilePath = manifestPath,
+            });
         }
 
         PackageValidationResult? validationResult = null;
@@ -92,23 +107,17 @@ public sealed class ExportPackageService
             manifest.ValidationResult = validationResult;
         }
 
-        if (!string.IsNullOrWhiteSpace(packageDirectory) && session.PackageOptions.GenerateQgisArtifacts)
-        {
-            WriteReadmeFile(session, manifest, packageDirectory);
-        }
-
-        string? manifestPath = null;
         if (!string.IsNullOrWhiteSpace(packageDirectory))
         {
-            manifestPath = Path.Combine(packageDirectory, "package-manifest.json");
-            File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, Formatting.Indented));
-            manifest.Files.Add(new ExportPackageManifestFile
+            string packageDirectoryPath = packageDirectory!;
+            WriteQaReport(report, manifest, packageDirectoryPath);
+
+            if (session.PackageOptions.GenerateQgisArtifacts)
             {
-                Kind = "manifest",
-                RelativePath = "package-manifest.json",
-                OutputFilePath = manifestPath,
-            });
-            File.WriteAllText(manifestPath, JsonConvert.SerializeObject(manifest, Formatting.Indented));
+                WriteReadmeFile(session, manifest, packageDirectoryPath);
+            }
+
+            File.WriteAllText(manifestPath!, JsonConvert.SerializeObject(manifest, Formatting.Indented));
         }
 
         return new ExportPackageResult(manifest, packageDirectory, manifestPath, validationResult);
@@ -212,9 +221,11 @@ public sealed class ExportPackageService
 
     private static void WritePreviewImages(PreparedExportSession session, ExportPackageManifest manifest, string packageDirectory)
     {
+        HashSet<string> usedFileNames = new(StringComparer.OrdinalIgnoreCase);
         foreach (PreparedViewExportData view in session.Prepared.Views)
         {
-            string imagePath = Path.Combine(packageDirectory, $"{Sanitize(view.View.Name)}-preview.png");
+            string fileName = BuildUniquePreviewFileName(view, usedFileNames);
+            string imagePath = Path.Combine(packageDirectory, fileName);
             using Bitmap bitmap = RenderPreviewBitmap(view);
             bitmap.Save(imagePath);
             manifest.Files.Add(new ExportPackageManifestFile
@@ -241,6 +252,47 @@ public sealed class ExportPackageService
             Kind = "legend",
             RelativePath = "legend.txt",
             OutputFilePath = legendPath,
+        });
+    }
+
+    private static void WriteQaReport(ExportDiagnosticsReport report, ExportPackageManifest manifest, string packageDirectory)
+    {
+        string qaPath = Path.Combine(packageDirectory, "qa-report.json");
+        object qaReport = new
+        {
+            report.SourceModelName,
+            report.ProfileName,
+            report.ExportedAtUtc,
+            report.DurationMilliseconds,
+            ValidationIssues = report.ValidationIssues.Select(issue => new
+            {
+                issue.Severity,
+                issue.Code,
+                issue.Message,
+                issue.ViewName,
+                issue.OwningViewId,
+                issue.SourceElementId,
+            }),
+            Warnings = report.ExportWarnings,
+            Views = report.Views.Select(view => new
+            {
+                view.ViewName,
+                view.LevelName,
+                view.DroppedPolygonCount,
+                view.DroppedOpeningCount,
+                view.SimplifiedPolygonCount,
+                view.UnsnappedOpeningCount,
+                view.UnassignedFloorTypes,
+                view.UnsupportedOpeningFamilies,
+            }),
+            PackageValidation = manifest.ValidationResult,
+        };
+        File.WriteAllText(qaPath, JsonConvert.SerializeObject(qaReport, Formatting.Indented));
+        manifest.Files.Add(new ExportPackageManifestFile
+        {
+            Kind = "qa-report",
+            RelativePath = "qa-report.json",
+            OutputFilePath = qaPath,
         });
     }
 
@@ -461,6 +513,30 @@ public sealed class ExportPackageService
         }
 
         return sanitized;
+    }
+
+    private static string BuildUniquePreviewFileName(PreparedViewExportData view, ISet<string> usedFileNames)
+    {
+        string baseName = $"{Sanitize(view.View.Name)}-preview";
+        string fileName = $"{baseName}.png";
+        if (usedFileNames.Add(fileName))
+        {
+            return fileName;
+        }
+
+        fileName = $"{baseName}-{view.View.Id.Value}.png";
+        if (usedFileNames.Add(fileName))
+        {
+            return fileName;
+        }
+
+        int suffix = 2;
+        while (!usedFileNames.Add($"{baseName}-{view.View.Id.Value}-{suffix}.png"))
+        {
+            suffix++;
+        }
+
+        return $"{baseName}-{view.View.Id.Value}-{suffix}.png";
     }
 
     private static Color ParseColor(string? hex, Color fallback)

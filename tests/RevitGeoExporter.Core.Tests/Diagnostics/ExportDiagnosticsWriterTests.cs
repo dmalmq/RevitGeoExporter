@@ -21,6 +21,14 @@ public sealed class ExportDiagnosticsWriterTests
                 TargetEpsg = 6677,
                 ExportedAtUtc = new DateTimeOffset(2026, 3, 9, 0, 0, 0, TimeSpan.Zero),
                 DurationMilliseconds = 1234,
+                PhaseTimings =
+                {
+                    new ExportDiagnosticsPhaseTiming
+                    {
+                        PhaseName = "Artifact writing",
+                        DurationMilliseconds = 250,
+                    },
+                },
                 Views =
                 {
                     new ExportDiagnosticsViewReport
@@ -96,6 +104,8 @@ public sealed class ExportDiagnosticsWriterTests
             Assert.Equal((int)ValidationCode.UnassignedFloorCategory, reloaded["ValidationIssues"]?[0]?["Code"]?.Value<int>());
             Assert.Equal("Architectural Link", reloaded["IncludedLinks"]?[0]?["LinkInstanceName"]?.Value<string>());
             Assert.Equal("unit", reloaded["OutputFiles"]?[0]?["FeatureType"]?.Value<string>());
+            Assert.Equal("Artifact writing", reloaded["PhaseTimings"]?[0]?["PhaseName"]?.Value<string>());
+            Assert.Equal(250, reloaded["PhaseTimings"]?[0]?["DurationMilliseconds"]?.Value<int>());
         }
         finally
         {

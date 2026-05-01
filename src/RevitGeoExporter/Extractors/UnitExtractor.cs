@@ -24,16 +24,9 @@ namespace RevitGeoExporter.Extractors;
 public sealed class UnitExtractor
 {
     private const double MinSplitAreaSquareMeters = 0.05d;
-    private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
     private const double SquareFeetToSquareMeters = 0.09290304d;
-    private const double MinEscalatorLengthMeters = 0.50d;
-    private const double MinEscalatorWidthMeters = 0.30d;
-    private const double MaxEscalatorWidthMeters = 1.50d;
-    private const double EscalatorFootprintPaddingMeters = 0.02d;
     private const double FloorAreaFallbackRatio = 0.85d;
     private const double MinFloorAreaForSanityCheckSquareMeters = 0.25d;
-    private const double StairCutPlaneToleranceFeet = 0.10d;
-    private static readonly string[] EscalatorWidthParameterNames = { "Width", "幅" };
     private static readonly string[] FloorNamePrefixes = { "j ", "j　", "j" };
     private static readonly string[] FloorNameSuffixes =
     {
@@ -57,6 +50,7 @@ public sealed class UnitExtractor
     private readonly SchemaProfile _schemaProfile;
     private readonly PreviewPaletteResolver _paletteResolver = new();
     private readonly StairVisibilityResolver _stairVisibilityResolver;
+    private readonly bool _simplifyEscalatorUnits;
 
     public UnitExtractor(
         Document document,
@@ -67,7 +61,8 @@ public sealed class UnitExtractor
         RoomCategoryResolver roomCategoryResolver,
         IReadOnlyDictionary<string, string>? familyCategoryOverrides = null,
         ExportSourceDescriptor? sourceDescriptor = null,
-        SchemaProfile? schemaProfile = null)
+        SchemaProfile? schemaProfile = null,
+        bool simplifyEscalatorUnits = false)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _sourceDescriptor = sourceDescriptor ?? ExportSourceDescriptor.CreateHost(_document);
@@ -82,7 +77,11 @@ public sealed class UnitExtractor
             new Dictionary<string, string>(StringComparer.Ordinal);
         _source = string.IsNullOrWhiteSpace(source) ? "unknown" : source.Trim();
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
-        _stairVisibilityResolver = new StairVisibilityResolver(_document, ProjectPoint);
+        _simplifyEscalatorUnits = simplifyEscalatorUnits;
+        _stairVisibilityResolver = new StairVisibilityResolver(
+            _document,
+            ProjectPoint,
+            point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
     public bool TryCreateFloorUnits(
@@ -285,6 +284,225 @@ public sealed class UnitExtractor
         return true;
     }
 
+    private const double SimplifiedStairDepthMeters = 1.75d;
+
+    internal List<Polygon2D>? TrySimplifyStairPolygons(
+        Stairs stair,
+        Level viewLevel,
+        IReadOnlyList<Polygon2D> visiblePolygons,
+        ICollection<string> warnings)
+    {
+        if (visiblePolygons == null || visiblePolygons.Count == 0)
+        {
+            return null;
+        }
+
+        ElementId? baseLevelId = GetStairsBaseLevelId(stair);
+        ElementId? topLevelId = GetStairsTopLevelId(stair);
+
+        bool needBeginning = baseLevelId != null && baseLevelId.Value == viewLevel.Id.Value;
+        bool needEnd = topLevelId != null && topLevelId.Value == viewLevel.Id.Value;
+
+        if (!needBeginning && !needEnd)
+        {
+            return null;
+        }
+
+        List<StairsRun> runs = GetStairsRunsByElevation(stair);
+        if (runs.Count == 0)
+        {
+            return visiblePolygons.ToList();
+        }
+
+        Geometry? fullGeometry = UnionPolygonsToNtsGeometry(visiblePolygons);
+        if (fullGeometry == null || fullGeometry.IsEmpty)
+        {
+            return visiblePolygons.ToList();
+        }
+
+        List<Geometry> clippedParts = new();
+
+        if (needBeginning)
+        {
+            StairsRun firstRun = runs[0];
+            Geometry? beginClip = TryCreateStairEntryClip(firstRun, fromStart: true);
+            if (beginClip != null)
+            {
+                Geometry? intersected = IntersectSafe(fullGeometry, beginClip);
+                if (intersected != null && !intersected.IsEmpty)
+                {
+                    clippedParts.Add(intersected);
+                }
+            }
+        }
+
+        if (needEnd)
+        {
+            StairsRun lastRun = runs[runs.Count - 1];
+            Geometry? endClip = TryCreateStairEntryClip(lastRun, fromStart: false);
+            if (endClip != null)
+            {
+                Geometry? intersected = IntersectSafe(fullGeometry, endClip);
+                if (intersected != null && !intersected.IsEmpty)
+                {
+                    clippedParts.Add(intersected);
+                }
+            }
+        }
+
+        if (clippedParts.Count == 0)
+        {
+            return null;
+        }
+
+        Geometry simplified;
+        if (clippedParts.Count == 1)
+        {
+            simplified = clippedParts[0];
+        }
+        else
+        {
+            try
+            {
+                simplified = UnaryUnionOp.Union(clippedParts).Buffer(0d);
+            }
+            catch (TopologyException)
+            {
+                return null;
+            }
+        }
+
+        return ExtractPolygons(simplified);
+    }
+
+    private static ElementId? GetStairsBaseLevelId(Stairs stairs)
+    {
+        Parameter? param = stairs.get_Parameter(BuiltInParameter.STAIRS_BASE_LEVEL_PARAM);
+        return param?.AsElementId();
+    }
+
+    private static ElementId? GetStairsTopLevelId(Stairs stairs)
+    {
+        Parameter? param = stairs.get_Parameter(BuiltInParameter.STAIRS_TOP_LEVEL_PARAM);
+        return param?.AsElementId();
+    }
+
+    private List<StairsRun> GetStairsRunsByElevation(Stairs stairs)
+    {
+        List<StairsRun> runs = new();
+        foreach (ElementId runId in stairs.GetStairsRuns())
+        {
+            if (_document.GetElement(runId) is StairsRun run)
+            {
+                runs.Add(run);
+            }
+        }
+
+        runs.Sort((a, b) => a.BaseElevation.CompareTo(b.BaseElevation));
+        return runs;
+    }
+
+    private Geometry? TryCreateStairEntryClip(StairsRun run, bool fromStart)
+    {
+        try
+        {
+            CurveLoop pathLoop = run.GetStairsPath();
+            List<Point2D> pathPoints = ProjectCurveLoop(pathLoop, closeLoop: false);
+            if (pathPoints.Count < 2)
+            {
+                return null;
+            }
+
+            double pathLength = GetPolylineLength(pathPoints);
+            if (pathLength < SimplifiedStairDepthMeters * 0.2d)
+            {
+                return null;
+            }
+
+            double fraction = fromStart
+                ? Math.Min(1d, SimplifiedStairDepthMeters / pathLength)
+                : Math.Max(0d, 1d - (SimplifiedStairDepthMeters / pathLength));
+
+            if (!TryInterpolateOnPolyline(pathPoints, fraction, out Point2D cutPoint, out Point2D tangent))
+            {
+                return null;
+            }
+
+            Point2D perp = new(-tangent.Y, tangent.X);
+            double span = Math.Max(20d, pathLength * 4d);
+
+            double px = cutPoint.X;
+            double py = cutPoint.Y;
+            double nx = perp.X;
+            double ny = perp.Y;
+            double tx = tangent.X;
+            double ty = tangent.Y;
+
+            Point2D a = new(px + (nx * span), py + (ny * span));
+            Point2D b = new(px - (nx * span), py - (ny * span));
+
+            Point2D c;
+            Point2D d;
+            if (fromStart)
+            {
+                c = new(b.X - (tx * span), b.Y - (ty * span));
+                d = new(a.X - (tx * span), a.Y - (ty * span));
+            }
+            else
+            {
+                c = new(b.X + (tx * span), b.Y + (ty * span));
+                d = new(a.X + (tx * span), a.Y + (ty * span));
+            }
+
+            Coordinate[] coords = new[]
+            {
+                new Coordinate(a.X, a.Y),
+                new Coordinate(b.X, b.Y),
+                new Coordinate(c.X, c.Y),
+                new Coordinate(d.X, d.Y),
+                new Coordinate(a.X, a.Y),
+            };
+            LinearRing ring = GeometryFactory.CreateLinearRing(coords);
+            return GeometryFactory.CreatePolygon(ring);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static Geometry? UnionPolygonsToNtsGeometry(IReadOnlyList<Polygon2D> polygons)
+    {
+        List<Geometry> geoms = new();
+        foreach (Polygon2D polygon in polygons)
+        {
+            Geometry? geom = ToNtsGeometry(polygon);
+            if (geom != null && !geom.IsEmpty)
+            {
+                geoms.Add(geom);
+            }
+        }
+
+        if (geoms.Count == 0)
+        {
+            return null;
+        }
+
+        return geoms.Count == 1 ? geoms[0] : UnaryUnionOp.Union(geoms).Buffer(0d);
+    }
+
+    private static Geometry? IntersectSafe(Geometry source, Geometry clip)
+    {
+        try
+        {
+            return source.Intersection(clip).Buffer(0d);
+        }
+        catch (TopologyException)
+        {
+            return null;
+        }
+    }
+
     public bool TryCreateStairsUnit(
         Stairs stairs,
         ViewPlan? view,
@@ -391,21 +609,24 @@ public sealed class UnitExtractor
 
         if (string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase))
         {
-            if (TryCreateEscalatorRectangle(familyInstance, warnings, out Polygon2D escalatorPolygon))
+            if (TryResolveEscalatorVisibility(
+                    familyInstance,
+                    view,
+                    warnings,
+                    out VerticalCirculationVisibilityResult visibility) &&
+                TryCreateEscalatorUnit(
+                    familyInstance,
+                    visibility.VisiblePolygons,
+                    levelId,
+                    view?.Name,
+                    warnings,
+                    out feature,
+                    view))
             {
-                feature = CreateFeature(
-                    sourceElement: familyInstance,
-                    polygon: escalatorPolygon,
-                    levelId: levelId,
-                    zoneInfo: zoneInfo,
-                    sourceLabel: familyName,
-                    viewName: view?.Name,
-                    warnings: warnings);
                 return true;
             }
 
-            warnings.Add(
-                $"Escalator {familyInstance.Id.Value} rectangle footprint could not be derived. Falling back to solid geometry.");
+            return false;
         }
 
         long elementId = familyInstance.Id.Value;
@@ -441,7 +662,9 @@ public sealed class UnitExtractor
         string levelId,
         string? viewName,
         ICollection<string> warnings,
-        out ExportPolygon? feature)
+        out ExportPolygon? feature,
+        ViewPlan? view = null,
+        double? linkZOffset = null)
     {
         feature = null;
         if (escalator is null || polygons == null || polygons.Count == 0)
@@ -455,15 +678,342 @@ public sealed class UnitExtractor
             return false;
         }
 
+        IReadOnlyList<Polygon2D> effectivePolygons = polygons;
+        if (_simplifyEscalatorUnits)
+        {
+            double viewLevelElevation = (view?.GenLevel?.Elevation ?? 0d) - (linkZOffset ?? 0d);
+            Polygon2D? simplified = TryCreateEscalatorHalfRectangle(escalator, polygons, viewLevelElevation);
+            if (simplified != null)
+            {
+                effectivePolygons = new List<Polygon2D> { simplified };
+            }
+        }
+
         feature = CreateFeature(
             sourceElement: escalator,
-            polygons: polygons,
+            polygons: effectivePolygons,
             levelId: levelId,
             zoneInfo: zoneInfo,
             sourceLabel: familyName,
             viewName: viewName,
             warnings: warnings);
         return true;
+    }
+
+    private Polygon2D? TryCreateEscalatorHalfRectangle(
+        FamilyInstance escalator,
+        IReadOnlyList<Polygon2D> polygons,
+        double viewLevelElevation)
+    {
+        if (polygons == null || polygons.Count == 0)
+        {
+            return null;
+        }
+
+        List<Point2D> allPoints = new();
+        foreach (Polygon2D polygon in polygons)
+        {
+            foreach (Point2D point in polygon.ExteriorRing)
+            {
+                allPoints.Add(point);
+            }
+        }
+
+        if (allPoints.Count < 3)
+        {
+            return null;
+        }
+
+        Coordinate[] coords = allPoints
+            .Select(p => new Coordinate(p.X, p.Y))
+            .ToArray();
+        MultiPoint multiPoint = GeometryFactory.CreateMultiPointFromCoords(coords);
+        Geometry hull = multiPoint.ConvexHull();
+
+        if (hull is not Polygon hullPoly || hullPoly.NumPoints < 4)
+        {
+            return null;
+        }
+
+        LineString shell = hullPoly.ExteriorRing;
+        int n = shell.NumPoints - 1;
+
+        if (n < 3)
+        {
+            return null;
+        }
+
+        double minArea = double.MaxValue;
+        double bestProjMin = 0d, bestProjMax = 0d;
+        double bestPerpMin = 0d, bestPerpMax = 0d;
+        double bestCos = 1d, bestSin = 0d;
+
+        for (int i = 0; i < n; i++)
+        {
+            Coordinate a = shell.GetCoordinateN(i);
+            Coordinate b = shell.GetCoordinateN((i + 1) % n);
+
+            double dx = b.X - a.X;
+            double dy = b.Y - a.Y;
+            double len = Math.Sqrt((dx * dx) + (dy * dy));
+            if (len < 1e-12)
+            {
+                continue;
+            }
+
+            double cosA = dx / len;
+            double sinA = dy / len;
+
+            double projMin = double.MaxValue;
+            double projMax = double.MinValue;
+            double perpMin = double.MaxValue;
+            double perpMax = double.MinValue;
+
+            for (int j = 0; j < n; j++)
+            {
+                Coordinate p = shell.GetCoordinateN(j);
+                double proj = (p.X * cosA) + (p.Y * sinA);
+                double perp = (-p.X * sinA) + (p.Y * cosA);
+
+                if (proj < projMin) projMin = proj;
+                if (proj > projMax) projMax = proj;
+                if (perp < perpMin) perpMin = perp;
+                if (perp > perpMax) perpMax = perp;
+            }
+
+            double area = (projMax - projMin) * (perpMax - perpMin);
+            if (area < minArea)
+            {
+                minArea = area;
+                bestProjMin = projMin;
+                bestProjMax = projMax;
+                bestPerpMin = perpMin;
+                bestPerpMax = perpMax;
+                bestCos = cosA;
+                bestSin = sinA;
+            }
+        }
+
+        if (minArea >= double.MaxValue)
+        {
+            return null;
+        }
+
+        double projRange = bestProjMax - bestProjMin;
+        double perpRange = bestPerpMax - bestPerpMin;
+
+        double longAxisCos, longAxisSin, crossCos, crossSin;
+        double halfLength, halfWidth;
+
+        if (projRange >= perpRange)
+        {
+            longAxisCos = bestCos;
+            longAxisSin = bestSin;
+            crossCos = -bestSin;
+            crossSin = bestCos;
+            halfLength = projRange * 0.5d;
+            halfWidth = perpRange * 0.5d;
+        }
+        else
+        {
+            longAxisCos = -bestSin;
+            longAxisSin = bestCos;
+            crossCos = bestCos;
+            crossSin = bestSin;
+            halfLength = perpRange * 0.5d;
+            halfWidth = projRange * 0.5d;
+        }
+
+        double centerProj = (bestProjMin + bestProjMax) * 0.5d;
+        double centerPerp = (bestPerpMin + bestPerpMax) * 0.5d;
+        Point2D center = TransformPoint(centerProj, centerPerp, bestCos, bestSin);
+
+        double lowerSideSign = ResolveLowerEndSign(
+            escalator, center, longAxisCos, longAxisSin);
+
+        if (Math.Abs(lowerSideSign) < 0.5d)
+        {
+            return BuildRectanglePolygon(
+                center, halfLength, halfWidth,
+                longAxisCos, longAxisSin, crossCos, crossSin);
+        }
+
+        bool showUpperHalf = ResolveShowUpperHalf(escalator, viewLevelElevation);
+        double shiftDirection = showUpperHalf ? -lowerSideSign : lowerSideSign;
+        double shift = halfLength * 0.5d * shiftDirection;
+        Point2D newCenter = new(
+            center.X + (shift * longAxisCos),
+            center.Y + (shift * longAxisSin));
+        double newHalfLength = halfLength * 0.5d;
+
+        return BuildRectanglePolygon(
+            newCenter, newHalfLength, halfWidth,
+            longAxisCos, longAxisSin, crossCos, crossSin);
+    }
+
+    private bool ResolveShowUpperHalf(FamilyInstance escalator, double viewLevelElevation)
+    {
+        List<(Point2D Projected, double Z)> vertices = CollectEscalator3DVertices(escalator);
+        if (vertices.Count == 0)
+        {
+            return false;
+        }
+
+        double minZ = vertices.Min(v => v.Z);
+        double maxZ = vertices.Max(v => v.Z);
+        double midZ = (minZ + maxZ) * 0.5d;
+        return viewLevelElevation > midZ;
+    }
+
+    private double ResolveLowerEndSign(
+        FamilyInstance escalator,
+        Point2D center,
+        double axisCos,
+        double axisSin)
+    {
+        List<(Point2D Projected, double Z)> vertices = CollectEscalator3DVertices(escalator);
+        if (vertices.Count == 0)
+        {
+            return 0d;
+        }
+
+        double negZSum = 0d;
+        double negCount = 0d;
+        double posZSum = 0d;
+        double posCount = 0d;
+
+        foreach ((Point2D projected, double z) in vertices)
+        {
+            double dot = (axisCos * (projected.X - center.X)) +
+                         (axisSin * (projected.Y - center.Y));
+            if (dot < 0)
+            {
+                negZSum += z;
+                negCount++;
+            }
+            else
+            {
+                posZSum += z;
+                posCount++;
+            }
+        }
+
+        if (negCount < 1 || posCount < 1)
+        {
+            return 0d;
+        }
+
+        double negAvg = negZSum / negCount;
+        double posAvg = posZSum / posCount;
+
+        if (negAvg < posAvg)
+        {
+            return -1d;
+        }
+
+        if (posAvg < negAvg)
+        {
+            return 1d;
+        }
+
+        return 0d;
+    }
+
+    private List<(Point2D Projected, double Z)> CollectEscalator3DVertices(
+        FamilyInstance escalator)
+    {
+        var result = new List<(Point2D Projected, double Z)>();
+
+        Options options = new()
+        {
+            ComputeReferences = false,
+            IncludeNonVisibleObjects = true,
+            DetailLevel = ViewDetailLevel.Fine,
+        };
+
+        GeometryElement? geometry = escalator.get_Geometry(options);
+        if (geometry == null)
+        {
+            return result;
+        }
+
+        List<Solid> solids = CollectSolids(geometry);
+        HashSet<string> seen = new();
+
+        foreach (Solid solid in solids)
+        {
+            if (solid.Volume <= 0)
+            {
+                continue;
+            }
+
+            foreach (Face face in solid.Faces)
+            {
+                if (face is not PlanarFace planarFace)
+                {
+                    continue;
+                }
+
+                XYZ normal = planarFace.FaceNormal;
+                if (normal.Z >= -0.9d)
+                {
+                    continue;
+                }
+
+                foreach (EdgeArray edgeArray in planarFace.EdgeLoops)
+                {
+                    foreach (Edge edge in edgeArray)
+                    {
+                        IList<XYZ> tessellated = edge.AsCurve().Tessellate();
+                        foreach (XYZ point in tessellated)
+                        {
+                            string key = $"{Math.Round(point.X, 8):R}|{Math.Round(point.Y, 8):R}|{Math.Round(point.Z, 8):R}";
+                            if (seen.Add(key))
+                            {
+                                Point2D projected = ProjectPoint(point);
+                                result.Add((projected, point.Z));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static Polygon2D BuildRectanglePolygon(
+        Point2D center,
+        double halfLength,
+        double halfWidth,
+        double axisCos,
+        double axisSin,
+        double crossCos,
+        double crossSin)
+    {
+        double hl = halfLength;
+        double hw = halfWidth;
+        double ac = axisCos;
+        double ax = axisSin;
+        double cc = crossCos;
+        double cx = crossSin;
+
+        List<Point2D> corners = new(5)
+        {
+            new Point2D(center.X - (hl * ac) - (hw * cc), center.Y - (hl * ax) - (hw * cx)),
+            new Point2D(center.X + (hl * ac) - (hw * cc), center.Y + (hl * ax) - (hw * cx)),
+            new Point2D(center.X + (hl * ac) + (hw * cc), center.Y + (hl * ax) + (hw * cx)),
+            new Point2D(center.X - (hl * ac) + (hw * cc), center.Y - (hl * ax) + (hw * cx)),
+        };
+
+        return new Polygon2D(corners);
+    }
+
+    private static Point2D TransformPoint(double proj, double perp, double cosA, double sinA)
+    {
+        double x = (proj * cosA) - (perp * sinA);
+        double y = (proj * sinA) + (perp * cosA);
+        return new Point2D(x, y);
     }
 
     internal bool TryResolveEscalatorVisibility(
@@ -478,102 +1028,44 @@ public sealed class UnitExtractor
             return false;
         }
 
+        List<Polygon2D> viewPolygons;
+        VerticalCirculationVisibilitySourceKind sourceKind;
+
         if (view != null &&
             ReferenceEquals(view.Document, _document) &&
-            TryBuildEscalatorCutPlaneCandidate(escalator, view, warnings, out VerticalCirculationCandidate? cutPlaneCandidate))
+            TryExtractElementPolygonsInView(escalator, view, out viewPolygons) &&
+            viewPolygons.Count > 0)
         {
-            result = new VerticalCirculationVisibilityResult(
-                cutPlaneCandidate!.Polygons,
-                cutPlaneCandidate.SourceKind,
-                cutPlaneCandidate.Area,
-                evidenceCount: 0,
-                coveredEvidenceCount: 0,
-                evidenceCoverageRatio: 0d,
-                candidateCount: 1,
-                maskApplied: false,
-                cutPlaneCandidate.Warning,
-                cutPlaneCandidate.Geometry,
-                VerticalCirculationVisibilityEvidence.Empty,
-                overCoverageArea: 0d);
-            return true;
+            sourceKind = VerticalCirculationVisibilitySourceKind.ViewGeometry;
         }
-
-        List<VerticalCirculationCandidate> candidates = new();
-        if (view != null &&
-            ReferenceEquals(view.Document, _document) &&
-            TryExtractElementPolygonsInView(escalator, view, out List<Polygon2D> viewPolygons) &&
-            TryCreateVerticalCirculationCandidate(
-                VerticalCirculationVisibilitySourceKind.ViewGeometry,
-                viewPolygons,
-                warning: null,
-                out VerticalCirculationCandidate? viewCandidate))
+        else if (TryExtractElementPolygons(escalator, out viewPolygons) && viewPolygons.Count > 0)
         {
-            candidates.Add(viewCandidate!);
+            warnings.Add($"Escalator {escalator.Id.Value} visible geometry could not be extracted from view '{(view?.Name ?? "<none>")}'. Using element geometry fallback.");
+            sourceKind = VerticalCirculationVisibilitySourceKind.RawGeometry;
         }
-
-        if (TryCreateEscalatorRectangle(escalator, warnings, out Polygon2D escalatorPolygon) &&
-            TryCreateVerticalCirculationCandidate(
-                VerticalCirculationVisibilitySourceKind.RectangleProjection,
-                new[] { escalatorPolygon },
-                warning: null,
-                out VerticalCirculationCandidate? rectangleCandidate))
+        else
         {
-            candidates.Add(rectangleCandidate!);
-        }
-
-        if (TryBuildConservativeEscalatorComposite(candidates, out VerticalCirculationCandidate? compositeCandidate))
-        {
-            candidates.Add(compositeCandidate!);
-        }
-
-        if (TryExtractElementPolygons(escalator, out List<Polygon2D> rawPolygons) &&
-            TryCreateVerticalCirculationCandidate(
-                VerticalCirculationVisibilitySourceKind.RawGeometry,
-                rawPolygons,
-                warning: null,
-                out VerticalCirculationCandidate? rawCandidate))
-        {
-            candidates.Add(rawCandidate!);
-        }
-
-        if (candidates.Count == 0)
-        {
+            warnings.Add($"Escalator {escalator.Id.Value} geometry could not be extracted.");
             return false;
         }
 
-        VerticalCirculationCandidate selected = SelectEscalatorCandidate(escalator, candidates, warnings);
-        string? fallbackWarning = selected.Warning;
-        if (view != null && ReferenceEquals(view.Document, _document))
+        if (!TryCreateVerticalCirculationGeometry(viewPolygons, out Geometry geometry, out double area))
         {
-            VerticalCirculationCandidate? clippedFallback = TryClipEscalatorFallbackByCutPlane(
-                escalator, view, selected, warnings);
-            if (clippedFallback != null)
-            {
-                selected = clippedFallback;
-                fallbackWarning = clippedFallback.Warning;
-            }
-            else
-            {
-                string noClipWarning =
-                    $"Escalator {escalator.Id.Value} used {selected.Source} without cut-plane clipping because the cut-plane candidate could not be computed.";
-                warnings.Add(noClipWarning);
-                fallbackWarning = fallbackWarning != null
-                    ? $"{fallbackWarning}; {noClipWarning}"
-                    : noClipWarning;
-            }
+            warnings.Add($"Escalator {escalator.Id.Value} geometry could not be converted to a valid polygon.");
+            return false;
         }
 
         result = new VerticalCirculationVisibilityResult(
-            selected.Polygons,
-            selected.SourceKind,
-            selected.Area,
+            viewPolygons,
+            sourceKind,
+            area,
             evidenceCount: 0,
             coveredEvidenceCount: 0,
             evidenceCoverageRatio: 0d,
-            candidateCount: candidates.Count,
+            candidateCount: 1,
             maskApplied: false,
-            fallbackWarning,
-            selected.Geometry,
+            warning: null,
+            geometry,
             VerticalCirculationVisibilityEvidence.Empty,
             overCoverageArea: 0d);
         return true;
@@ -1142,8 +1634,7 @@ public sealed class UnitExtractor
             return new List<List<XYZ>>();
         }
 
-        PlanarFace? lowestFace = null;
-        double lowestZ = double.MaxValue;
+        List<List<XYZ>> allLoops = new();
         foreach (Solid solid in solids)
         {
             if (solid.Volume <= 0)
@@ -1164,15 +1655,11 @@ public sealed class UnitExtractor
                     continue;
                 }
 
-                if (planarFace.Origin.Z < lowestZ)
-                {
-                    lowestZ = planarFace.Origin.Z;
-                    lowestFace = planarFace;
-                }
+                allLoops.AddRange(ExtractLoopsFromFace(planarFace));
             }
         }
 
-        return lowestFace == null ? new List<List<XYZ>>() : ExtractLoopsFromFace(lowestFace);
+        return allLoops;
     }
 
     private static List<Solid> CollectSolids(GeometryElement geometry)
@@ -1734,399 +2221,13 @@ public sealed class UnitExtractor
         return _zoneCatalog.TryGetFamilyInfo(familyName, out zoneInfo);
     }
 
-    private bool TryCreateEscalatorRectangle(
-        FamilyInstance escalator,
-        ICollection<string> warnings,
-        out Polygon2D polygon)
-    {
-        polygon = null!;
-        if (!TryCreateEscalatorFootprintProjection(escalator, warnings, out EscalatorFootprintProjection footprint))
-        {
-            return false;
-        }
-
-        polygon = footprint.ToPolygon(EscalatorFootprintPaddingMeters);
-        return true;
-    }
-
-    private bool TryCreateEscalatorFootprintProjection(
-        FamilyInstance escalator,
-        ICollection<string> warnings,
-        out EscalatorFootprintProjection footprint)
-    {
-        footprint = default;
-        if (!TryGetEscalatorAxis(escalator, out Point2D axis))
-        {
-            warnings.Add($"Escalator {escalator.Id.Value} axis could not be determined.");
-            return false;
-        }
-
-        BoundingBoxXYZ? box = escalator.get_BoundingBox(null);
-        if (!TryGetEscalatorCenter(escalator, box, out Point2D center))
-        {
-            return false;
-        }
-
-        double? explicitLengthMeters = null;
-        if (TryGetEscalatorCurveEndpoints(escalator, out Point2D curveStart, out Point2D curveEnd))
-        {
-            center = Midpoint(curveStart, curveEnd);
-            explicitLengthMeters = Distance(curveStart, curveEnd);
-        }
-
-        List<Point2D>? geometryPoints = null;
-        if (TryExtractElementPolygons(escalator, out List<Polygon2D> polygons))
-        {
-            geometryPoints = CollectPolygonPoints(polygons);
-        }
-
-        double? explicitWidthMeters = TryGetFamilyWidthMeters(escalator);
-        List<Point2D>? boundingBoxPoints = box == null
-            ? null
-            : GetBoundingBoxCorners(box).Select(ProjectPoint).ToList();
-
-        if (!EscalatorFootprintBuilder.TryCreate(
-                center,
-                axis,
-                geometryPoints,
-                explicitLengthMeters,
-                explicitWidthMeters,
-                boundingBoxPoints,
-                MinEscalatorLengthMeters,
-                MinEscalatorWidthMeters,
-                out EscalatorFootprintProjection resolvedFootprint))
-        {
-            return false;
-        }
-
-        double originalWidthMeters = resolvedFootprint.WidthMeters;
-        footprint = resolvedFootprint.ClampWidth(MaxEscalatorWidthMeters);
-        if (originalWidthMeters > MaxEscalatorWidthMeters + 1e-6d)
-        {
-            warnings.Add(
-                $"Escalator {escalator.Id.Value} rectangle width was capped to {MaxEscalatorWidthMeters:F2} m from {originalWidthMeters:F2} m.");
-        }
-
-        return true;
-    }
-
-    private VerticalCirculationCandidate? TryClipEscalatorFallbackByCutPlane(
-        FamilyInstance escalator,
-        ViewPlan view,
-        VerticalCirculationCandidate fallback,
-        ICollection<string> warnings)
-    {
-        if (!TryGetViewCutElevationFeet(view, out double cutElevationFeet))
-        {
-            return null;
-        }
-
-        BoundingBoxXYZ? box = escalator.get_BoundingBox(view) ?? escalator.get_BoundingBox(null);
-        if (box == null)
-        {
-            return null;
-        }
-
-        double totalRiseFeet = box.Max.Z - box.Min.Z;
-        if (totalRiseFeet <= StairCutPlaneToleranceFeet)
-        {
-            return null;
-        }
-
-        double visibleDepthFeet = cutElevationFeet - (view.GenLevel?.Elevation ?? box.Min.Z);
-        if (visibleDepthFeet <= StairCutPlaneToleranceFeet)
-        {
-            return null;
-        }
-
-        double visibleFraction = Math.Max(0d, Math.Min(1d, visibleDepthFeet / totalRiseFeet));
-        if (visibleFraction >= 1d - 1e-6d)
-        {
-            return null;
-        }
-
-        if (!TryCreateEscalatorFootprintProjection(escalator, warnings, out EscalatorFootprintProjection footprint))
-        {
-            return null;
-        }
-
-        if (!TryClipEscalatorFootprintByVisibleFraction(
-                footprint,
-                visibleFraction,
-                true,
-                out Polygon2D clippedPolygon))
-        {
-            return null;
-        }
-
-        Geometry? clipGeometry = ToNtsGeometry(clippedPolygon);
-        if (clipGeometry == null || clipGeometry.IsEmpty)
-        {
-            return null;
-        }
-
-        Geometry clipped;
-        try
-        {
-            clipped = fallback.Geometry.Intersection(clipGeometry).Buffer(0d);
-        }
-        catch (TopologyException)
-        {
-            return null;
-        }
-
-        if (clipped.IsEmpty)
-        {
-            return null;
-        }
-
-        List<Polygon2D> clippedPolygons = ExtractPolygonsFromGeometry(clipped);
-        if (clippedPolygons.Count == 0)
-        {
-            return null;
-        }
-
-        double area = clippedPolygons.Sum(polygon =>
-            Math.Abs(GetSignedArea(polygon.ExteriorRing)));
-        if (area < MinSplitAreaSquareMeters)
-        {
-            return null;
-        }
-
-        string clipWarning =
-            $"Escalator {escalator.Id.Value} fallback {fallback.Source} was clipped by bounding-box cut-plane estimate.";
-        warnings.Add(clipWarning);
-        return new VerticalCirculationCandidate(
-            fallback.SourceKind,
-            clippedPolygons,
-            clipped,
-            area,
-            clipWarning);
-    }
-
-    private bool TryBuildEscalatorCutPlaneCandidate(
-        FamilyInstance escalator,
-        ViewPlan view,
-        ICollection<string> warnings,
-        out VerticalCirculationCandidate? candidate)
-    {
-        candidate = null;
-        if (!TryCreateEscalatorFootprintProjection(escalator, warnings, out EscalatorFootprintProjection footprint) ||
-            !TryGetViewCutElevationFeet(view, out double cutElevationFeet) ||
-            !TryResolveEscalatorVisibleFraction(
-                escalator,
-                view,
-                footprint,
-                cutElevationFeet,
-                out double visibleFraction,
-                out bool keepMaxAlongSide,
-                out string? cutPlaneWarning) ||
-            !TryClipEscalatorFootprintByVisibleFraction(
-                footprint,
-                visibleFraction,
-                keepMaxAlongSide,
-                out Polygon2D clippedPolygon))
-        {
-            return false;
-        }
-
-        return TryCreateVerticalCirculationCandidate(
-            VerticalCirculationVisibilitySourceKind.CutPlaneClip,
-            new[] { clippedPolygon },
-            cutPlaneWarning,
-            out candidate);
-    }
-
-    private bool TryResolveEscalatorVisibleFraction(
-        FamilyInstance escalator,
-        ViewPlan view,
-        EscalatorFootprintProjection footprint,
-        double cutElevationFeet,
-        out double visibleFraction,
-        out bool keepMaxAlongSide,
-        out string? warning)
-    {
-        visibleFraction = 0d;
-        keepMaxAlongSide = false;
-        warning = null;
-
-        Level? viewLevel = view.GenLevel;
-        if (viewLevel == null)
-        {
-            return false;
-        }
-
-        double visibleDepthFeet = cutElevationFeet - viewLevel.Elevation;
-        if (visibleDepthFeet <= StairCutPlaneToleranceFeet)
-        {
-            return false;
-        }
-
-        if (TryGetEscalatorCurveEndpoints3D(escalator, out XYZ start, out XYZ end))
-        {
-            if (!TryResolveEscalatorVisibleFractionFromEndpointElevations(
-                    start.Z,
-                    end.Z,
-                    viewLevel.Elevation,
-                    visibleDepthFeet,
-                    out visibleFraction,
-                    out keepMaxAlongSide))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        BoundingBoxXYZ? box = escalator.get_BoundingBox(view) ?? escalator.get_BoundingBox(null);
-        if (box == null ||
-            !TryResolveEscalatorVisibleFractionFromBoundingBox(
-                box,
-                footprint,
-                viewLevel.Elevation,
-                visibleDepthFeet,
-                out visibleFraction,
-                out keepMaxAlongSide))
-        {
-            return false;
-        }
-
-        warning = $"Escalator {escalator.Id.Value} used bounding-box elevation fallback for cut-plane clipping.";
-        return true;
-    }
-
-    private bool TryResolveEscalatorVisibleFractionFromEndpointElevations(
-        double startElevationFeet,
-        double endElevationFeet,
-        double viewLevelElevationFeet,
-        double visibleDepthFeet,
-        out double visibleFraction,
-        out bool keepMaxAlongSide)
-    {
-        visibleFraction = 0d;
-        keepMaxAlongSide = false;
-
-        double totalRiseFeet = Math.Abs(endElevationFeet - startElevationFeet);
-        if (totalRiseFeet <= StairCutPlaneToleranceFeet)
-        {
-            return false;
-        }
-
-        double startDistance = Math.Abs(startElevationFeet - viewLevelElevationFeet);
-        double endDistance = Math.Abs(endElevationFeet - viewLevelElevationFeet);
-        bool anchorIsEnd = endDistance + StairCutPlaneToleranceFeet < startDistance
-            ? true
-            : startDistance + StairCutPlaneToleranceFeet < endDistance
-                ? false
-                : endElevationFeet > startElevationFeet;
-
-        keepMaxAlongSide = anchorIsEnd;
-        visibleFraction = Math.Max(0d, Math.Min(1d, visibleDepthFeet / totalRiseFeet));
-        return visibleFraction > 1e-6d;
-    }
-
-    private bool TryResolveEscalatorVisibleFractionFromBoundingBox(
-        BoundingBoxXYZ box,
-        EscalatorFootprintProjection footprint,
-        double viewLevelElevationFeet,
-        double visibleDepthFeet,
-        out double visibleFraction,
-        out bool keepMaxAlongSide)
-    {
-        visibleFraction = 0d;
-        keepMaxAlongSide = false;
-
-        List<XYZ> corners = GetBoundingBoxCorners(box);
-        if (corners.Count == 0)
-        {
-            return false;
-        }
-
-        List<double> negativeSideElevations = new();
-        List<double> positiveSideElevations = new();
-        for (int i = 0; i < corners.Count; i++)
-        {
-            XYZ hostCorner = _sourceDescriptor.TransformToHost.OfPoint(corners[i]);
-            Point2D projected = _sharedCoordinateProjector.ProjectPoint(hostCorner);
-            double along = Dot(Subtract(projected, footprint.Center), footprint.Axis);
-            if (along < 0d)
-            {
-                negativeSideElevations.Add(hostCorner.Z);
-            }
-            else
-            {
-                positiveSideElevations.Add(hostCorner.Z);
-            }
-        }
-
-        if (negativeSideElevations.Count == 0 || positiveSideElevations.Count == 0)
-        {
-            return false;
-        }
-
-        double negativeAverageElevation = negativeSideElevations.Average();
-        double positiveAverageElevation = positiveSideElevations.Average();
-        double totalRiseFeet = Math.Abs(positiveAverageElevation - negativeAverageElevation);
-        if (totalRiseFeet <= StairCutPlaneToleranceFeet)
-        {
-            return false;
-        }
-
-        double negativeDistance = Math.Abs(negativeAverageElevation - viewLevelElevationFeet);
-        double positiveDistance = Math.Abs(positiveAverageElevation - viewLevelElevationFeet);
-        keepMaxAlongSide = positiveDistance + StairCutPlaneToleranceFeet < negativeDistance
-            ? true
-            : negativeDistance + StairCutPlaneToleranceFeet < positiveDistance
-                ? false
-                : positiveAverageElevation > negativeAverageElevation;
-
-        visibleFraction = Math.Max(0d, Math.Min(1d, visibleDepthFeet / totalRiseFeet));
-        return visibleFraction > 1e-6d;
-    }
-
-    private bool TryClipEscalatorFootprintByVisibleFraction(
-        EscalatorFootprintProjection footprint,
-        double visibleFraction,
-        bool keepMaxAlongSide,
-        out Polygon2D polygon)
-    {
-        polygon = null!;
-        double clampedFraction = Math.Max(0d, Math.Min(1d, visibleFraction));
-        if (clampedFraction <= 1e-6d)
-        {
-            return false;
-        }
-
-        double clippedLengthMeters = footprint.LengthMeters * clampedFraction;
-        if (clippedLengthMeters < MinEscalatorLengthMeters ||
-            (clippedLengthMeters * footprint.WidthMeters) < MinSplitAreaSquareMeters)
-        {
-            return false;
-        }
-
-        double minAlong = keepMaxAlongSide ? footprint.MaxAlong - clippedLengthMeters : footprint.MinAlong;
-        double maxAlong = keepMaxAlongSide ? footprint.MaxAlong : footprint.MinAlong + clippedLengthMeters;
-        EscalatorFootprintProjection clippedFootprint = new(
-            footprint.Center,
-            footprint.Axis,
-            minAlong,
-            maxAlong,
-            footprint.MinAcross,
-            footprint.MaxAcross,
-            footprint.UsedBoundingBoxLength,
-            footprint.UsedBoundingBoxWidth);
-
-        polygon = clippedFootprint.ToPolygon(EscalatorFootprintPaddingMeters);
-        return true;
-    }
-
-    private bool TryCreateVerticalCirculationCandidate(
-        VerticalCirculationVisibilitySourceKind sourceKind,
+    private bool TryCreateVerticalCirculationGeometry(
         IReadOnlyList<Polygon2D> polygons,
-        string? warning,
-        out VerticalCirculationCandidate? candidate)
+        out Geometry geometry,
+        out double area)
     {
-        candidate = null;
+        geometry = null!;
+        area = 0d;
         if (polygons == null || polygons.Count == 0)
         {
             return false;
@@ -2174,429 +2275,9 @@ public sealed class UnitExtractor
             return false;
         }
 
-        candidate = new VerticalCirculationCandidate(
-            sourceKind,
-            polygons.ToList(),
-            unioned,
-            unioned.Area,
-            warning);
+        geometry = unioned;
+        area = unioned.Area;
         return true;
-    }
-
-    private static bool TryBuildConservativeEscalatorComposite(
-        IReadOnlyList<VerticalCirculationCandidate> candidates,
-        out VerticalCirculationCandidate? compositeCandidate)
-    {
-        compositeCandidate = null;
-        VerticalCirculationCandidate? viewCandidate = candidates
-            .FirstOrDefault(candidate => candidate.SourceKind == VerticalCirculationVisibilitySourceKind.ViewGeometry);
-        VerticalCirculationCandidate? rectangleCandidate = candidates
-            .FirstOrDefault(candidate => candidate.SourceKind == VerticalCirculationVisibilitySourceKind.RectangleProjection);
-        if (viewCandidate == null || rectangleCandidate == null)
-        {
-            return false;
-        }
-
-        Geometry compositeGeometry;
-        try
-        {
-            compositeGeometry = viewCandidate.Geometry.Intersection(rectangleCandidate.Geometry).Buffer(0d);
-        }
-        catch (TopologyException)
-        {
-            try
-            {
-                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
-                Geometry reducedView = reducer.Reduce(viewCandidate.Geometry);
-                Geometry reducedRectangle = reducer.Reduce(rectangleCandidate.Geometry);
-                compositeGeometry = reducedView.Intersection(reducedRectangle).Buffer(0d);
-            }
-            catch (TopologyException)
-            {
-                return false;
-            }
-        }
-
-        if (compositeGeometry.IsEmpty)
-        {
-            return false;
-        }
-
-        List<Polygon2D> polygons = ExtractPolygonsFromGeometry(compositeGeometry);
-        if (polygons.Count == 0)
-        {
-            return false;
-        }
-
-        compositeCandidate = new VerticalCirculationCandidate(
-            VerticalCirculationVisibilitySourceKind.ConservativeComposite,
-            polygons,
-            compositeGeometry,
-            compositeGeometry.Area,
-            warning: "Escalator visibility used the overlap between view geometry and rectangle footprint.");
-        return true;
-    }
-
-    private static VerticalCirculationCandidate SelectEscalatorCandidate(
-        FamilyInstance escalator,
-        IReadOnlyList<VerticalCirculationCandidate> candidates,
-        ICollection<string> warnings)
-    {
-        VerticalCirculationCandidate selected = candidates
-            .OrderBy(candidate => GetEscalatorSourcePriority(candidate.SourceKind))
-            .ThenBy(candidate => candidate.Area)
-            .First();
-
-        VerticalCirculationCandidate? largest = candidates
-            .OrderByDescending(candidate => candidate.Area)
-            .FirstOrDefault();
-        if (largest != null &&
-            largest.Area > selected.Area * 1.25d &&
-            largest.SourceKind != selected.SourceKind)
-        {
-            warnings.Add(
-                $"Escalator {escalator.Id.Value} visibility candidates disagreed; selected {selected.Source} over {largest.Source} to hide extra geometry conservatively.");
-        }
-
-        return selected;
-    }
-
-    private static int GetEscalatorSourcePriority(VerticalCirculationVisibilitySourceKind sourceKind)
-    {
-        return sourceKind switch
-        {
-            VerticalCirculationVisibilitySourceKind.CutPlaneClip => 0,
-            VerticalCirculationVisibilitySourceKind.ConservativeComposite => 1,
-            VerticalCirculationVisibilitySourceKind.ViewGeometry => 2,
-            VerticalCirculationVisibilitySourceKind.RectangleProjection => 3,
-            VerticalCirculationVisibilitySourceKind.RawGeometry => 4,
-            _ => 5,
-        };
-    }
-
-    private static List<Polygon2D> ExtractPolygonsFromGeometry(Geometry geometry)
-    {
-        List<Polygon2D> polygons = new();
-        if (geometry == null || geometry.IsEmpty)
-        {
-            return polygons;
-        }
-
-        switch (geometry)
-        {
-            case Polygon polygon:
-                if (TryCreatePolygon2D(polygon, out Polygon2D? createdPolygon))
-                {
-                    polygons.Add(createdPolygon!);
-                }
-
-                break;
-            case MultiPolygon multiPolygon:
-                for (int i = 0; i < multiPolygon.NumGeometries; i++)
-                {
-                    polygons.AddRange(ExtractPolygonsFromGeometry(multiPolygon.GetGeometryN(i)));
-                }
-
-                break;
-            case GeometryCollection collection:
-                for (int i = 0; i < collection.NumGeometries; i++)
-                {
-                    polygons.AddRange(ExtractPolygonsFromGeometry(collection.GetGeometryN(i)));
-                }
-
-                break;
-        }
-
-        return polygons;
-    }
-
-    private static bool TryCreatePolygon2D(Polygon polygon, out Polygon2D? polygon2D)
-    {
-        polygon2D = null;
-        if (polygon == null || polygon.IsEmpty)
-        {
-            return false;
-        }
-
-        if (!TryCreateRingPoints(polygon.ExteriorRing.Coordinates, out List<Point2D> exteriorRing))
-        {
-            return false;
-        }
-
-        List<IReadOnlyList<Point2D>> interiorRings = new();
-        for (int i = 0; i < polygon.NumInteriorRings; i++)
-        {
-            if (TryCreateRingPoints(polygon.GetInteriorRingN(i).Coordinates, out List<Point2D> interiorRing))
-            {
-                interiorRings.Add(interiorRing);
-            }
-        }
-
-        polygon2D = new Polygon2D(exteriorRing, interiorRings);
-        return true;
-    }
-
-    private static bool TryCreateRingPoints(Coordinate[] coordinates, out List<Point2D> ring)
-    {
-        ring = new List<Point2D>();
-        if (coordinates == null || coordinates.Length < 4)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < coordinates.Length; i++)
-        {
-            Coordinate coordinate = coordinates[i];
-            Point2D point = new(coordinate.X, coordinate.Y);
-            if (ring.Count == 0 || !IsSamePoint(ring[ring.Count - 1], point))
-            {
-                ring.Add(point);
-            }
-        }
-
-        if (ring.Count < 3)
-        {
-            return false;
-        }
-
-        if (!IsSamePoint(ring[0], ring[ring.Count - 1]))
-        {
-            ring.Add(ring[0]);
-        }
-
-        return ring.Count >= 4;
-    }
-
-    private bool TryGetEscalatorAxis(FamilyInstance escalator, out Point2D axis)
-    {
-        axis = default;
-        if (escalator.Location is LocationCurve locationCurve && locationCurve.Curve != null)
-        {
-            List<Point2D> curvePoints = ProjectCurve(locationCurve.Curve);
-            if (curvePoints.Count >= 2 &&
-                TryNormalize(
-                    curvePoints[curvePoints.Count - 1].X - curvePoints[0].X,
-                    curvePoints[curvePoints.Count - 1].Y - curvePoints[0].Y,
-                    out axis))
-            {
-                return true;
-            }
-        }
-
-        Point2D facing = ProjectVector(escalator.FacingOrientation);
-        if (TryNormalize(facing.X, facing.Y, out axis))
-        {
-            return true;
-        }
-
-        Point2D hand = ProjectVector(escalator.HandOrientation);
-        return TryNormalize(hand.X, hand.Y, out axis);
-    }
-
-    private bool TryGetEscalatorCenter(
-        FamilyInstance escalator,
-        BoundingBoxXYZ? box,
-        out Point2D center)
-    {
-        if (escalator.Location is LocationPoint locationPoint)
-        {
-            center = ProjectPoint(locationPoint.Point);
-            return true;
-        }
-
-        if (TryGetEscalatorCurveEndpoints(escalator, out Point2D start, out Point2D end))
-        {
-            center = Midpoint(start, end);
-            return true;
-        }
-
-        if (box == null)
-        {
-            center = default;
-            return false;
-        }
-
-        XYZ center3d = new(
-            (box.Min.X + box.Max.X) * 0.5d,
-            (box.Min.Y + box.Max.Y) * 0.5d,
-            (box.Min.Z + box.Max.Z) * 0.5d);
-        center = ProjectPoint(center3d);
-        return true;
-    }
-
-    private Point2D ProjectVector(XYZ vector)
-    {
-        XYZ hostVector = _sourceDescriptor.TransformToHost.OfVector(vector);
-        return _sharedCoordinateProjector.ProjectVector(hostVector);
-    }
-
-    private bool TryGetEscalatorCurveEndpoints(
-        FamilyInstance escalator,
-        out Point2D start,
-        out Point2D end)
-    {
-        start = default;
-        end = default;
-
-        if (escalator.Location is not LocationCurve locationCurve || locationCurve.Curve == null)
-        {
-            return false;
-        }
-
-        List<Point2D> points = ProjectCurve(locationCurve.Curve);
-        if (points.Count < 2)
-        {
-            return false;
-        }
-
-        start = points[0];
-        end = points[points.Count - 1];
-        return true;
-    }
-
-    private bool TryGetEscalatorCurveEndpoints3D(
-        FamilyInstance escalator,
-        out XYZ start,
-        out XYZ end)
-    {
-        start = default!;
-        end = default!;
-        if (escalator.Location is not LocationCurve locationCurve || locationCurve.Curve == null)
-        {
-            return false;
-        }
-
-        start = _sourceDescriptor.TransformToHost.OfPoint(locationCurve.Curve.GetEndPoint(0));
-        end = _sourceDescriptor.TransformToHost.OfPoint(locationCurve.Curve.GetEndPoint(1));
-        return true;
-    }
-
-    private bool TryGetViewCutElevationFeet(ViewPlan view, out double cutElevationFeet)
-    {
-        cutElevationFeet = view.GenLevel?.Elevation ?? 0d;
-        try
-        {
-            PlanViewRange viewRange = view.GetViewRange();
-            ElementId levelId = viewRange.GetLevelId(PlanViewPlane.CutPlane);
-            double offset = viewRange.GetOffset(PlanViewPlane.CutPlane);
-            Level? cutLevel = _document.GetElement(levelId) as Level ?? view.GenLevel;
-            if (cutLevel == null)
-            {
-                return false;
-            }
-
-            cutElevationFeet = cutLevel.Elevation + offset;
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryNormalize(double x, double y, out Point2D result)
-    {
-        result = default;
-        double length = Math.Sqrt((x * x) + (y * y));
-        if (length <= 1e-9d)
-        {
-            return false;
-        }
-
-        result = new Point2D(x / length, y / length);
-        return true;
-    }
-
-    private static Point2D Midpoint(Point2D a, Point2D b)
-    {
-        return new Point2D((a.X + b.X) * 0.5d, (a.Y + b.Y) * 0.5d);
-    }
-
-    private static double Distance(Point2D a, Point2D b)
-    {
-        double dx = b.X - a.X;
-        double dy = b.Y - a.Y;
-        return Math.Sqrt((dx * dx) + (dy * dy));
-    }
-
-    private static Point2D Subtract(Point2D left, Point2D right)
-    {
-        return new Point2D(left.X - right.X, left.Y - right.Y);
-    }
-
-    private static double Dot(Point2D left, Point2D right)
-    {
-        return (left.X * right.X) + (left.Y * right.Y);
-    }
-
-    private static List<Point2D> CollectPolygonPoints(IReadOnlyList<Polygon2D> polygons)
-    {
-        List<Point2D> points = new();
-        for (int i = 0; i < polygons.Count; i++)
-        {
-            foreach (Point2D point in polygons[i].GetAllPoints())
-            {
-                points.Add(point);
-            }
-        }
-
-        return points;
-    }
-
-    private static double? TryGetFamilyWidthMeters(FamilyInstance familyInstance)
-    {
-        double widthFeet = TryReadWidthFromElement(familyInstance);
-        if (widthFeet > 1e-6d)
-        {
-            return widthFeet * FeetToMeters;
-        }
-
-        if (familyInstance.Symbol == null)
-        {
-            return null;
-        }
-
-        widthFeet = TryReadWidthFromElement(familyInstance.Symbol);
-        return widthFeet > 1e-6d ? widthFeet * FeetToMeters : null;
-    }
-
-    private static double TryReadWidth(Parameter? parameter)
-    {
-        if (parameter == null || parameter.StorageType != StorageType.Double)
-        {
-            return 0d;
-        }
-
-        return parameter.AsDouble();
-    }
-
-    private static double TryReadWidthFromElement(Element element)
-    {
-        for (int i = 0; i < EscalatorWidthParameterNames.Length; i++)
-        {
-            double width = TryReadWidth(element.LookupParameter(EscalatorWidthParameterNames[i]));
-            if (width > 1e-6d)
-            {
-                return width;
-            }
-        }
-
-        return 0d;
-    }
-
-    private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
-    {
-        return new List<XYZ>
-        {
-            new(box.Min.X, box.Min.Y, box.Min.Z),
-            new(box.Max.X, box.Min.Y, box.Min.Z),
-            new(box.Max.X, box.Max.Y, box.Min.Z),
-            new(box.Min.X, box.Max.Y, box.Min.Z),
-            new(box.Min.X, box.Min.Y, box.Max.Z),
-            new(box.Max.X, box.Min.Y, box.Max.Z),
-            new(box.Max.X, box.Max.Y, box.Max.Z),
-            new(box.Min.X, box.Max.Y, box.Max.Z),
-        };
     }
 
     private static bool TryResolveFloorZoneName(
@@ -2701,40 +2382,4 @@ public sealed class UnitExtractor
         return Math.Max(0d, area);
     }
 
-    private sealed class VerticalCirculationCandidate
-    {
-        public VerticalCirculationCandidate(
-            VerticalCirculationVisibilitySourceKind sourceKind,
-            IReadOnlyList<Polygon2D> polygons,
-            Geometry geometry,
-            double area,
-            string? warning)
-        {
-            SourceKind = sourceKind;
-            Polygons = polygons;
-            Geometry = geometry;
-            Area = area;
-            Warning = warning;
-        }
-
-        public VerticalCirculationVisibilitySourceKind SourceKind { get; }
-
-        public IReadOnlyList<Polygon2D> Polygons { get; }
-
-        public Geometry Geometry { get; }
-
-        public double Area { get; }
-
-        public string? Warning { get; }
-
-        public string Source => SourceKind switch
-        {
-            VerticalCirculationVisibilitySourceKind.CutPlaneClip => "cut-plane-clip",
-            VerticalCirculationVisibilitySourceKind.ViewGeometry => "view-geometry",
-            VerticalCirculationVisibilitySourceKind.RectangleProjection => "rectangle-projection",
-            VerticalCirculationVisibilitySourceKind.ConservativeComposite => "conservative-composite",
-            VerticalCirculationVisibilitySourceKind.RawGeometry => "raw-fallback",
-            _ => "unknown",
-        };
-    }
 }

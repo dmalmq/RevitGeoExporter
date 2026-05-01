@@ -55,6 +55,10 @@ public sealed class ExportProfile
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
 
+    public bool SimplifyStairUnits { get; set; }
+
+    public bool SimplifyEscalatorUnits { get; set; }
+
     public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
 
     public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;
@@ -93,6 +97,8 @@ public sealed class ExportProfile
             UnitAttributeSource = attributeSource,
             RoomCategoryParameterName = RoomCategoryParameterName,
             LinkExportOptions = LinkExportOptions?.Clone() ?? new LinkExportOptions(),
+            SimplifyStairUnits = SimplifyStairUnits,
+            SimplifyEscalatorUnits = SimplifyEscalatorUnits,
             SchemaProfiles = schemaProfiles,
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, ActiveSchemaProfileName),
             ValidationPolicyProfiles = validationPolicyProfiles,
@@ -137,6 +143,8 @@ public sealed class ExportProfile
             UnitAttributeSource = attributeSource,
             RoomCategoryParameterName = settings.RoomCategoryParameterName?.Trim() ?? "Name",
             LinkExportOptions = settings.LinkExportOptions?.Clone() ?? new LinkExportOptions(),
+            SimplifyStairUnits = settings.SimplifyStairUnits,
+            SimplifyEscalatorUnits = settings.SimplifyEscalatorUnits,
             SchemaProfiles = schemaProfiles,
             ActiveSchemaProfileName = SchemaProfile.ResolveActiveName(schemaProfiles, settings.ActiveSchemaProfileName),
             ValidationPolicyProfiles = validationPolicyProfiles,

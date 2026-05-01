@@ -241,13 +241,19 @@ internal sealed class PreviewTileProvider : IDisposable
     private void UpdateStatus(string message)
     {
         string normalized = (message ?? string.Empty).Trim();
-        if (string.Equals(_statusMessage, normalized, StringComparison.Ordinal))
+        string? eventMessage;
+        lock (_sync)
         {
-            return;
+            if (string.Equals(_statusMessage, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _statusMessage = normalized;
+            eventMessage = _statusMessage.Length == 0 ? null : _statusMessage;
         }
 
-        _statusMessage = normalized;
-        StatusMessageChanged?.Invoke(_statusMessage.Length == 0 ? null : _statusMessage);
+        StatusMessageChanged?.Invoke(eventMessage);
     }
 
     private static void DrawTile(Graphics graphics, ViewTransform2D transform, WebMercatorTile tile, Bitmap bitmap)

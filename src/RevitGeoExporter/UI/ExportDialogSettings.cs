@@ -50,6 +50,10 @@ public sealed class ExportDialogSettings
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
 
+    public bool SimplifyStairUnits { get; set; }
+
+    public bool SimplifyEscalatorUnits { get; set; }
+
     public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
 
     public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;

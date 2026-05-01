@@ -9,8 +9,8 @@ public sealed class PreviewBasemapSettings
 
     public PreviewBasemapSettings(string? urlTemplate, string? attribution)
     {
-        UrlTemplate = string.IsNullOrWhiteSpace(urlTemplate) ? DefaultUrlTemplate : urlTemplate.Trim();
-        Attribution = string.IsNullOrWhiteSpace(attribution) ? DefaultAttribution : attribution.Trim();
+        UrlTemplate = urlTemplate == null ? DefaultUrlTemplate : NormalizeUrlTemplate(urlTemplate);
+        Attribution = attribution == null ? DefaultAttribution : attribution.Trim();
     }
 
     public string UrlTemplate { get; }
@@ -18,4 +18,13 @@ public sealed class PreviewBasemapSettings
     public string Attribution { get; }
 
     public bool IsConfigured => UrlTemplate.Length > 0;
+
+    private static string NormalizeUrlTemplate(string urlTemplate)
+    {
+        string trimmed = urlTemplate.Trim();
+        return trimmed.Equals("offline", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : trimmed;
+    }
 }

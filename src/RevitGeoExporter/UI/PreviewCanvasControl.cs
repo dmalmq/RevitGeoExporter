@@ -614,6 +614,16 @@ public sealed class PreviewCanvasControl : Control
 
     private void UpdateBasemapStatus(string? message)
     {
+        if (InvokeRequired)
+        {
+            if (IsHandleCreated)
+            {
+                BeginInvoke(new Action(() => UpdateBasemapStatus(message)));
+            }
+
+            return;
+        }
+
         string normalized = (message ?? string.Empty).Trim();
         if (string.Equals(_basemapStatusMessage, normalized, StringComparison.Ordinal))
         {

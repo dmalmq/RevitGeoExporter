@@ -77,6 +77,8 @@ namespace RevitGeoExporter.UI;
     private readonly CheckBox _generateQgisArtifactsCheckBox = new();
     private readonly CheckBox _openOutputFolderCheckBox = new();
     private readonly CheckBox _launchQgisCheckBox = new();
+    private readonly CheckBox _simplifyStairUnitsCheckBox = new();
+    private readonly CheckBox _simplifyEscalatorUnitsCheckBox = new();
     private readonly CheckBox _includeLinkedModelsCheckBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
@@ -829,6 +831,8 @@ namespace RevitGeoExporter.UI;
         ConfigureAdvancedOption(_generateQgisArtifactsCheckBox);
         ConfigureAdvancedOption(_openOutputFolderCheckBox);
         ConfigureAdvancedOption(_launchQgisCheckBox);
+        ConfigureAdvancedOption(_simplifyStairUnitsCheckBox);
+        ConfigureAdvancedOption(_simplifyEscalatorUnitsCheckBox);
 
         advancedContent.Children.Add(WrapStandaloneOption(_diagnosticsCheckBox, new Thickness(0, 0, 0, 4)));
         advancedContent.Children.Add(WrapStandaloneOption(_packageCheckBox, new Thickness(0, 0, 0, 4)));
@@ -838,6 +842,8 @@ namespace RevitGeoExporter.UI;
         advancedContent.Children.Add(WrapStandaloneOption(_generateQgisArtifactsCheckBox, new Thickness(18, 4, 0, 0)));
         advancedContent.Children.Add(WrapStandaloneOption(_openOutputFolderCheckBox, new Thickness(0, 4, 0, 0)));
         advancedContent.Children.Add(WrapStandaloneOption(_launchQgisCheckBox, new Thickness(0, 4, 0, 0)));
+        advancedContent.Children.Add(WrapStandaloneOption(_simplifyStairUnitsCheckBox, new Thickness(0, 4, 0, 0)));
+        advancedContent.Children.Add(WrapStandaloneOption(_simplifyEscalatorUnitsCheckBox, new Thickness(0, 4, 0, 0)));
 
         StyleExpanderHeader(_advancedOptionsHeaderText);
         _advancedOptionsExpander.Header = _advancedOptionsHeaderText;
@@ -970,6 +976,8 @@ namespace RevitGeoExporter.UI;
             _generateQgisArtifactsCheckBox.IsChecked = settings.GenerateQgisArtifacts;
             _openOutputFolderCheckBox.IsChecked = settings.PostExportActions?.OpenOutputFolder == true;
             _launchQgisCheckBox.IsChecked = settings.PostExportActions?.LaunchQgis == true;
+            _simplifyStairUnitsCheckBox.IsChecked = settings.SimplifyStairUnits;
+            _simplifyEscalatorUnitsCheckBox.IsChecked = settings.SimplifyEscalatorUnits;
 
             _languageComboBox.Items.Clear();
             _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
@@ -1155,6 +1163,8 @@ namespace RevitGeoExporter.UI;
             _unitGeometrySource,
             _unitAttributeSource,
             (_roomCategoryParameterTextBox.Text ?? string.Empty).Trim(),
+            _simplifyStairUnitsCheckBox.IsChecked == true,
+            _simplifyEscalatorUnitsCheckBox.IsChecked == true,
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
             GetActiveValidationPolicyProfile())
@@ -1215,7 +1225,9 @@ namespace RevitGeoExporter.UI;
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
             _previewBasemapSettings.UrlTemplate,
-            _previewBasemapSettings.Attribution);
+            _previewBasemapSettings.Attribution,
+            _simplifyStairUnitsCheckBox.IsChecked == true,
+            _simplifyEscalatorUnitsCheckBox.IsChecked == true);
 
         try
         {
@@ -1797,6 +1809,8 @@ namespace RevitGeoExporter.UI;
         _generateQgisArtifactsCheckBox.Content = T("Generate QGIS handoff files", "QGIS 引き継ぎファイルを生成");
         _openOutputFolderCheckBox.Content = T("Open output folder after export", "出力後にフォルダーを開く");
         _launchQgisCheckBox.Content = T("Launch QGIS after export", "出力後に QGIS を起動");
+        _simplifyStairUnitsCheckBox.Content = T("Simplify stair units (show only floor entries)", "階段ユニットを簡略化（階の出入口のみ表示）");
+        _simplifyEscalatorUnitsCheckBox.Content = T("Simplify escalator units (show level-appropriate half)", "エスカレーターユニットを簡略化（階に応じた半分を表示）");
         _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
         _saveProfileButton.Content = T("Save", "保存");

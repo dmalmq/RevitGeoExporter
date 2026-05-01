@@ -59,6 +59,7 @@ public sealed class ExportDiagnosticsReportBuilder
             PackagingMode = session.PackageOptions.PackagingMode.ToString(),
             ExportedAtUtc = exportedAtUtc,
             DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),
+            PhaseTimings = exportResult.PhaseTimings.ToList(),
             Views = views,
             ValidationIssues = validationResult.Issues.ToList(),
             ExportWarnings = exportResult.Warnings.ToList(),

@@ -82,7 +82,9 @@ internal sealed class ExportWorkflowCoordinator
             previewRequest.RoomCategoryParameterName,
             previewRequest.GeometryRepairOptions,
             previewRequest.LinkExportOptions,
-            previewRequest.ActiveSchemaProfile);
+            previewRequest.ActiveSchemaProfile,
+            previewRequest.SimplifyStairUnits,
+            previewRequest.SimplifyEscalatorUnits);
 
         if (_useWpfPreviewWindow)
         {
@@ -142,7 +144,9 @@ internal sealed class ExportWorkflowCoordinator
                     request.RoomCategoryParameterName,
                     request.LinkExportOptions,
                     request.ActiveSchemaProfile,
-                    request.ActiveValidationPolicyProfile);
+                    request.ActiveValidationPolicyProfile,
+                    request.SimplifyStairUnits,
+                    request.SimplifyEscalatorUnits);
                 session.OutputFormat = request.OutputFormat;
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
@@ -209,6 +213,11 @@ internal sealed class ExportWorkflowCoordinator
                     return Result.Cancelled;
                 }
 
+                if (!ConfirmIncrementalExportPlan(exporter.PreviewExecutionSummary(session), request.UiLanguage))
+                {
+                    return Result.Cancelled;
+                }
+
                 break;
             }
 
@@ -242,8 +251,77 @@ internal sealed class ExportWorkflowCoordinator
             return;
         }
 
-        BatchExecutionSummary summary = RunBatchExport(form.Result, coordinateInfo);
+        BatchPreflightSummary preflight = PreflightBatchJobs(form.Result);
+        ExportJobManifest? executableManifest = ResolveBatchPreflightManifest(preflight, CommandLanguageResolver.Resolve());
+        if (executableManifest == null)
+        {
+            return;
+        }
+
+        BatchExecutionSummary summary = RunBatchExport(executableManifest, coordinateInfo);
         ShowBatchSummary(summary);
+    }
+
+    private BatchPreflightSummary PreflightBatchJobs(ExportJobManifest manifest)
+    {
+        IReadOnlyList<ViewPlan> availableViews = new ViewCollector().GetExportablePlanViews(_document);
+        HashSet<long> availableViewIds = new(availableViews.Select(view => view.Id.Value));
+        IReadOnlyList<ExportProfile> profiles = _profileStore.LoadWithDiagnostics(_projectKey).Value;
+        Dictionary<string, ExportProfile> profilesByName = profiles
+            .GroupBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+        BatchPreflightSummary summary = new();
+        foreach (ExportJobManifestItem job in manifest.Jobs)
+        {
+            string profileName = job.ProfileName?.Trim() ?? string.Empty;
+            if (profileName.Length == 0)
+            {
+                summary.InvalidJobs.Add(new BatchPreflightIssue(job, "<unspecified>", "The batch job did not specify a profile name."));
+                continue;
+            }
+
+            if (!profilesByName.TryGetValue(profileName, out ExportProfile? profile))
+            {
+                summary.InvalidJobs.Add(new BatchPreflightIssue(job, profileName, "The saved export profile could not be found."));
+                continue;
+            }
+
+            if (profile.SelectedViewIds == null || profile.SelectedViewIds.Count == 0)
+            {
+                summary.InvalidJobs.Add(new BatchPreflightIssue(job, profileName, "The saved profile has no persisted view selections."));
+                continue;
+            }
+
+            List<long> missingViewIds = profile.SelectedViewIds
+                .Distinct()
+                .Where(viewId => !availableViewIds.Contains(viewId))
+                .OrderBy(viewId => viewId)
+                .ToList();
+            if (missingViewIds.Count > 0)
+            {
+                summary.InvalidJobs.Add(new BatchPreflightIssue(
+                    job,
+                    profileName,
+                    $"Saved view ids are no longer available: {string.Join(", ", missingViewIds)}"));
+                continue;
+            }
+
+            ExportDialogSettings settings = profile.ToSettings();
+            string? outputOverride = job.OutputDirectoryOverride;
+            string outputDirectory = string.IsNullOrWhiteSpace(outputOverride)
+                ? settings.OutputDirectory?.Trim() ?? string.Empty
+                : outputOverride!.Trim();
+            if (outputDirectory.Length == 0)
+            {
+                summary.InvalidJobs.Add(new BatchPreflightIssue(job, profileName, "No output directory is configured."));
+                continue;
+            }
+
+            summary.ValidJobs.Add(job);
+        }
+
+        return summary;
     }
 
     private BatchExecutionSummary RunBatchExport(ExportJobManifest manifest, ModelCoordinateInfo coordinateInfo)
@@ -301,9 +379,10 @@ internal sealed class ExportWorkflowCoordinator
         }
 
         ExportDialogSettings settings = profile.ToSettings();
-        if (!string.IsNullOrWhiteSpace(job.OutputDirectoryOverride))
+        string? outputOverride = job.OutputDirectoryOverride;
+        if (!string.IsNullOrWhiteSpace(outputOverride))
         {
-            settings.OutputDirectory = job.OutputDirectoryOverride.Trim();
+            settings.OutputDirectory = outputOverride!.Trim();
         }
 
         ExportDialogResult request = new(
@@ -327,6 +406,8 @@ internal sealed class ExportWorkflowCoordinator
             settings.UnitGeometrySource,
             settings.UnitAttributeSource,
             settings.RoomCategoryParameterName,
+            settings.SimplifyStairUnits,
+            settings.SimplifyEscalatorUnits,
             settings.LinkExportOptions,
             SchemaProfile.ResolveActive(settings.SchemaProfiles, settings.ActiveSchemaProfileName),
             ValidationPolicyProfile.NormalizeProfiles(settings.ValidationPolicyProfiles)
@@ -369,7 +450,9 @@ internal sealed class ExportWorkflowCoordinator
                 request.RoomCategoryParameterName,
                 request.LinkExportOptions,
                 request.ActiveSchemaProfile,
-                request.ActiveValidationPolicyProfile);
+                request.ActiveValidationPolicyProfile,
+                request.SimplifyStairUnits,
+                request.SimplifyEscalatorUnits);
             session.OutputFormat = request.OutputFormat;
 
             ExportValidationResult validationResult = new ExportValidationService()
@@ -395,6 +478,7 @@ internal sealed class ExportWorkflowCoordinator
         FloorGeoPackageExporter exporter = new(_document);
         FloorGeoPackageExportResult result;
         Stopwatch stopwatch = Stopwatch.StartNew();
+        Stopwatch phaseStopwatch = Stopwatch.StartNew();
         using (ExportProgressForm progressForm = new())
         {
             progressForm.Show();
@@ -407,6 +491,9 @@ internal sealed class ExportWorkflowCoordinator
 
             progressForm.Close();
         }
+
+        phaseStopwatch.Stop();
+        result.AddPhaseTiming("Artifact writing", phaseStopwatch.Elapsed);
 
         stopwatch.Stop();
 
@@ -422,8 +509,11 @@ internal sealed class ExportWorkflowCoordinator
         {
             try
             {
+                phaseStopwatch.Restart();
                 ExportDiagnosticsWriter diagnosticsWriter = new();
                 string diagnosticsPath = diagnosticsWriter.WriteJson(request.OutputDirectory, diagnosticsReport);
+                phaseStopwatch.Stop();
+                result.AddPhaseTiming("Diagnostics report", phaseStopwatch.Elapsed);
                 result.SetDiagnosticsReportPath(diagnosticsPath);
             }
             catch (Exception diagnosticsException)
@@ -437,10 +527,14 @@ internal sealed class ExportWorkflowCoordinator
         }
 
         ExportPackageService packageService = new();
+        phaseStopwatch.Restart();
         ExportPackageResult packageResult = packageService.BuildPackage(session, diagnosticsReport, result);
+        phaseStopwatch.Stop();
+        result.AddPhaseTiming("Package build", phaseStopwatch.Elapsed);
         result.SetPackagePaths(packageResult.PackageDirectory, packageResult.ManifestPath);
         result.SetPackageValidationResult(packageResult.ValidationResult);
 
+        phaseStopwatch.Restart();
         ExportBaselineStore baselineStore = new();
         ExportBaselineLoadResult baseline = baselineStore.Load(session.BaselineKey);
         result.AddWarnings(baseline.Warnings);
@@ -469,6 +563,31 @@ internal sealed class ExportWorkflowCoordinator
             result.AddWarning("Package validation errors prevented the export baseline from being replaced.");
         }
 
+        phaseStopwatch.Stop();
+        result.AddPhaseTiming("Baseline update", phaseStopwatch.Elapsed);
+
+        if (request.GenerateDiagnosticsReport && !string.IsNullOrWhiteSpace(result.DiagnosticsReportPath))
+        {
+            diagnosticsReport.PhaseTimings = result.PhaseTimings.ToList();
+            diagnosticsReport.PackageValidationResult = result.PackageValidationResult;
+            try
+            {
+                File.WriteAllText(result.DiagnosticsReportPath, Newtonsoft.Json.JsonConvert.SerializeObject(diagnosticsReport, Newtonsoft.Json.Formatting.Indented));
+                if (!string.IsNullOrWhiteSpace(result.PackageDirectoryPath))
+                {
+                    string packagedDiagnosticsPath = Path.Combine(result.PackageDirectoryPath, Path.GetFileName(result.DiagnosticsReportPath));
+                    if (File.Exists(packagedDiagnosticsPath))
+                    {
+                        File.Copy(result.DiagnosticsReportPath, packagedDiagnosticsPath, overwrite: true);
+                    }
+                }
+            }
+            catch (Exception diagnosticsException)
+            {
+                result.AddWarning($"Diagnostics report timing details could not be refreshed: {diagnosticsException.Message}");
+            }
+        }
+
         return result;
     }
 
@@ -487,9 +606,117 @@ internal sealed class ExportWorkflowCoordinator
         _ = form.ShowDialog();
     }
 
+    private static ExportJobManifest? ResolveBatchPreflightManifest(BatchPreflightSummary summary, UiLanguage language)
+    {
+        if (summary.InvalidJobs.Count == 0)
+        {
+            TaskDialog readyDialog = new(ProjectInfo.Name)
+            {
+                MainInstruction = UiLanguageText.Select(language, "Batch preflight passed.", "バッチ事前チェックが完了しました。"),
+                MainContent = UiLanguageText.Select(
+                    language,
+                    $"Ready to run {summary.ValidJobs.Count} job(s).",
+                    $"{summary.ValidJobs.Count} 件のジョブを実行できます。"),
+                CommonButtons = TaskDialogCommonButtons.Ok | TaskDialogCommonButtons.Cancel,
+                AllowCancellation = true,
+            };
+            return readyDialog.Show() == TaskDialogResult.Ok
+                ? new ExportJobManifest { Jobs = summary.ValidJobs.ToList() }
+                : null;
+        }
+
+        string issueLines = string.Join(
+            Environment.NewLine,
+            summary.InvalidJobs
+                .Take(8)
+                .Select(issue => $"- {issue.ProfileName}: {issue.Message}"));
+        if (summary.InvalidJobs.Count > 8)
+        {
+            issueLines += $"{Environment.NewLine}- ...";
+        }
+
+        TaskDialog dialog = new(ProjectInfo.Name)
+        {
+            MainInstruction = UiLanguageText.Select(language, "Batch preflight found invalid jobs.", "バッチ事前チェックで無効なジョブが見つかりました。"),
+            MainContent = UiLanguageText.Select(
+                language,
+                $"Valid jobs: {summary.ValidJobs.Count}{Environment.NewLine}Invalid jobs: {summary.InvalidJobs.Count}{Environment.NewLine}{Environment.NewLine}{issueLines}",
+                $"有効なジョブ: {summary.ValidJobs.Count}{Environment.NewLine}無効なジョブ: {summary.InvalidJobs.Count}{Environment.NewLine}{Environment.NewLine}{issueLines}"),
+            AllowCancellation = true,
+            CommonButtons = TaskDialogCommonButtons.Cancel,
+        };
+
+        if (summary.ValidJobs.Count > 0)
+        {
+            dialog.AddCommandLink(
+                TaskDialogCommandLinkId.CommandLink1,
+                UiLanguageText.Select(language, "Run valid jobs only", "有効なジョブのみ実行"));
+        }
+
+        return dialog.Show() == TaskDialogResult.CommandLink1
+            ? new ExportJobManifest { Jobs = summary.ValidJobs.ToList() }
+            : null;
+    }
+
+    private static bool ConfirmIncrementalExportPlan(ExportExecutionSummary summary, UiLanguage language)
+    {
+        if (summary.IncrementalExportMode != IncrementalExportMode.ChangedViewsOnly)
+        {
+            return true;
+        }
+
+        string content = UiLanguageText.Select(
+            language,
+            $"Changed views: {summary.ChangedViewCount}{Environment.NewLine}" +
+            $"Reusable views: {summary.ReusedViewCount}{Environment.NewLine}" +
+            $"Missing reusable artifacts: {summary.MissingBaselineArtifactCount}" +
+            (string.IsNullOrWhiteSpace(summary.FullRewriteReason)
+                ? string.Empty
+                : $"{Environment.NewLine}{Environment.NewLine}Full rewrite reason: {summary.FullRewriteReason}"),
+            $"変更されたビュー: {summary.ChangedViewCount}{Environment.NewLine}" +
+            $"再利用可能なビュー: {summary.ReusedViewCount}{Environment.NewLine}" +
+            $"再利用できない既存成果物: {summary.MissingBaselineArtifactCount}" +
+            (string.IsNullOrWhiteSpace(summary.FullRewriteReason)
+                ? string.Empty
+                : $"{Environment.NewLine}{Environment.NewLine}全再出力の理由: {summary.FullRewriteReason}"));
+
+        TaskDialog dialog = new(ProjectInfo.Name)
+        {
+            MainInstruction = UiLanguageText.Select(language, "Incremental export preview", "差分エクスポート プレビュー"),
+            MainContent = content,
+            CommonButtons = TaskDialogCommonButtons.Ok | TaskDialogCommonButtons.Cancel,
+            AllowCancellation = true,
+        };
+
+        return dialog.Show() == TaskDialogResult.Ok;
+    }
+
     private sealed class BatchExecutionSummary
     {
         public List<BatchJobExecutionResult> Jobs { get; } = new();
+    }
+
+    private sealed class BatchPreflightSummary
+    {
+        public List<ExportJobManifestItem> ValidJobs { get; } = new();
+
+        public List<BatchPreflightIssue> InvalidJobs { get; } = new();
+    }
+
+    private sealed class BatchPreflightIssue
+    {
+        public BatchPreflightIssue(ExportJobManifestItem job, string profileName, string message)
+        {
+            Job = job;
+            ProfileName = profileName;
+            Message = message;
+        }
+
+        public ExportJobManifestItem Job { get; }
+
+        public string ProfileName { get; }
+
+        public string Message { get; }
     }
 
     private sealed class BatchJobExecutionResult

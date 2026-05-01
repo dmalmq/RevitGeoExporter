@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using RevitGeoExporter.Core;
-using RevitGeoExporter.Core.Coordinates;
 using RevitGeoExporter.Core.Geometry;
 using RevitGeoExporter.Core.Models;
 using RevitGeoExporter.Core.Schema;
@@ -14,11 +12,8 @@ namespace RevitGeoExporter.Extractors;
 
 public sealed class OpeningExtractor
 {
-    private const double FeetToMeters = CrsTransformer.FeetToMetersFactor;
-    private const double EndpointInsetMeters = 0.05d;
-    private const double MaxEscalatorWidthMeters = 1.50d;
     private const double StairLevelElevationToleranceFeet = 0.75d;
-    private static readonly string[] EscalatorWidthParameterNames = { "Width", "幅" };
+    private static readonly string[] OpeningWidthParameterNames = { "Width", "幅" };
 
     private readonly Document _document;
     private readonly SharedCoordinateProjector _sharedCoordinateProjector;
@@ -329,173 +324,6 @@ public sealed class OpeningExtractor
         return TryNormalize(end.X - start.X, end.Y - start.Y, out direction);
     }
 
-    private bool TryGetEscalatorEndpoints(
-        FamilyInstance escalator,
-        out Point2D start,
-        out Point2D end,
-        out Point2D direction,
-        out double halfWidthMeters)
-    {
-        start = default;
-        end = default;
-        direction = default;
-        halfWidthMeters = 0d;
-
-        Point2D axis = GetEscalatorAxis(escalator);
-        BoundingBoxXYZ? box = escalator.get_BoundingBox(null);
-        if (!TryGetEscalatorCenter(escalator, box, out Point2D center))
-        {
-            return false;
-        }
-
-        double? explicitLengthMeters = null;
-        if (TryGetEscalatorCurveEndpoints(escalator, out Point2D curveStart, out Point2D curveEnd))
-        {
-            center = Midpoint(curveStart, curveEnd);
-            explicitLengthMeters = Distance(curveStart, curveEnd);
-        }
-
-        List<Point2D>? geometryPoints = null;
-        if (TryExtractElementFootprintPoints(escalator, out List<Point2D> extractedPoints))
-        {
-            geometryPoints = extractedPoints;
-        }
-
-        double? explicitWidthMeters = TryGetWidthFeetFromParameter(escalator);
-        if (explicitWidthMeters.HasValue)
-        {
-            explicitWidthMeters *= FeetToMeters;
-        }
-
-        List<Point2D>? boundingBoxPoints = box == null
-            ? null
-            : GetBoundingBoxCorners(box).Select(ProjectPoint).ToList();
-
-        if (!EscalatorFootprintBuilder.TryCreate(
-                center,
-                axis,
-                geometryPoints,
-                explicitLengthMeters,
-                explicitWidthMeters,
-                boundingBoxPoints,
-                minLengthMeters: 0.05d,
-                minWidthMeters: 0.05d,
-                out EscalatorFootprintProjection footprint))
-        {
-            return false;
-        }
-
-        footprint = footprint.ClampWidth(MaxEscalatorWidthMeters);
-        direction = footprint.Axis;
-        start = footprint.Start;
-        end = footprint.End;
-        halfWidthMeters = Math.Max(0.35d, footprint.WidthMeters * 0.5d);
-        return true;
-    }
-
-    private bool TryGetEscalatorCurveEndpoints(
-        FamilyInstance escalator,
-        out Point2D start,
-        out Point2D end)
-    {
-        start = default;
-        end = default;
-
-        if (escalator.Location is not LocationCurve locationCurve || locationCurve.Curve == null)
-        {
-            return false;
-        }
-
-        List<Point2D> points = ProjectCurve(locationCurve.Curve);
-        if (points.Count < 2)
-        {
-            return false;
-        }
-
-        start = points[0];
-        end = points[points.Count - 1];
-        return true;
-    }
-
-    private Point2D GetEscalatorAxis(FamilyInstance escalator)
-    {
-        Point2D facing = ProjectVector(escalator.FacingOrientation);
-        if (TryNormalize(facing.X, facing.Y, out Point2D normalizedFacing))
-        {
-            return normalizedFacing;
-        }
-
-        Point2D hand = ProjectVector(escalator.HandOrientation);
-        if (TryNormalize(hand.X, hand.Y, out Point2D normalizedHand))
-        {
-            return normalizedHand;
-        }
-
-        return new Point2D(1d, 0d);
-    }
-
-    private bool TryGetEscalatorCenter(
-        FamilyInstance escalator,
-        BoundingBoxXYZ? box,
-        out Point2D center)
-    {
-        if (escalator.Location is LocationPoint locationPoint)
-        {
-            center = ProjectPoint(locationPoint.Point);
-            return true;
-        }
-
-        if (TryGetEscalatorCurveEndpoints(escalator, out Point2D start, out Point2D end))
-        {
-            center = Midpoint(start, end);
-            return true;
-        }
-
-        if (box == null)
-        {
-            center = default;
-            return false;
-        }
-
-        XYZ center3d = new(
-            (box.Min.X + box.Max.X) * 0.5d,
-            (box.Min.Y + box.Max.Y) * 0.5d,
-            (box.Min.Z + box.Max.Z) * 0.5d);
-        center = ProjectPoint(center3d);
-        return true;
-    }
-
-    private bool TryCreateEntranceLine(
-        Point2D endpoint,
-        Point2D direction,
-        double insetMeters,
-        double halfWidthMeters,
-        out LineString2D line)
-    {
-        line = null!;
-        Point2D insetPoint = new(
-            endpoint.X + (direction.X * insetMeters),
-            endpoint.Y + (direction.Y * insetMeters));
-        Point2D perpendicular = new(-direction.Y, direction.X);
-
-        Point2D left = new(
-            insetPoint.X - (perpendicular.X * halfWidthMeters),
-            insetPoint.Y - (perpendicular.Y * halfWidthMeters));
-        Point2D right = new(
-            insetPoint.X + (perpendicular.X * halfWidthMeters),
-            insetPoint.Y + (perpendicular.Y * halfWidthMeters));
-
-        double dx = right.X - left.X;
-        double dy = right.Y - left.Y;
-        if (Math.Sqrt((dx * dx) + (dy * dy)) < _geometryRepairOptions.MinimumOpeningLengthMeters)
-        {
-            return false;
-        }
-
-        line = new LineString2D(new[] { left, right });
-        return true;
-    }
-
     private void AddFeature(
         ICollection<ExportLineString> target,
         ISet<string> seenGeometryKeys,
@@ -540,13 +368,6 @@ public sealed class OpeningExtractor
             viewName,
             warnings);
         target.Add(new ExportLineString(lineString, attributes));
-    }
-
-    private bool IsEscalatorFamily(FamilyInstance family)
-    {
-        string familyName = UnitExtractor.GetFamilyName(family);
-        return _zoneCatalog.TryGetFamilyInfo(familyName, out ZoneInfo info) &&
-               string.Equals(info.Category, "escalator", StringComparison.OrdinalIgnoreCase);
     }
 
     private bool TryExtractOpeningLine(FamilyInstance opening, out LineString2D lineString)
@@ -688,167 +509,6 @@ public sealed class OpeningExtractor
         return _sharedCoordinateProjector.ProjectPoint(hostPoint);
     }
 
-    private Point2D ProjectVector(XYZ vector)
-    {
-        XYZ hostVector = _sourceDescriptor.TransformToHost.OfVector(vector);
-        return _sharedCoordinateProjector.ProjectVector(hostVector);
-    }
-
-    private bool TryExtractElementFootprintPoints(Element element, out List<Point2D> points)
-    {
-        points = null!;
-
-        List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: false);
-        if (loops.Count == 0)
-        {
-            loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: true);
-        }
-
-        if (loops.Count == 0)
-        {
-            return false;
-        }
-
-        points = new List<Point2D>();
-        for (int i = 0; i < loops.Count; i++)
-        {
-            AddProjectedLoopPoints(points, loops[i]);
-        }
-
-        return points.Count > 0;
-    }
-
-    private void AddProjectedLoopPoints(ICollection<Point2D> points, IReadOnlyList<XYZ> loop)
-    {
-        for (int i = 0; i < loop.Count; i++)
-        {
-            Point2D point = ProjectPoint(loop[i]);
-            points.Add(point);
-        }
-    }
-
-    private static List<List<XYZ>> ExtractLoopsFromSolidGeometry(
-        Element element,
-        bool includeNonVisibleObjects)
-    {
-        Options options = new()
-        {
-            ComputeReferences = false,
-            DetailLevel = ViewDetailLevel.Fine,
-            IncludeNonVisibleObjects = includeNonVisibleObjects,
-        };
-
-        GeometryElement? geometry = element.get_Geometry(options);
-        if (geometry == null)
-        {
-            return new List<List<XYZ>>();
-        }
-
-        List<Solid> solids = CollectSolids(geometry);
-        if (solids.Count == 0)
-        {
-            return new List<List<XYZ>>();
-        }
-
-        PlanarFace? lowestFace = null;
-        double lowestZ = double.MaxValue;
-        for (int i = 0; i < solids.Count; i++)
-        {
-            Solid solid = solids[i];
-            if (solid.Volume <= 0d)
-            {
-                continue;
-            }
-
-            foreach (Face face in solid.Faces)
-            {
-                if (face is not PlanarFace planarFace)
-                {
-                    continue;
-                }
-
-                if (planarFace.FaceNormal.Z >= -0.9d)
-                {
-                    continue;
-                }
-
-                if (planarFace.Origin.Z < lowestZ)
-                {
-                    lowestFace = planarFace;
-                    lowestZ = planarFace.Origin.Z;
-                }
-            }
-        }
-
-        return lowestFace == null ? new List<List<XYZ>>() : ExtractLoopsFromFace(lowestFace);
-    }
-
-    private static List<Solid> CollectSolids(GeometryElement geometry)
-    {
-        List<Solid> solids = new();
-        foreach (GeometryObject geometryObject in geometry)
-        {
-            switch (geometryObject)
-            {
-                case Solid solid when solid.Volume > 0d:
-                    solids.Add(solid);
-                    break;
-                case GeometryInstance instance:
-                    solids.AddRange(CollectSolids(instance.GetInstanceGeometry()));
-                    break;
-            }
-        }
-
-        return solids;
-    }
-
-    private static List<List<XYZ>> ExtractLoopsFromFace(Face face)
-    {
-        List<List<XYZ>> loops = new();
-        foreach (EdgeArray edgeArray in face.EdgeLoops)
-        {
-            List<XYZ> loop = new();
-            foreach (Edge edge in edgeArray)
-            {
-                IList<XYZ> tessellated = edge.AsCurve().Tessellate();
-                for (int i = 0; i < tessellated.Count; i++)
-                {
-                    if (loop.Count == 0 || !loop[loop.Count - 1].IsAlmostEqualTo(tessellated[i]))
-                    {
-                        loop.Add(tessellated[i]);
-                    }
-                }
-            }
-
-            if (loop.Count >= 3 && !loop[0].IsAlmostEqualTo(loop[loop.Count - 1]))
-            {
-                loop.Add(loop[0]);
-            }
-
-            if (loop.Count >= 4)
-            {
-                loops.Add(loop);
-            }
-        }
-
-        return loops;
-    }
-
-    private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
-    {
-        return new List<XYZ>
-        {
-            new(box.Min.X, box.Min.Y, box.Min.Z),
-            new(box.Max.X, box.Min.Y, box.Min.Z),
-            new(box.Max.X, box.Max.Y, box.Min.Z),
-            new(box.Min.X, box.Max.Y, box.Min.Z),
-            new(box.Min.X, box.Min.Y, box.Max.Z),
-            new(box.Max.X, box.Min.Y, box.Max.Z),
-            new(box.Max.X, box.Max.Y, box.Max.Z),
-            new(box.Min.X, box.Max.Y, box.Max.Z),
-        };
-    }
-
     private static string BuildGeometryKey(LineString2D line)
     {
         Point2D start = line.Points[0];
@@ -909,9 +569,9 @@ public sealed class OpeningExtractor
 
     private static double TryReadWidthFromElement(Element element)
     {
-        for (int i = 0; i < EscalatorWidthParameterNames.Length; i++)
+        for (int i = 0; i < OpeningWidthParameterNames.Length; i++)
         {
-            double width = TryReadWidth(element.LookupParameter(EscalatorWidthParameterNames[i]));
+            double width = TryReadWidth(element.LookupParameter(OpeningWidthParameterNames[i]));
             if (width > 1e-6d)
             {
                 return width;
@@ -990,11 +650,6 @@ public sealed class OpeningExtractor
     {
         return Math.Abs(left.X - right.X) <= 1e-8d &&
                Math.Abs(left.Y - right.Y) <= 1e-8d;
-    }
-
-    private static Point2D Midpoint(Point2D a, Point2D b)
-    {
-        return new Point2D((a.X + b.X) * 0.5d, (a.Y + b.Y) * 0.5d);
     }
 
     private static double Distance(Point2D a, Point2D b)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Microsoft.Data.Sqlite;
 using RevitGeoExporter.Core.GeoPackage;
 using RevitGeoExporter.Core.Models;
@@ -238,6 +239,31 @@ public sealed class GpkgWriterTests
             Assert.Equal("A-100", ExecuteScalarString(connection, "SELECT client_code FROM unit LIMIT 1;"));
             Assert.Equal(12L, ExecuteScalarLong(connection, "SELECT suite_count FROM unit LIMIT 1;"));
             Assert.Equal(1L, ExecuteScalarLong(connection, "SELECT is_public FROM unit LIMIT 1;"));
+        }
+        finally
+        {
+            DeleteIfExists(path);
+        }
+    }
+
+    [Fact]
+    public void CancelledWrite_PreservesExistingFile()
+    {
+        string path = GetTemporaryGpkgPath();
+        try
+        {
+            File.WriteAllText(path, "existing-content");
+            ExportLayer unit = CreateUnitLayer();
+            unit.AddFeature(CreateSquareFeature("unit-1", "walkway", null, null));
+
+            using CancellationTokenSource cancellation = new();
+            cancellation.Cancel();
+
+            GpkgWriter writer = new();
+            Assert.Throws<OperationCanceledException>(() =>
+                writer.Write(path, srsId: 6677, layers: new[] { unit }, cancellation.Token));
+
+            Assert.Equal("existing-content", File.ReadAllText(path));
         }
         finally
         {

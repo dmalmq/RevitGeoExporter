@@ -48,6 +48,7 @@ public sealed class FloorGeoPackageExporter
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
         ValidationPolicyProfile? activeValidationPolicyProfile = null,
+        bool simplifyStairUnits = false,
         Action<ExportProgressUpdate>? progressCallback = null)
     {
         PreparedExportSession session = PrepareExport(
@@ -70,7 +71,8 @@ public sealed class FloorGeoPackageExporter
             roomCategoryParameterName,
             linkExportOptions,
             activeSchemaProfile,
-            activeValidationPolicyProfile);
+            activeValidationPolicyProfile,
+            simplifyStairUnits);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -94,7 +96,9 @@ public sealed class FloorGeoPackageExporter
         string roomCategoryParameterName = "Name",
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
-        ValidationPolicyProfile? activeValidationPolicyProfile = null)
+        ValidationPolicyProfile? activeValidationPolicyProfile = null,
+        bool simplifyStairUnits = false,
+        bool simplifyEscalatorUnits = false)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -179,6 +183,8 @@ public sealed class FloorGeoPackageExporter
                 LinkExportOptions = effectiveLinkExportOptions,
                 ActiveSchemaProfile = effectiveSchemaProfile,
                 ActiveValidationPolicyProfile = effectiveValidationPolicyProfile,
+                SimplifyStairUnits = simplifyStairUnits,
+                SimplifyEscalatorUnits = simplifyEscalatorUnits,
                 ViewContexts = contexts,
             });
 
@@ -289,8 +295,8 @@ public sealed class FloorGeoPackageExporter
         int completedSteps = 0;
         progressCallback?.Invoke(new ExportProgressUpdate(0, totalSteps, "Preparing export..."));
 
-        GpkgWriter gpkgWriter = session.OutputFormat == ExportFormat.GeoPackage ? new GpkgWriter() : null;
-        ShapefileWriter shpWriter = session.OutputFormat == ExportFormat.Shapefile ? new ShapefileWriter() : null;
+        GpkgWriter? gpkgWriter = session.OutputFormat == ExportFormat.GeoPackage ? new GpkgWriter() : null;
+        ShapefileWriter? shpWriter = session.OutputFormat == ExportFormat.Shapefile ? new ShapefileWriter() : null;
 
         foreach (ArtifactPlan plan in artifactPlans)
         {
@@ -310,11 +316,11 @@ public sealed class FloorGeoPackageExporter
 
             if (shpWriter != null)
             {
-                shpWriter.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+                shpWriter.Write(plan.OutputFilePath, session.OutputEpsg, layers, cancellationToken);
             }
             else
             {
-                gpkgWriter!.Write(plan.OutputFilePath, session.OutputEpsg, layers);
+                gpkgWriter!.Write(plan.OutputFilePath, session.OutputEpsg, layers, cancellationToken);
             }
 
             result.AddArtifactResult(plan.ToResult(ArtifactDisposition.Written));
@@ -324,6 +330,39 @@ public sealed class FloorGeoPackageExporter
 
         result.SetPendingBaselineSnapshot(BuildBaselineSnapshot(session, viewDecisions, artifactPlans));
         return result;
+    }
+
+    public ExportExecutionSummary PreviewExecutionSummary(PreparedExportSession session)
+    {
+        if (session is null)
+        {
+            throw new ArgumentNullException(nameof(session));
+        }
+
+        ExportBaselineLoadResult baseline = new ExportBaselineStore().Load(session.BaselineKey);
+        Dictionary<long, ViewChangeDecision> viewDecisions = BuildViewChangeDecisions(session, baseline.Snapshot);
+        List<ArtifactPlan> artifactPlans = BuildArtifactPlans(session);
+        ExportExecutionSummary executionSummary = BuildExecutionSummary(session, baseline.Snapshot, viewDecisions);
+        int missingBaselineArtifactCount = 0;
+
+        foreach (ArtifactPlan plan in artifactPlans)
+        {
+            bool hasChangedView = plan.ContributingViewIds.Any(viewId => viewDecisions.TryGetValue(viewId, out ViewChangeDecision? decision) && decision.HasChanges);
+            bool canReuse = session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
+                            executionSummary.FullRewriteReason == null &&
+                            !hasChangedView &&
+                            CanReuseArtifact(baseline.Snapshot, plan);
+            if (!canReuse &&
+                session.IncrementalExportMode == IncrementalExportMode.ChangedViewsOnly &&
+                executionSummary.FullRewriteReason == null &&
+                !hasChangedView)
+            {
+                missingBaselineArtifactCount++;
+            }
+        }
+
+        executionSummary.MissingBaselineArtifactCount = missingBaselineArtifactCount;
+        return executionSummary;
     }
 
     private static ExportLayer PrepareLayerForWrite(

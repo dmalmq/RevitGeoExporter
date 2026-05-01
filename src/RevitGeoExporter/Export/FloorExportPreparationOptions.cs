@@ -34,6 +34,10 @@ public sealed class FloorExportPreparationOptions
 
     public LinkExportOptions LinkExportOptions { get; set; } = new();
 
+    public bool SimplifyStairUnits { get; set; }
+
+    public bool SimplifyEscalatorUnits { get; set; }
+
     public SchemaProfile ActiveSchemaProfile { get; set; } = SchemaProfile.CreateCoreProfile();
 
     public ValidationPolicyProfile ActiveValidationPolicyProfile { get; set; } = ValidationPolicyProfile.CreateRecommendedProfile();

@@ -55,6 +55,8 @@ public sealed class ExportDialog : WinFormsForm
     private readonly CheckBox _generateQgisArtifactsCheckBox = new();
     private readonly CheckBox _openOutputFolderCheckBox = new();
     private readonly CheckBox _launchQgisCheckBox = new();
+    private readonly CheckBox _simplifyStairUnitsCheckBox = new();
+    private readonly CheckBox _simplifyEscalatorUnitsCheckBox = new();
     private readonly CheckBox _repairEnabledCheckBox = new();
     private readonly TextBox _minPolygonAreaTextBox = new();
     private readonly TextBox _minOpeningLengthTextBox = new();
@@ -586,6 +588,8 @@ public sealed class ExportDialog : WinFormsForm
         _generateQgisArtifactsCheckBox.AutoSize = true;
         _openOutputFolderCheckBox.AutoSize = true;
         _launchQgisCheckBox.AutoSize = true;
+        _simplifyStairUnitsCheckBox.AutoSize = true;
+        _simplifyEscalatorUnitsCheckBox.AutoSize = true;
 
         AddRepairRow(panel, 0, "Incremental mode", _incrementalModeComboBox);
         AddRepairRow(panel, 1, "Packaging mode", _packagingModeComboBox);
@@ -593,6 +597,8 @@ public sealed class ExportDialog : WinFormsForm
         AddRepairRow(panel, 3, "Generate QGIS artifacts", _generateQgisArtifactsCheckBox);
         AddRepairRow(panel, 4, "Open output folder", _openOutputFolderCheckBox);
         AddRepairRow(panel, 5, "Launch QGIS", _launchQgisCheckBox);
+        AddRepairRow(panel, 6, "Simplify stair units", _simplifyStairUnitsCheckBox);
+        AddRepairRow(panel, 7, "Simplify escalator units", _simplifyEscalatorUnitsCheckBox);
         return panel;
     }
 
@@ -799,6 +805,8 @@ public sealed class ExportDialog : WinFormsForm
         _generateQgisArtifactsCheckBox.Checked = settings.GenerateQgisArtifacts;
         _openOutputFolderCheckBox.Checked = settings.PostExportActions?.OpenOutputFolder == true;
         _launchQgisCheckBox.Checked = settings.PostExportActions?.LaunchQgis == true;
+        _simplifyStairUnitsCheckBox.Checked = settings.SimplifyStairUnits;
+        _simplifyEscalatorUnitsCheckBox.Checked = settings.SimplifyEscalatorUnits;
         UpdatePackagingState();
         LoadGeometryRepairOptions(settings.GeometryRepairOptions);
         PopulateLinkList();
@@ -840,6 +848,8 @@ public sealed class ExportDialog : WinFormsForm
         _generateQgisArtifactsCheckBox.Text = UiLanguageText.Select(_language, "Generate QGIS handoff files", "QGIS 引き継ぎファイルを生成");
         _openOutputFolderCheckBox.Text = UiLanguageText.Select(_language, "Open output folder after export", "出力後にフォルダーを開く");
         _launchQgisCheckBox.Text = UiLanguageText.Select(_language, "Launch QGIS after export", "出力後に QGIS を起動");
+        _simplifyStairUnitsCheckBox.Text = UiLanguageText.Select(_language, "Simplify stair units (show only floor entries)", "階段ユニットを簡略化（階の出入口のみ表示）");
+        _simplifyEscalatorUnitsCheckBox.Text = UiLanguageText.Select(_language, "Simplify escalator units (show level-appropriate half)", "エスカレーターユニットを簡略化（階に応じた半分を表示）");
         _unitSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Geometry Source", "ユニット形状の取得元");
         _unitAttributeSourceInlineLabel.Text = UiLanguageText.Select(_language, "Unit Attribute Source", "ユニット属性の取得元");
         _roomParameterInlineLabel.Text = UiLanguageText.Get(_language, "ExportDialog.RoomCategoryParameter", "Room Category Parameter");
@@ -958,6 +968,8 @@ public sealed class ExportDialog : WinFormsForm
             _unitGeometrySource,
             _unitAttributeSource,
             _roomCategoryParameterName,
+            _simplifyStairUnitsCheckBox.Checked,
+            _simplifyEscalatorUnitsCheckBox.Checked,
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
             GetActiveValidationPolicyProfile());
@@ -1014,7 +1026,9 @@ public sealed class ExportDialog : WinFormsForm
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
             _previewBasemapSettings.UrlTemplate,
-            _previewBasemapSettings.Attribution));
+            _previewBasemapSettings.Attribution,
+            _simplifyStairUnitsCheckBox.Checked,
+            _simplifyEscalatorUnitsCheckBox.Checked));
     }
     private void CheckAllViews()
     {
@@ -1344,6 +1358,8 @@ public sealed class ExportDialog : WinFormsForm
             ActiveValidationPolicyProfileName = _activeValidationPolicyProfileName,
             PreviewBasemapUrlTemplate = _previewBasemapSettings.UrlTemplate,
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
+            SimplifyStairUnits = _simplifyStairUnitsCheckBox.Checked,
+            SimplifyEscalatorUnits = _simplifyEscalatorUnitsCheckBox.Checked,
         };
     }
 

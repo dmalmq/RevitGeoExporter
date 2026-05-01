@@ -34,6 +34,8 @@ public sealed class ExportDiagnosticsReport
 
     public long DurationMilliseconds { get; set; }
 
+    public List<ExportDiagnosticsPhaseTiming> PhaseTimings { get; set; } = new();
+
     public List<ExportDiagnosticsViewReport> Views { get; set; } = new();
 
     public List<ValidationIssue> ValidationIssues { get; set; } = new();

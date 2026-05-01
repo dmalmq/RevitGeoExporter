@@ -38,6 +38,8 @@ public sealed class ExportPreviewService
     private readonly string _roomCategoryParameterName;
     private readonly LinkExportOptions _linkExportOptions;
     private readonly SchemaProfile _activeSchemaProfile;
+    private readonly bool _simplifyStairUnits;
+    private readonly bool _simplifyEscalatorUnits;
 
     public ExportPreviewService(
         Document document,
@@ -47,7 +49,10 @@ public sealed class ExportPreviewService
         string roomCategoryParameterName = "Name",
         GeometryRepairOptions? geometryRepairOptions = null,
         LinkExportOptions? linkExportOptions = null,
-        SchemaProfile? activeSchemaProfile = null)
+        SchemaProfile? activeSchemaProfile = null,
+        bool simplifyStairUnits = false,
+        bool simplifyEscalatorUnits = false)
+
     {
         if (document is null)
         {
@@ -88,6 +93,8 @@ public sealed class ExportPreviewService
         _geometryRepairOptions = (geometryRepairOptions ?? new GeometryRepairOptions()).GetEffectiveOptions();
         _linkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         _activeSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
+        _simplifyStairUnits = simplifyStairUnits;
+        _simplifyEscalatorUnits = simplifyEscalatorUnits;
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -173,6 +180,8 @@ public sealed class ExportPreviewService
                 RoomCategoryParameterName = _roomCategoryParameterName,
                 LinkExportOptions = _linkExportOptions,
                 ActiveSchemaProfile = _activeSchemaProfile,
+                SimplifyStairUnits = _simplifyStairUnits,
+                SimplifyEscalatorUnits = _simplifyEscalatorUnits,
             });
         List<PreviewFeatureData> features = new();
 

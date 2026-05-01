@@ -44,7 +44,10 @@ public sealed class DetailExtractor
         _sourceDocumentKey = DocumentProjectKeyBuilder.Create(_document);
         _sourceDocumentName = DocumentProjectKeyBuilder.CreateDisplayName(_document);
         _schemaProfile = schemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
-        _stairVisibilityResolver = new StairVisibilityResolver(_document, ProjectPoint);
+        _stairVisibilityResolver = new StairVisibilityResolver(
+            _document,
+            ProjectPoint,
+            point => _sourceDescriptor.TransformToHost.OfPoint(point));
     }
 
     internal IReadOnlyList<ExportLineString> ExtractForLevel(

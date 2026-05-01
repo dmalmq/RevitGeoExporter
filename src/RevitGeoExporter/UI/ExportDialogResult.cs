@@ -31,6 +31,8 @@ public sealed class ExportDialogResult
         UnitGeometrySource unitGeometrySource,
         UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
+        bool simplifyStairUnits = false,
+        bool simplifyEscalatorUnits = false,
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
         ValidationPolicyProfile? activeValidationPolicyProfile = null)
@@ -55,6 +57,8 @@ public sealed class ExportDialogResult
             unitGeometrySource,
             unitAttributeSource,
             roomCategoryParameterName,
+            simplifyStairUnits,
+            simplifyEscalatorUnits,
             linkExportOptions,
             activeSchemaProfile,
             activeValidationPolicyProfile)
@@ -82,6 +86,8 @@ public sealed class ExportDialogResult
         UnitGeometrySource unitGeometrySource,
         UnitAttributeSource unitAttributeSource,
         string roomCategoryParameterName,
+        bool simplifyStairUnits = false,
+        bool simplifyEscalatorUnits = false,
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
         ValidationPolicyProfile? activeValidationPolicyProfile = null)
@@ -120,6 +126,8 @@ public sealed class ExportDialogResult
         UnitAttributeSource = UnitExportSettingsResolver.ResolveAttributeSource(unitSource, UnitGeometrySource, unitAttributeSource);
         UnitSource = UnitExportSettingsResolver.ToLegacy(UnitGeometrySource, UnitAttributeSource);
         RoomCategoryParameterName = normalizedRoomCategoryParameterName;
+        SimplifyStairUnits = simplifyStairUnits;
+        SimplifyEscalatorUnits = simplifyEscalatorUnits;
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         ActiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
@@ -166,6 +174,10 @@ public sealed class ExportDialogResult
     public string RoomCategoryParameterName { get; }
 
     public LinkExportOptions LinkExportOptions { get; }
+
+    public bool SimplifyStairUnits { get; }
+
+    public bool SimplifyEscalatorUnits { get; }
 
     public SchemaProfile ActiveSchemaProfile { get; }
 

@@ -35,11 +35,16 @@ internal sealed class StairVisibilityResolver
 
     private readonly Document _document;
     private readonly Func<XYZ, Point2D> _projectPoint;
+    private readonly Func<XYZ, XYZ> _transformPointToHost;
 
-    public StairVisibilityResolver(Document document, Func<XYZ, Point2D> projectPoint)
+    public StairVisibilityResolver(
+        Document document,
+        Func<XYZ, Point2D> projectPoint,
+        Func<XYZ, XYZ>? transformPointToHost = null)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         _projectPoint = projectPoint ?? throw new ArgumentNullException(nameof(projectPoint));
+        _transformPointToHost = transformPointToHost ?? (point => point);
     }
 
     public bool TryExtractVisibleStairPolygons(
@@ -491,7 +496,6 @@ internal sealed class StairVisibilityResolver
         double cutElevationFeet = 0d;
         bool hasCutElevation =
             view != null &&
-            ReferenceEquals(view.Document, _document) &&
             TryGetViewCutElevationFeet(view, out cutElevationFeet);
         double stairBaseElevationFeet = GetStairBaseElevationFeet(stairs);
 
@@ -550,8 +554,11 @@ internal sealed class StairVisibilityResolver
                 if (TryCreatePolygonFromCurveLoop(landingBoundary, out Polygon2D landingPolygon))
                 {
                     if (hasCutElevation &&
-                        view != null &&
-                        !IsElementVisibleAtOrBelowCutPlane(landing, view, cutElevationFeet))
+                        !IsLandingVisibleAtOrBelowCutPlane(
+                            landing,
+                            view,
+                            cutElevationFeet,
+                            stairBaseElevationFeet))
                     {
                         continue;
                     }
@@ -596,6 +603,8 @@ internal sealed class StairVisibilityResolver
 
         double runBaseFeet = stairBaseElevationFeet + run.BaseElevation;
         double runTopFeet = stairBaseElevationFeet + run.TopElevation;
+        runBaseFeet = ToHostElevationFeet(runBaseFeet);
+        runTopFeet = ToHostElevationFeet(runTopFeet);
         double runRiseFeet = runTopFeet - runBaseFeet;
         if (runRiseFeet <= 1e-6d)
         {
@@ -748,7 +757,7 @@ internal sealed class StairVisibilityResolver
             PlanViewRange viewRange = view.GetViewRange();
             ElementId levelId = viewRange.GetLevelId(PlanViewPlane.CutPlane);
             double offset = viewRange.GetOffset(PlanViewPlane.CutPlane);
-            Level? cutLevel = _document.GetElement(levelId) as Level ?? view.GenLevel;
+            Level? cutLevel = view.Document.GetElement(levelId) as Level ?? view.GenLevel;
             if (cutLevel == null)
             {
                 return false;
@@ -763,15 +772,140 @@ internal sealed class StairVisibilityResolver
         }
     }
 
-    private static bool IsElementVisibleAtOrBelowCutPlane(Element element, View view, double cutElevationFeet)
+    private double ToHostElevationFeet(double sourceElevationFeet)
     {
-        BoundingBoxXYZ? box = element.get_BoundingBox(view) ?? element.get_BoundingBox(null);
+        return _transformPointToHost(new XYZ(0d, 0d, sourceElevationFeet)).Z;
+    }
+
+    private bool IsLandingVisibleAtOrBelowCutPlane(
+        StairsLanding landing,
+        ViewPlan? view,
+        double cutElevationFeet,
+        double stairBaseElevationFeet)
+    {
+        if (TryGetLandingRelativeBaseElevationFeet(landing, out double landingBaseElevationFeet))
+        {
+            double landingBaseHostFeet = ToHostElevationFeet(stairBaseElevationFeet + landingBaseElevationFeet);
+            return landingBaseHostFeet <= cutElevationFeet + StairCutPlaneToleranceFeet;
+        }
+
+        return view == null || IsElementVisibleAtOrBelowCutPlane(landing, view, cutElevationFeet);
+    }
+
+    private static bool TryGetLandingRelativeBaseElevationFeet(
+        StairsLanding landing,
+        out double baseElevationFeet)
+    {
+        baseElevationFeet = 0d;
+        try
+        {
+            Parameter? baseElevationParam = landing.get_Parameter(BuiltInParameter.STAIRS_LANDING_BASE_ELEVATION);
+            if (baseElevationParam == null || !baseElevationParam.HasValue)
+            {
+                return false;
+            }
+
+            baseElevationFeet = baseElevationParam.AsDouble();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private bool TryGetElementHostZBounds(
+        Element element,
+        View? view,
+        out double minZ,
+        out double maxZ)
+    {
+        minZ = double.MaxValue;
+        maxZ = double.MinValue;
+
+        BoundingBoxXYZ? box = GetElementBoundingBox(element, view);
         if (box == null)
+        {
+            minZ = 0d;
+            maxZ = 0d;
+            return false;
+        }
+
+        Transform? boxTransform = box.Transform;
+        foreach (XYZ corner in GetBoundingBoxCorners(box))
+        {
+            XYZ sourcePoint = boxTransform == null ? corner : boxTransform.OfPoint(corner);
+            XYZ hostPoint = _transformPointToHost(sourcePoint);
+            if (hostPoint.Z < minZ)
+            {
+                minZ = hostPoint.Z;
+            }
+
+            if (hostPoint.Z > maxZ)
+            {
+                maxZ = hostPoint.Z;
+            }
+        }
+
+        return minZ <= maxZ;
+    }
+
+    private static BoundingBoxXYZ? GetElementBoundingBox(Element element, View? view)
+    {
+        if (element == null)
+        {
+            return null;
+        }
+
+        if (view != null && ReferenceEquals(view.Document, element.Document))
+        {
+            try
+            {
+                BoundingBoxXYZ? viewBox = element.get_BoundingBox(view);
+                if (viewBox != null)
+                {
+                    return viewBox;
+                }
+            }
+            catch (Exception)
+            {
+                // Fall through to the model-space bounding box.
+            }
+        }
+
+        try
+        {
+            return element.get_BoundingBox(null);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static List<XYZ> GetBoundingBoxCorners(BoundingBoxXYZ box)
+    {
+        return new List<XYZ>
+        {
+            new(box.Min.X, box.Min.Y, box.Min.Z),
+            new(box.Max.X, box.Min.Y, box.Min.Z),
+            new(box.Max.X, box.Max.Y, box.Min.Z),
+            new(box.Min.X, box.Max.Y, box.Min.Z),
+            new(box.Min.X, box.Min.Y, box.Max.Z),
+            new(box.Max.X, box.Min.Y, box.Max.Z),
+            new(box.Max.X, box.Max.Y, box.Max.Z),
+            new(box.Min.X, box.Max.Y, box.Max.Z),
+        };
+    }
+
+    private bool IsElementVisibleAtOrBelowCutPlane(Element element, View view, double cutElevationFeet)
+    {
+        if (!TryGetElementHostZBounds(element, view, out double minZ, out _))
         {
             return true;
         }
 
-        return box.Min.Z <= cutElevationFeet + StairCutPlaneToleranceFeet;
+        return minZ <= cutElevationFeet + StairCutPlaneToleranceFeet;
     }
 
     private bool TryExtractElementPolygonsInView(Element element, View view, out List<Polygon2D> polygons)

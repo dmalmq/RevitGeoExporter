@@ -4,6 +4,7 @@ using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Index.Strtree;
 using NetTopologySuite.Operation.Union;
 using NetTopologySuite.Precision;
 using RevitGeoExporter.Core.Assignments;
@@ -130,7 +131,8 @@ public sealed class FloorExportDataPreparer
             roomCategoryResolver,
             familyCategoryOverrides,
             hostSourceDescriptor,
-            activeSchemaProfile);
+            activeSchemaProfile,
+            simplifyEscalatorUnits: options?.SimplifyEscalatorUnits == true);
         DetailExtractor detailExtractor = new(_document, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
         OpeningExtractor openingExtractor = new(_document, metadataProvider, _zoneCatalog, geometryRepairOptions, hostSourceDescriptor, activeSchemaProfile);
         LevelBoundaryBuilder levelBoundaryBuilder = new();
@@ -174,14 +176,16 @@ public sealed class FloorExportDataPreparer
                     context.Stairs,
                     unitExtractor,
                     hostVerticalCirculationContext,
-                    viewWarnings);
+                    viewWarnings,
+                    options?.SimplifyStairUnits == true);
                 Dictionary<long, VerticalCirculationVisibilityResult> hostEscalatorVisibilityResults = BuildHostEscalatorVisibilityResults(
                     levelId,
                     context.View,
                     context.FamilyUnits,
                     unitExtractor,
                     hostVerticalCirculationContext,
-                    viewWarnings);
+                    viewWarnings,
+                    options?.SimplifyEscalatorUnits == true);
                 hostVerticalCirculationResults = MergeVerticalCirculationResults(
                     hostStairVisibilityResults,
                     hostEscalatorVisibilityResults);
@@ -251,7 +255,9 @@ public sealed class FloorExportDataPreparer
                     collectRoomCandidates ? rawRoomUnitLayer : null,
                     RawFloorOnlyDebugMode ? null : supplementalUnitLayer,
                     fixtureLayer,
-                    viewWarnings);
+                    viewWarnings,
+                    options?.SimplifyStairUnits == true,
+                    options?.SimplifyEscalatorUnits == true);
 
                 List<ExportPolygon> rawUnitFeatures = UnitFeatureComposer.Compose(
                         rawFloorUnitLayer.Features.OfType<ExportPolygon>().ToList(),
@@ -570,7 +576,8 @@ public sealed class FloorExportDataPreparer
         IReadOnlyList<Stairs> stairs,
         UnitExtractor extractor,
         HostStairOcclusionContext occlusionContext,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool simplifyStairUnits)
     {
         Dictionary<long, VerticalCirculationVisibilityResult> results = new();
         foreach (Stairs stair in stairs)
@@ -592,6 +599,41 @@ public sealed class FloorExportDataPreparer
                 visibility,
                 occlusionContext.OcclusionMask,
                 warnings);
+
+            if (simplifyStairUnits)
+            {
+                List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
+                    stair,
+                    view.GenLevel,
+                    finalVisibility.VisiblePolygons,
+                    warnings);
+                if (simplified == null || simplified.Count == 0)
+                {
+                    continue;
+                }
+
+                Geometry simplifiedGeometry = UnionPolygonsToGeometry(simplified, warnings);
+                if (simplifiedGeometry == null || simplifiedGeometry.IsEmpty)
+                {
+                    warnings.Add($"Stairs {stair.Id.Value} simplified geometry could not be unioned; skipping.");
+                    continue;
+                }
+
+                finalVisibility = new VerticalCirculationVisibilityResult(
+                    simplified,
+                    finalVisibility.SourceKind,
+                    simplifiedGeometry.Area,
+                    finalVisibility.EvidenceCount,
+                    finalVisibility.CoveredEvidenceCount,
+                    finalVisibility.EvidenceCoverageRatio,
+                    finalVisibility.CandidateCount,
+                    finalVisibility.MaskApplied,
+                    finalVisibility.Warning,
+                    simplifiedGeometry,
+                    finalVisibility.Evidence,
+                    finalVisibility.OverCoverageArea);
+            }
+
             if (!extractor.TryCreateStairsUnit(
                     stair,
                     finalVisibility.VisiblePolygons,
@@ -617,7 +659,8 @@ public sealed class FloorExportDataPreparer
         IReadOnlyList<FamilyInstance> familyUnits,
         UnitExtractor extractor,
         HostStairOcclusionContext occlusionContext,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool simplifyEscalatorUnits)
     {
         Dictionary<long, VerticalCirculationVisibilityResult> results = new();
         foreach (FamilyInstance familyUnit in familyUnits)
@@ -629,36 +672,59 @@ public sealed class FloorExportDataPreparer
                 continue;
             }
 
-            VerticalCirculationVisibilityResult? shaftClipped = TryApplyShaftOpeningClip(
-                "Escalator",
-                familyUnit.Id.Value,
-                visibility,
-                occlusionContext.FloorCoverageMask,
-                occlusionContext.OpeningMask,
-                warnings);
-            VerticalCirculationVisibilityResult finalVisibility = shaftClipped ?? ApplyHostVerticalCirculationOcclusionMask(
-                "Escalator",
-                familyUnit.Id.Value,
-                visibility,
-                occlusionContext.OcclusionMask,
-                warnings);
             if (!extractor.TryCreateEscalatorUnit(
                     familyUnit,
-                    finalVisibility.VisiblePolygons,
+                    visibility.VisiblePolygons,
                     levelId,
                     view.Name,
                     warnings,
-                    out ExportPolygon? feature) ||
+                    out ExportPolygon? feature,
+                    view) ||
                 feature == null)
             {
                 continue;
             }
 
-            ExportPolygon attributedFeature = ApplyVerticalCirculationVisibilityAttributes(feature, finalVisibility);
-            results[familyUnit.Id.Value] = finalVisibility.WithExportFeature(attributedFeature);
+            ExportPolygon attributedFeature = ApplyVerticalCirculationVisibilityAttributes(feature, visibility);
+            results[familyUnit.Id.Value] = visibility.WithExportFeature(attributedFeature);
         }
 
         return results;
+    }
+
+    private Dictionary<long, ExportPolygon> BuildEscalatorVisibilityFeatures(
+        string levelId,
+        ViewPlan view,
+        IReadOnlyList<FamilyInstance> familyUnits,
+        UnitExtractor extractor,
+        ICollection<string> warnings,
+        bool simplifyEscalatorUnits,
+        double? linkZOffset = null)
+    {
+        Dictionary<long, ExportPolygon> features = new();
+        foreach (FamilyInstance familyUnit in familyUnits)
+        {
+            if (!extractor.TryResolveFamilyUnitZoneInfo(familyUnit, out _, out ZoneInfo zoneInfo) ||
+                !string.Equals(zoneInfo.Category, "escalator", StringComparison.OrdinalIgnoreCase) ||
+                !extractor.TryResolveEscalatorVisibility(familyUnit, view, warnings, out VerticalCirculationVisibilityResult? visibility) ||
+                !extractor.TryCreateEscalatorUnit(
+                    familyUnit,
+                    visibility.VisiblePolygons,
+                    levelId,
+                    view.Name,
+                    warnings,
+                    out ExportPolygon? feature,
+                    view,
+                    linkZOffset) ||
+                feature == null)
+            {
+                continue;
+            }
+
+            features[familyUnit.Id.Value] = ApplyVerticalCirculationVisibilityAttributes(feature, visibility);
+        }
+
+        return features;
     }
 
     private static Dictionary<long, VerticalCirculationVisibilityResult> MergeVerticalCirculationResults(
@@ -685,15 +751,44 @@ public sealed class FloorExportDataPreparer
         IReadOnlyList<Stairs> stairs,
         UnitExtractor extractor,
         Geometry? stairOcclusionMask,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool simplifyStairUnits)
     {
         Dictionary<long, ExportPolygon> features = new();
         foreach (Stairs stair in stairs)
         {
-            if (!extractor.TryCreateStairsUnit(stair, view, levelId, warnings, out ExportPolygon? feature) ||
-                feature == null)
+            ExportPolygon? feature;
+
+            if (simplifyStairUnits)
             {
-                continue;
+                if (!extractor.TryResolveStairVisibility(stair, view, warnings, out VerticalCirculationVisibilityResult? visibility))
+                {
+                    continue;
+                }
+
+                List<Polygon2D>? simplified = extractor.TrySimplifyStairPolygons(
+                    stair,
+                    view.GenLevel,
+                    visibility.VisiblePolygons,
+                    warnings);
+                if (simplified == null || simplified.Count == 0)
+                {
+                    continue;
+                }
+
+                if (!extractor.TryCreateStairsUnit(stair, simplified, levelId, view.Name, warnings, out feature) ||
+                    feature == null)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!extractor.TryCreateStairsUnit(stair, view, levelId, warnings, out feature) ||
+                    feature == null)
+                {
+                    continue;
+                }
             }
 
             ExportPolygon? finalFeature = ApplyLinkedStairOcclusionMask(stair, feature, stairOcclusionMask, warnings);
@@ -1166,7 +1261,9 @@ public sealed class FloorExportDataPreparer
         ExportLayer? roomUnitLayer,
         ExportLayer? supplementalUnitLayer,
         ExportLayer? fixtureLayer,
-        ICollection<string> warnings)
+        ICollection<string> warnings,
+        bool simplifyStairUnits,
+        bool simplifyEscalatorUnits)
     {
         if (context.LinkedSources.Count == 0)
         {
@@ -1185,7 +1282,8 @@ public sealed class FloorExportDataPreparer
                 roomCategoryResolver,
                 familyCategoryOverrides,
                 sourceDescriptor,
-                activeSchemaProfile);
+                activeSchemaProfile,
+                simplifyEscalatorUnits: simplifyEscalatorUnits);
 
             if (roomUnitLayer != null)
             {
@@ -1221,9 +1319,29 @@ public sealed class FloorExportDataPreparer
                 linkedSource.Stairs,
                 linkedUnitExtractor,
                 linkedFloorCoverageMask,
-                warnings);
-            AddVerticalCirculationUnits(linkedStairVisibilityFeatures.Values, supplementalUnitLayer);
-            AddFamilyUnits(levelId, context.View, linkedSource.FamilyUnits, linkedUnitExtractor, supplementalUnitLayer, fixtureLayer, warnings);
+                warnings,
+                simplifyStairUnits);
+            Dictionary<long, ExportPolygon> linkedEscalatorVisibilityFeatures = BuildEscalatorVisibilityFeatures(
+                levelId,
+                context.View,
+                linkedSource.FamilyUnits,
+                linkedUnitExtractor,
+                warnings,
+                simplifyEscalatorUnits,
+                linkedSource.TransformToHost.Origin.Z);
+            AddVerticalCirculationUnits(
+                linkedStairVisibilityFeatures.Values.Concat(linkedEscalatorVisibilityFeatures.Values),
+                supplementalUnitLayer);
+            HashSet<long> precomputedLinkedEscalatorIds = new(linkedEscalatorVisibilityFeatures.Keys);
+            AddFamilyUnits(
+                levelId,
+                context.View,
+                linkedSource.FamilyUnits,
+                linkedUnitExtractor,
+                supplementalUnitLayer,
+                fixtureLayer,
+                warnings,
+                precomputedLinkedEscalatorIds);
         }
     }
 
@@ -1512,6 +1630,15 @@ public sealed class FloorExportDataPreparer
 
         double halfGap = gapThresholdMeters / 2d;
         List<Geometry> originals = records.Select(r => r.Geometry).ToList();
+        STRtree<int> originalIndex = new();
+        for (int i = 0; i < originals.Count; i++)
+        {
+            Envelope envelope = originals[i].EnvelopeInternal;
+            if (envelope != null && !envelope.IsNull)
+            {
+                originalIndex.Insert(envelope, i);
+            }
+        }
 
         for (int i = 0; i < records.Count; i++)
         {
@@ -1521,7 +1648,13 @@ public sealed class FloorExportDataPreparer
             }
 
             Geometry buffered = records[i].Geometry.Buffer(halfGap);
-            for (int j = 0; j < records.Count; j++)
+            Envelope bufferedEnvelope = buffered.EnvelopeInternal;
+            if (bufferedEnvelope == null || bufferedEnvelope.IsNull)
+            {
+                continue;
+            }
+
+            foreach (int j in originalIndex.Query(bufferedEnvelope))
             {
                 if (j == i)
                 {
@@ -1647,6 +1780,41 @@ public sealed class FloorExportDataPreparer
 
         Polygon created = GeometryFactory.CreatePolygon(shell, holes.ToArray());
         return created.IsValid ? created : created.Buffer(0d);
+    }
+
+    private static Geometry? UnionPolygonsToGeometry(
+        IReadOnlyList<Polygon2D> polygons,
+        ICollection<string> warnings)
+    {
+        if (polygons == null || polygons.Count == 0)
+        {
+            return null;
+        }
+
+        List<Geometry> geoms = new();
+        foreach (Polygon2D polygon in polygons)
+        {
+            Geometry? geom = ToNtsGeometry(polygon);
+            if (geom != null && !geom.IsEmpty)
+            {
+                geoms.Add(geom);
+            }
+        }
+
+        if (geoms.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return geoms.Count == 1 ? geoms[0] : UnaryUnionOp.Union(geoms).Buffer(0d);
+        }
+        catch (TopologyException ex)
+        {
+            warnings.Add($"Polygon union failed: {ex.Message}");
+            return null;
+        }
     }
 
     private static void AddPolygonGeometryParts(ICollection<Geometry> target, Geometry geometry)

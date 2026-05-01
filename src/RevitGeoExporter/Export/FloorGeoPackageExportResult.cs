@@ -9,6 +9,7 @@ public sealed class FloorGeoPackageExportResult
 {
     private readonly List<ExportArtifactResult> _artifacts = new();
     private readonly List<string> _warnings = new();
+    private readonly List<ExportDiagnosticsPhaseTiming> _phaseTimings = new();
 
     public IReadOnlyList<ExportArtifactResult> ArtifactResults => _artifacts;
 
@@ -22,6 +23,8 @@ public sealed class FloorGeoPackageExportResult
         .ToList();
 
     public IReadOnlyList<string> Warnings => _warnings;
+
+    public IReadOnlyList<ExportDiagnosticsPhaseTiming> PhaseTimings => _phaseTimings;
 
     public string? DiagnosticsReportPath { get; private set; }
 
@@ -97,6 +100,20 @@ public sealed class FloorGeoPackageExportResult
     public void SetPendingBaselineSnapshot(ExportBaselineSnapshot? snapshot)
     {
         PendingBaselineSnapshot = snapshot;
+    }
+
+    public void AddPhaseTiming(string phaseName, TimeSpan duration)
+    {
+        if (string.IsNullOrWhiteSpace(phaseName))
+        {
+            return;
+        }
+
+        _phaseTimings.Add(new ExportDiagnosticsPhaseTiming
+        {
+            PhaseName = phaseName.Trim(),
+            DurationMilliseconds = (long)Math.Max(0d, duration.TotalMilliseconds),
+        });
     }
 }
 

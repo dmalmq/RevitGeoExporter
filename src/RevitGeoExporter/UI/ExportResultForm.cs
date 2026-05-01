@@ -142,6 +142,13 @@ public sealed class ExportResultForm : IDisposable
 
         tabs.Items.Add(BuildStringTab(packageLines, T("Package", "Package")));
 
+        if (_result.PhaseTimings.Count > 0)
+        {
+            tabs.Items.Add(BuildStringTab(
+                _result.PhaseTimings.Select(timing => $"{timing.PhaseName}: {timing.DurationMilliseconds} ms"),
+                T("Timing", "Timing")));
+        }
+
         Grid.SetRow(tabs, 1);
         tabs.Margin = new Thickness(0, 10, 0, 0);
         root.Children.Add(tabs);

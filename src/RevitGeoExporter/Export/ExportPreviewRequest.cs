@@ -29,23 +29,24 @@ public sealed class ExportPreviewRequest
         LinkExportOptions? linkExportOptions,
         SchemaProfile? activeSchemaProfile,
         string? previewBasemapUrlTemplate,
-        string? previewBasemapAttribution)
+        string? previewBasemapAttribution,
+        bool simplifyStairUnits,
+        bool simplifyEscalatorUnits = false)
     {
         string normalizedSourceCoordinateSystemId = sourceCoordinateSystemId?.Trim() ?? string.Empty;
         string normalizedSourceCoordinateSystemDefinition = sourceCoordinateSystemDefinition?.Trim() ?? string.Empty;
         string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
-        string normalizedPreviewBasemapUrlTemplate = previewBasemapUrlTemplate?.Trim() ?? string.Empty;
-        string normalizedPreviewBasemapAttribution = previewBasemapAttribution?.Trim() ?? string.Empty;
+        string normalizedPreviewBasemapUrlTemplate = previewBasemapUrlTemplate == null
+            ? PreviewBasemapSettings.DefaultUrlTemplate
+            : previewBasemapUrlTemplate.Trim();
+        string normalizedPreviewBasemapAttribution = previewBasemapAttribution == null
+            ? PreviewBasemapSettings.DefaultAttribution
+            : previewBasemapAttribution.Trim();
         GeometryRepairOptions normalizedGeometryRepairOptions = geometryRepairOptions ?? throw new ArgumentNullException(nameof(geometryRepairOptions));
 
         if (normalizedRoomCategoryParameterName.Length == 0)
         {
             normalizedRoomCategoryParameterName = "Name";
-        }
-
-        if (normalizedPreviewBasemapUrlTemplate.Length == 0)
-        {
-            normalizedPreviewBasemapUrlTemplate = PreviewBasemapSettings.DefaultUrlTemplate;
         }
 
         if (normalizedPreviewBasemapAttribution.Length == 0)
@@ -71,6 +72,8 @@ public sealed class ExportPreviewRequest
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         PreviewBasemapUrlTemplate = normalizedPreviewBasemapUrlTemplate;
         PreviewBasemapAttribution = normalizedPreviewBasemapAttribution;
+        SimplifyStairUnits = simplifyStairUnits;
+        SimplifyEscalatorUnits = simplifyEscalatorUnits;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -108,4 +111,8 @@ public sealed class ExportPreviewRequest
     public string PreviewBasemapUrlTemplate { get; }
 
     public string PreviewBasemapAttribution { get; }
+
+    public bool SimplifyStairUnits { get; }
+
+    public bool SimplifyEscalatorUnits { get; }
 }
