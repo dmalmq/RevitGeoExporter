@@ -35,7 +35,11 @@ public sealed class ExportDialogResult
         bool simplifyEscalatorUnits = false,
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
-        ValidationPolicyProfile? activeValidationPolicyProfile = null)
+        ValidationPolicyProfile? activeValidationPolicyProfile = null,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = 1.2,
+        double sectionBoxBelowFloorMeters = 0.0,
+        bool keep3DTempViewsForDebug = false)
         : this(
             selectedViews,
             outputDirectory,
@@ -61,7 +65,11 @@ public sealed class ExportDialogResult
             simplifyEscalatorUnits,
             linkExportOptions,
             activeSchemaProfile,
-            activeValidationPolicyProfile)
+            activeValidationPolicyProfile,
+            use3DSectionBoxExport,
+            sectionBoxAboveFloorMeters,
+            sectionBoxBelowFloorMeters,
+            keep3DTempViewsForDebug)
     {
     }
 
@@ -90,7 +98,11 @@ public sealed class ExportDialogResult
         bool simplifyEscalatorUnits = false,
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
-        ValidationPolicyProfile? activeValidationPolicyProfile = null)
+        ValidationPolicyProfile? activeValidationPolicyProfile = null,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = 1.2,
+        double sectionBoxBelowFloorMeters = 0.0,
+        bool keep3DTempViewsForDebug = false)
     {
         string? normalizedSelectedProfileName = selectedProfileName?.Trim();
         string normalizedRoomCategoryParameterName = roomCategoryParameterName?.Trim() ?? string.Empty;
@@ -131,6 +143,16 @@ public sealed class ExportDialogResult
         LinkExportOptions = linkExportOptions?.Clone() ?? new LinkExportOptions();
         ActiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         ActiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
+        Use3DSectionBoxExport = use3DSectionBoxExport;
+        SectionBoxAboveFloorMeters =
+            (sectionBoxAboveFloorMeters > 0d && !double.IsNaN(sectionBoxAboveFloorMeters) && !double.IsInfinity(sectionBoxAboveFloorMeters))
+                ? sectionBoxAboveFloorMeters
+                : 1.2;
+        SectionBoxBelowFloorMeters =
+            (!double.IsNaN(sectionBoxBelowFloorMeters) && !double.IsInfinity(sectionBoxBelowFloorMeters))
+                ? sectionBoxBelowFloorMeters
+                : 0.0;
+        Keep3DTempViewsForDebug = keep3DTempViewsForDebug;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -178,6 +200,14 @@ public sealed class ExportDialogResult
     public bool SimplifyStairUnits { get; }
 
     public bool SimplifyEscalatorUnits { get; }
+
+    public bool Use3DSectionBoxExport { get; }
+
+    public double SectionBoxAboveFloorMeters { get; }
+
+    public double SectionBoxBelowFloorMeters { get; }
+
+    public bool Keep3DTempViewsForDebug { get; }
 
     public SchemaProfile ActiveSchemaProfile { get; }
 

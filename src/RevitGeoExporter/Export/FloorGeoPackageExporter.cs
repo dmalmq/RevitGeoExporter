@@ -49,7 +49,11 @@ public sealed class FloorGeoPackageExporter
         SchemaProfile? activeSchemaProfile = null,
         ValidationPolicyProfile? activeValidationPolicyProfile = null,
         bool simplifyStairUnits = false,
-        Action<ExportProgressUpdate>? progressCallback = null)
+        Action<ExportProgressUpdate>? progressCallback = null,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
     {
         PreparedExportSession session = PrepareExport(
             outputDirectory,
@@ -72,7 +76,11 @@ public sealed class FloorGeoPackageExporter
             linkExportOptions,
             activeSchemaProfile,
             activeValidationPolicyProfile,
-            simplifyStairUnits);
+            simplifyStairUnits,
+            use3DSectionBoxExport: use3DSectionBoxExport,
+            sectionBoxAboveFloorMeters: sectionBoxAboveFloorMeters,
+            sectionBoxBelowFloorMeters: sectionBoxBelowFloorMeters,
+            keep3DTempViewsForDebug: keep3DTempViewsForDebug);
         return WritePreparedExport(session, progressCallback);
     }
 
@@ -98,7 +106,11 @@ public sealed class FloorGeoPackageExporter
         SchemaProfile? activeSchemaProfile = null,
         ValidationPolicyProfile? activeValidationPolicyProfile = null,
         bool simplifyStairUnits = false,
-        bool simplifyEscalatorUnits = false)
+        bool simplifyEscalatorUnits = false,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
@@ -154,12 +166,17 @@ public sealed class FloorGeoPackageExporter
         SchemaProfile effectiveSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         ValidationPolicyProfile effectiveValidationPolicyProfile = activeValidationPolicyProfile?.Clone() ?? ValidationPolicyProfile.CreateRecommendedProfile();
 
+        using Temp3DViewScope? threeDViewScope = use3DSectionBoxExport
+            ? new Temp3DViewScope(_document, exportViews, sectionBoxAboveFloorMeters, sectionBoxBelowFloorMeters, keep3DTempViewsForDebug)
+            : null;
+
         IReadOnlyList<ViewExportContext> contexts = contextProvider.BuildContexts(
             exportViews,
             zoneCatalog,
             familyOverrideLoad.Value,
             acceptedOpeningLoad.Value,
-            effectiveLinkExportOptions);
+            effectiveLinkExportOptions,
+            threeDViewScope);
         EnsureSharedParameters(parameterManager, setupWarnings);
         EnsureStableIds(parameterManager, contexts, setupWarnings);
 

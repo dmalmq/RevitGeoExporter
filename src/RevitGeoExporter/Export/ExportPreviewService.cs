@@ -17,7 +17,10 @@ public sealed class ExportPreviewService
     private const string UnitStrokeColorHex = "4A5568";
     private const string OpeningStrokeColorHex = "C45100";
 
+    private readonly Document _document;
+    private readonly ZoneCatalog _zoneCatalog;
     private readonly FloorExportDataPreparer _preparer;
+    private readonly ViewExportContextProvider _contextProvider;
     private readonly PreviewExportMetadataProvider _metadataProvider;
     private readonly PreviewPaletteResolver _paletteResolver;
     private readonly FloorCategoryOverrideStore _floorCategoryOverrideStore;
@@ -40,6 +43,10 @@ public sealed class ExportPreviewService
     private readonly SchemaProfile _activeSchemaProfile;
     private readonly bool _simplifyStairUnits;
     private readonly bool _simplifyEscalatorUnits;
+    private readonly bool _use3DSectionBoxExport;
+    private readonly double _sectionBoxAboveFloorMeters;
+    private readonly double _sectionBoxBelowFloorMeters;
+    private readonly bool _keep3DTempViewsForDebug;
 
     public ExportPreviewService(
         Document document,
@@ -51,7 +58,11 @@ public sealed class ExportPreviewService
         LinkExportOptions? linkExportOptions = null,
         SchemaProfile? activeSchemaProfile = null,
         bool simplifyStairUnits = false,
-        bool simplifyEscalatorUnits = false)
+        bool simplifyEscalatorUnits = false,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
 
     {
         if (document is null)
@@ -59,7 +70,9 @@ public sealed class ExportPreviewService
             throw new ArgumentNullException(nameof(document));
         }
 
+        _document = document;
         ZoneCatalog zoneCatalog = ZoneCatalog.CreateDefault();
+        _zoneCatalog = zoneCatalog;
         _floorCategoryOverrideStore = new FloorCategoryOverrideStore();
         _roomCategoryOverrideStore = new RoomCategoryOverrideStore();
         _familyCategoryOverrideStore = new FamilyCategoryOverrideStore();
@@ -87,6 +100,7 @@ public sealed class ExportPreviewService
             .Concat(acceptedOpeningLoad.Warnings)
             .ToList();
         _preparer = new FloorExportDataPreparer(document, zoneCatalog);
+        _contextProvider = new ViewExportContextProvider(document);
         _metadataProvider = new PreviewExportMetadataProvider();
         _paletteResolver = new PreviewPaletteResolver();
         _supportedCategories = zoneCatalog.GetKnownCategories(includeUnspecified: true);
@@ -95,6 +109,16 @@ public sealed class ExportPreviewService
         _activeSchemaProfile = activeSchemaProfile?.Clone() ?? SchemaProfile.CreateCoreProfile();
         _simplifyStairUnits = simplifyStairUnits;
         _simplifyEscalatorUnits = simplifyEscalatorUnits;
+        _use3DSectionBoxExport = use3DSectionBoxExport;
+        _sectionBoxAboveFloorMeters =
+            (sectionBoxAboveFloorMeters > 0d && !double.IsNaN(sectionBoxAboveFloorMeters) && !double.IsInfinity(sectionBoxAboveFloorMeters))
+                ? sectionBoxAboveFloorMeters
+                : Temp3DViewScope.DefaultAboveFloorMeters;
+        _sectionBoxBelowFloorMeters =
+            (!double.IsNaN(sectionBoxBelowFloorMeters) && !double.IsInfinity(sectionBoxBelowFloorMeters))
+                ? sectionBoxBelowFloorMeters
+                : Temp3DViewScope.DefaultBelowFloorMeters;
+        _keep3DTempViewsForDebug = keep3DTempViewsForDebug;
     }
 
     public IReadOnlyList<string> GetSupportedFloorCategories()
@@ -162,27 +186,67 @@ public sealed class ExportPreviewService
             throw new ArgumentException("Preview requires at least one feature type.", nameof(featureTypes));
         }
 
-        PreparedViewExportData prepared = _preparer.PrepareView(
-            view,
-            previewFeatureTypes,
-            _metadataProvider,
-            new FloorExportPreparationOptions
+        Temp3DViewScope? threeDViewScope = null;
+        string? threeDScopeError = null;
+        if (_use3DSectionBoxExport)
+        {
+            try
             {
-                FloorCategoryOverrides = _floorAssignmentSession.GetEffectiveOverrides(),
-                RoomCategoryOverrides = _roomAssignmentSession.GetEffectiveOverrides(),
-                FamilyCategoryOverrides = _familyCategoryOverrides,
-                AcceptedOpeningFamilies = _acceptedOpeningFamilies,
-                InitialWarnings = _loadWarnings,
-                GeometryRepairOptions = _geometryRepairOptions,
-                UnitSource = _unitSource,
-                UnitGeometrySource = _unitGeometrySource,
-                UnitAttributeSource = _unitAttributeSource,
-                RoomCategoryParameterName = _roomCategoryParameterName,
-                LinkExportOptions = _linkExportOptions,
-                ActiveSchemaProfile = _activeSchemaProfile,
-                SimplifyStairUnits = _simplifyStairUnits,
-                SimplifyEscalatorUnits = _simplifyEscalatorUnits,
-            });
+                threeDViewScope = new Temp3DViewScope(_document, new[] { view }, _sectionBoxAboveFloorMeters, _sectionBoxBelowFloorMeters, _keep3DTempViewsForDebug);
+            }
+            catch (Exception ex)
+            {
+                threeDScopeError = $"{ex.GetType().Name}: {ex.Message}";
+            }
+        }
+
+        try
+        {
+            IReadOnlyList<ViewExportContext>? prebuiltContexts = threeDViewScope != null
+                ? _contextProvider.BuildContexts(
+                    new[] { view },
+                    _zoneCatalog,
+                    _familyCategoryOverrides,
+                    _acceptedOpeningFamilies,
+                    _linkExportOptions,
+                    threeDViewScope)
+                : null;
+
+            PreparedViewExportData prepared = _preparer.PrepareView(
+                view,
+                previewFeatureTypes,
+                _metadataProvider,
+                new FloorExportPreparationOptions
+                {
+                    FloorCategoryOverrides = _floorAssignmentSession.GetEffectiveOverrides(),
+                    RoomCategoryOverrides = _roomAssignmentSession.GetEffectiveOverrides(),
+                    FamilyCategoryOverrides = _familyCategoryOverrides,
+                    AcceptedOpeningFamilies = _acceptedOpeningFamilies,
+                    InitialWarnings = _loadWarnings,
+                    GeometryRepairOptions = _geometryRepairOptions,
+                    UnitSource = _unitSource,
+                    UnitGeometrySource = _unitGeometrySource,
+                    UnitAttributeSource = _unitAttributeSource,
+                    RoomCategoryParameterName = _roomCategoryParameterName,
+                    LinkExportOptions = _linkExportOptions,
+                    ActiveSchemaProfile = _activeSchemaProfile,
+                    SimplifyStairUnits = _simplifyStairUnits,
+                    SimplifyEscalatorUnits = _simplifyEscalatorUnits,
+                    ViewContexts = prebuiltContexts,
+                });
+            return BuildPreviewViewData(prepared, threeDViewScope, threeDScopeError);
+        }
+        finally
+        {
+            threeDViewScope?.Dispose();
+        }
+    }
+
+    private PreviewViewData BuildPreviewViewData(
+        PreparedViewExportData prepared,
+        Temp3DViewScope? threeDViewScope,
+        string? threeDScopeError)
+    {
         List<PreviewFeatureData> features = new();
 
         if (prepared.UnitLayer != null)
@@ -329,13 +393,51 @@ public sealed class ExportPreviewService
             .Distinct(StringComparer.Ordinal)
             .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        List<string> combinedWarnings = new();
+        combinedWarnings.Add(string.Format(
+            CultureInfo.InvariantCulture,
+            "[3D] _use3DSectionBoxExport={0}, _sectionBoxAboveFloorMeters={1:0.##}",
+            _use3DSectionBoxExport,
+            _sectionBoxAboveFloorMeters));
+        if (threeDScopeError != null)
+        {
+            combinedWarnings.Add($"[3D] Temp3DViewScope construction failed: {threeDScopeError}");
+        }
+        else if (threeDViewScope != null)
+        {
+            combinedWarnings.Add(string.Format(
+                CultureInfo.InvariantCulture,
+                "[3D] Temp3DViewScope created {0} view(s)",
+                threeDViewScope.CreatedViewCount));
+            foreach (Temp3DViewScope.SectionBoxDiagnostic d in threeDViewScope.Diagnostics)
+            {
+                string floorZ = d.FloorTopZFeet.HasValue
+                    ? d.FloorTopZFeet.Value.ToString("0.0", CultureInfo.InvariantCulture)
+                    : "n/a";
+                combinedWarnings.Add(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[3D] view='{0}' xy={1} rot={2:0.#}deg z={3} X=[{4:0.0},{5:0.0}]ft Y=[{6:0.0},{7:0.0}]ft Z=[{8:0.0},{9:0.0}]ft (level.Elev={10:0.0}ft, level.ProjElev={11:0.0}ft, floor_top={12}ft)",
+                    d.PlanViewName,
+                    d.Source,
+                    d.RotationDegrees,
+                    d.ZSource,
+                    d.MinXFeet, d.MaxXFeet,
+                    d.MinYFeet, d.MaxYFeet,
+                    d.ZMinFeet, d.ZMaxFeet,
+                    d.LevelElevationFeet,
+                    d.LevelProjectElevationFeet,
+                    floorZ));
+            }
+        }
+        combinedWarnings.AddRange(prepared.Warnings);
+
         return new PreviewViewData(
             prepared.View.Id.Value,
             prepared.View.Name,
             prepared.Level.Name,
             features,
             unassignedFloors,
-            prepared.Warnings,
+            combinedWarnings,
             sourceLabels,
             bounds,
             _unitSource,

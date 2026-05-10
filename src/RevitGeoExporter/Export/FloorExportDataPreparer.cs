@@ -140,6 +140,8 @@ public sealed class FloorExportDataPreparer
         List<PreparedViewExportData> preparedViews = new(contexts.Count);
         foreach (ViewExportContext context in contexts)
         {
+            unitExtractor.SetCurrentGeometryView(context.GeometryView);
+            detailExtractor.SetCurrentGeometryView(context.GeometryView);
             List<string> viewWarnings = new();
             GeometryRepairResult geometryRepair = new();
             ExportLevelMetadata levelMetadata = metadataProvider.GetLevelMetadata(context.Level, viewWarnings);

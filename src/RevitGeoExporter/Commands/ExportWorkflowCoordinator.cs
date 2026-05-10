@@ -84,7 +84,11 @@ internal sealed class ExportWorkflowCoordinator
             previewRequest.LinkExportOptions,
             previewRequest.ActiveSchemaProfile,
             previewRequest.SimplifyStairUnits,
-            previewRequest.SimplifyEscalatorUnits);
+            previewRequest.SimplifyEscalatorUnits,
+            previewRequest.Use3DSectionBoxExport,
+            previewRequest.SectionBoxAboveFloorMeters,
+            previewRequest.SectionBoxBelowFloorMeters,
+            previewRequest.Keep3DTempViewsForDebug);
 
         if (_useWpfPreviewWindow)
         {
@@ -146,7 +150,11 @@ internal sealed class ExportWorkflowCoordinator
                     request.ActiveSchemaProfile,
                     request.ActiveValidationPolicyProfile,
                     request.SimplifyStairUnits,
-                    request.SimplifyEscalatorUnits);
+                    request.SimplifyEscalatorUnits,
+                    request.Use3DSectionBoxExport,
+                    request.SectionBoxAboveFloorMeters,
+                    request.SectionBoxBelowFloorMeters,
+                    request.Keep3DTempViewsForDebug);
                 session.OutputFormat = request.OutputFormat;
 
                 ExportValidationRequest validationRequest = snapshotBuilder.Build(session);
@@ -414,7 +422,11 @@ internal sealed class ExportWorkflowCoordinator
                 .First(profileItem => string.Equals(
                     profileItem.Name,
                     ValidationPolicyProfile.ResolveActiveName(settings.ValidationPolicyProfiles, settings.ActiveValidationPolicyProfileName),
-                    StringComparison.OrdinalIgnoreCase)))
+                    StringComparison.OrdinalIgnoreCase)),
+            settings.Use3DSectionBoxExport,
+            settings.SectionBoxAboveFloorMeters,
+            settings.SectionBoxBelowFloorMeters,
+            settings.Keep3DTempViewsForDebug)
         {
             OutputFormat = settings.OutputFormat,
         };
@@ -452,7 +464,11 @@ internal sealed class ExportWorkflowCoordinator
                 request.ActiveSchemaProfile,
                 request.ActiveValidationPolicyProfile,
                 request.SimplifyStairUnits,
-                request.SimplifyEscalatorUnits);
+                request.SimplifyEscalatorUnits,
+                request.Use3DSectionBoxExport,
+                request.SectionBoxAboveFloorMeters,
+                request.SectionBoxBelowFloorMeters,
+                request.Keep3DTempViewsForDebug);
             session.OutputFormat = request.OutputFormat;
 
             ExportValidationResult validationResult = new ExportValidationService()

@@ -18,7 +18,8 @@ public sealed class ViewExportContext
         IReadOnlyList<FamilyInstance> openings,
         IReadOnlyList<FamilyInstance> unsupportedOpenings,
         IReadOnlyList<CurveElement> detailCurves,
-        IReadOnlyList<LinkedViewSourceContext>? linkedSources = null)
+        IReadOnlyList<LinkedViewSourceContext>? linkedSources = null,
+        View3D? geometryView = null)
     {
         View = view ?? throw new ArgumentNullException(nameof(view));
         Level = level ?? throw new ArgumentNullException(nameof(level));
@@ -31,9 +32,14 @@ public sealed class ViewExportContext
         UnsupportedOpenings = unsupportedOpenings ?? throw new ArgumentNullException(nameof(unsupportedOpenings));
         DetailCurves = detailCurves ?? throw new ArgumentNullException(nameof(detailCurves));
         LinkedSources = linkedSources ?? Array.Empty<LinkedViewSourceContext>();
+        GeometryView = geometryView;
     }
 
     public ViewPlan View { get; }
+
+    public View3D? GeometryView { get; }
+
+    public View EffectiveGeometryView => (View?)GeometryView ?? View;
 
     public Level Level { get; }
 

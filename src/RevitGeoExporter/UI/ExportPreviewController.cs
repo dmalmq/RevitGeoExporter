@@ -82,7 +82,7 @@ internal sealed class ExportPreviewController
             throw new ArgumentNullException(nameof(view));
         }
 
-        return T(
+        return GetPreviewModeStatusPrefix() + T(
             $"Loading preview for {view.Name}...",
             $"{view.Name} のプレビューを読み込んでいます...");
     }
@@ -215,7 +215,7 @@ internal sealed class ExportPreviewController
             return string.Empty;
         }
 
-        return T(
+        return GetPreviewModeStatusPrefix() + T(
             $"{_currentViewData.Features.Count} features | {_currentViewData.Warnings.Count} warnings | {_currentViewData.UnassignedFloors.Count} unassigned floor types | {_currentViewData.AvailableSourceLabels.Count} source labels",
             $"{_currentViewData.Features.Count} 件 | 警告 {_currentViewData.Warnings.Count} 件 | 未割り当ての床タイプ {_currentViewData.UnassignedFloors.Count} 件 | ソース ラベル {_currentViewData.AvailableSourceLabels.Count} 件");
     }
@@ -562,7 +562,7 @@ internal sealed class ExportPreviewController
             ? T(" | unsaved assignment changes", " | 未保存の割り当て変更あり")
             : string.Empty;
         SetStatusMessage(
-            T(
+            GetPreviewModeStatusPrefix() + T(
                 $"{preview.ViewName} [{preview.LevelName}] - {preview.Features.Count} preview features, {preview.UnassignedFloors.Count} unassigned floor types, {preview.AvailableSourceLabels.Count} source labels",
                 $"{preview.ViewName} [{preview.LevelName}] - プレビュー要素 {preview.Features.Count} 件、未割り当ての床タイプ {preview.UnassignedFloors.Count} 件、ソース ラベル {preview.AvailableSourceLabels.Count} 件") + suffix);
     }
@@ -570,6 +570,28 @@ internal sealed class ExportPreviewController
     private void SetStatusMessage(string message)
     {
         _statusMessage = message ?? string.Empty;
+    }
+
+    private string GetPreviewModeStatusPrefix()
+    {
+        if (!_request.Use3DSectionBoxExport)
+        {
+            return string.Empty;
+        }
+
+        if (Math.Abs(_request.SectionBoxBelowFloorMeters) > 0.001d)
+        {
+            return string.Format(
+                CultureInfo.InvariantCulture,
+                "[3D • {0:0.##} / {1:0.##} m] ",
+                _request.SectionBoxBelowFloorMeters,
+                _request.SectionBoxAboveFloorMeters);
+        }
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "[3D • {0:0.##} m] ",
+            _request.SectionBoxAboveFloorMeters);
     }
 
     private string BuildBasemapStatusText(

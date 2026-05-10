@@ -17,6 +17,7 @@ internal sealed class StairVisibilityResolver
     private const double StairCutPlaneToleranceFeet = 0.10d;
     private const double EvidenceBufferDistanceMeters = 0.20d;
     private const double EvidenceCoverageBoundaryToleranceMeters = 0.02d;
+    private const double ProjectedTriangleMinAreaSquareMeters = 1e-8d;
 
     private static readonly GeometryFactory GeometryFactory =
         new(new PrecisionModel(1_000_000d));
@@ -36,6 +37,8 @@ internal sealed class StairVisibilityResolver
     private readonly Document _document;
     private readonly Func<XYZ, Point2D> _projectPoint;
     private readonly Func<XYZ, XYZ> _transformPointToHost;
+
+    internal View3D? CurrentGeometryView { get; set; }
 
     public StairVisibilityResolver(
         Document document,
@@ -75,8 +78,11 @@ internal sealed class StairVisibilityResolver
             return false;
         }
 
-        VerticalCirculationVisibilityEvidence evidence = ExtractEvidence(stairs, view);
-        List<StairVisibilityCandidate> candidates = BuildCandidates(stairs, view, warnings, evidence);
+        bool useSectionBoxClipOnly = CurrentGeometryView != null;
+        VerticalCirculationVisibilityEvidence evidence = useSectionBoxClipOnly
+            ? VerticalCirculationVisibilityEvidence.Empty
+            : ExtractEvidence(stairs, view);
+        List<StairVisibilityCandidate> candidates = BuildCandidates(stairs, view, warnings, evidence, useSectionBoxClipOnly);
         if (candidates.Count == 0)
         {
             return false;
@@ -88,7 +94,8 @@ internal sealed class StairVisibilityResolver
 
         StairVisibilityCandidate? footprintCutPlane = candidates
             .FirstOrDefault(candidate => candidate.SourceKind == VerticalCirculationVisibilitySourceKind.FootprintCutPlane);
-        if (footprintCutPlane != null &&
+        if (!useSectionBoxClipOnly &&
+            footprintCutPlane != null &&
             best.SourceKind != VerticalCirculationVisibilitySourceKind.FootprintCutPlane &&
             best.Area > footprintCutPlane.Area + MinPolygonAreaSquareMeters)
         {
@@ -99,7 +106,9 @@ internal sealed class StairVisibilityResolver
             }
         }
 
-        string? disagreementWarning = BuildDisagreementWarning(stairs, candidates, best, evidence.HasEvidence);
+        string? disagreementWarning = useSectionBoxClipOnly
+            ? null
+            : BuildDisagreementWarning(stairs, candidates, best, evidence.HasEvidence);
         if (!string.IsNullOrWhiteSpace(disagreementWarning))
         {
             warnings.Add(disagreementWarning!);
@@ -179,10 +188,12 @@ internal sealed class StairVisibilityResolver
         Stairs stairs,
         ViewPlan? view,
         ICollection<string> warnings,
-        VerticalCirculationVisibilityEvidence evidence)
+        VerticalCirculationVisibilityEvidence evidence,
+        bool useSectionBoxClipOnly)
     {
         List<StairVisibilityCandidate> candidates = new();
-        if (view != null &&
+        if (!useSectionBoxClipOnly &&
+            view != null &&
             ReferenceEquals(view.Document, _document) &&
             TryExtractViewGraphicsPolygons(stairs, view, out List<Polygon2D> graphicsPolygons) &&
             TryCreateCandidate(VerticalCirculationVisibilitySourceKind.ViewGraphics, graphicsPolygons, evidence, out StairVisibilityCandidate? graphicsCandidate))
@@ -190,7 +201,8 @@ internal sealed class StairVisibilityResolver
             candidates.Add(graphicsCandidate);
         }
 
-        if (TryExtractFootprintPolygons(stairs, view, warnings, out List<Polygon2D> footprintPolygons) &&
+        if (!useSectionBoxClipOnly &&
+            TryExtractFootprintPolygons(stairs, view, warnings, out List<Polygon2D> footprintPolygons) &&
             TryCreateCandidate(VerticalCirculationVisibilitySourceKind.FootprintCutPlane, footprintPolygons, evidence, out StairVisibilityCandidate? footprintCandidate))
         {
             candidates.Add(footprintCandidate);
@@ -916,6 +928,18 @@ internal sealed class StairVisibilityResolver
             return false;
         }
 
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: false, view, out polygons))
+        {
+            return true;
+        }
+
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: true, view, out polygons))
+        {
+            return true;
+        }
+
         List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(
             element,
             includeNonVisibleObjects: false,
@@ -940,6 +964,18 @@ internal sealed class StairVisibilityResolver
     private bool TryExtractElementPolygons(Element element, out List<Polygon2D> polygons)
     {
         polygons = null!;
+
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: false, view: null, out polygons))
+        {
+            return true;
+        }
+
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: true, view: null, out polygons))
+        {
+            return true;
+        }
 
         List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: false);
         if (loops.Count == 0)
@@ -978,19 +1014,197 @@ internal sealed class StairVisibilityResolver
         return polygons.Count > 0;
     }
 
-    private static List<List<XYZ>> ExtractLoopsFromSolidGeometry(
+    private bool TryExtractProjectedSolidFootprint(
+        Element element,
+        bool includeNonVisibleObjects,
+        View? view,
+        out List<Polygon2D> polygons)
+    {
+        polygons = null!;
+        View? effectiveView = (View?)CurrentGeometryView ?? view;
+        if (element == null || effectiveView == null)
+        {
+            return false;
+        }
+
+        Options options = new()
+        {
+            ComputeReferences = false,
+            IncludeNonVisibleObjects = includeNonVisibleObjects,
+            View = effectiveView,
+        };
+
+        GeometryElement? geometry;
+        try
+        {
+            geometry = element.get_Geometry(options);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        if (geometry == null)
+        {
+            return false;
+        }
+
+        List<Solid> solids = CollectSolids(geometry);
+        if (solids.Count == 0)
+        {
+            return false;
+        }
+
+        SectionBoxClipping.ZRange? zRange = SectionBoxClipping.TryGetZRange(effectiveView);
+
+        List<Geometry> triangles = new();
+        foreach (Solid solid in solids)
+        {
+            if (solid.Volume <= 0d)
+            {
+                continue;
+            }
+
+            foreach (Face face in solid.Faces)
+            {
+                Mesh mesh;
+                try
+                {
+                    mesh = face.Triangulate();
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < mesh.NumTriangles; i++)
+                {
+                    MeshTriangle triangle = mesh.get_Triangle(i);
+                    XYZ v0 = triangle.get_Vertex(0);
+                    XYZ v1 = triangle.get_Vertex(1);
+                    XYZ v2 = triangle.get_Vertex(2);
+
+                    if (zRange.HasValue)
+                    {
+                        List<XYZ[]> clippedTriangles = SectionBoxClipping.ClipTriangleToZRange(v0, v1, v2, zRange.Value);
+                        foreach (XYZ[] clipped in clippedTriangles)
+                        {
+                            if (TryCreateProjectedTriangleGeometry(clipped[0], clipped[1], clipped[2], out Geometry? cg) && cg != null)
+                            {
+                                triangles.Add(cg);
+                            }
+                        }
+                    }
+                    else if (TryCreateProjectedTriangleGeometry(v0, v1, v2, out Geometry? triangleGeometry) &&
+                             triangleGeometry != null)
+                    {
+                        triangles.Add(triangleGeometry);
+                    }
+                }
+            }
+        }
+
+        Geometry? unioned = UnionProjectedTriangles(triangles);
+        if (unioned == null || unioned.IsEmpty)
+        {
+            return false;
+        }
+
+        polygons = ExtractPolygons(unioned);
+        return polygons.Count > 0;
+    }
+
+    private bool TryCreateProjectedTriangleGeometry(
+        XYZ first,
+        XYZ second,
+        XYZ third,
+        out Geometry? geometry)
+    {
+        geometry = null;
+        Point2D a = _projectPoint(first);
+        Point2D b = _projectPoint(second);
+        Point2D c = _projectPoint(third);
+        if (ComputeTriangleArea(a, b, c) < ProjectedTriangleMinAreaSquareMeters)
+        {
+            return false;
+        }
+
+        Coordinate[] coordinates =
+        {
+            new(a.X, a.Y),
+            new(b.X, b.Y),
+            new(c.X, c.Y),
+            new(a.X, a.Y),
+        };
+
+        try
+        {
+            Polygon triangle = GeometryFactory.CreatePolygon(coordinates);
+            geometry = triangle.IsValid ? triangle : triangle.Buffer(0d);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (TopologyException)
+        {
+            return false;
+        }
+
+        return geometry != null &&
+            !geometry.IsEmpty &&
+            geometry.Area >= ProjectedTriangleMinAreaSquareMeters;
+    }
+
+    private static double ComputeTriangleArea(Point2D a, Point2D b, Point2D c)
+    {
+        return Math.Abs(((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y))) * 0.5d;
+    }
+
+    private static Geometry? UnionProjectedTriangles(IReadOnlyList<Geometry> triangles)
+    {
+        if (triangles == null || triangles.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return triangles.Count == 1
+                ? triangles[0].Buffer(0d)
+                : UnaryUnionOp.Union(triangles).Buffer(0d);
+        }
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = triangles.Select(reducer.Reduce).ToList();
+                return reduced.Count == 1
+                    ? reduced[0].Buffer(0d)
+                    : UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private List<List<XYZ>> ExtractLoopsFromSolidGeometry(
         Element element,
         bool includeNonVisibleObjects,
         View? view = null)
     {
+        View? effectiveView = (View?)CurrentGeometryView ?? view;
         Options options = new()
         {
             ComputeReferences = false,
             IncludeNonVisibleObjects = includeNonVisibleObjects,
         };
-        if (view != null)
+        if (effectiveView != null)
         {
-            options.View = view;
+            options.View = effectiveView;
         }
         else
         {

@@ -54,6 +54,14 @@ public sealed class ExportDialogSettings
 
     public bool SimplifyEscalatorUnits { get; set; }
 
+    public bool Use3DSectionBoxExport { get; set; }
+
+    public double SectionBoxAboveFloorMeters { get; set; } = 1.2;
+
+    public double SectionBoxBelowFloorMeters { get; set; } = 0.0;
+
+    public bool Keep3DTempViewsForDebug { get; set; }
+
     public List<SchemaProfile> SchemaProfiles { get; set; } = new() { SchemaProfile.CreateCoreProfile() };
 
     public string ActiveSchemaProfileName { get; set; } = SchemaProfile.CoreProfileName;

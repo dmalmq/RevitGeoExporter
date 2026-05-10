@@ -27,6 +27,7 @@ public sealed class UnitExtractor
     private const double SquareFeetToSquareMeters = 0.09290304d;
     private const double FloorAreaFallbackRatio = 0.85d;
     private const double MinFloorAreaForSanityCheckSquareMeters = 0.25d;
+    private const double ProjectedTriangleMinAreaSquareMeters = 1e-8d;
     private static readonly string[] FloorNamePrefixes = { "j ", "j　", "j" };
     private static readonly string[] FloorNameSuffixes =
     {
@@ -51,6 +52,14 @@ public sealed class UnitExtractor
     private readonly PreviewPaletteResolver _paletteResolver = new();
     private readonly StairVisibilityResolver _stairVisibilityResolver;
     private readonly bool _simplifyEscalatorUnits;
+
+    internal View3D? CurrentGeometryView { get; private set; }
+
+    internal void SetCurrentGeometryView(View3D? geometryView)
+    {
+        CurrentGeometryView = geometryView;
+        _stairVisibilityResolver.CurrentGeometryView = geometryView;
+    }
 
     public UnitExtractor(
         Document document,
@@ -123,7 +132,8 @@ public sealed class UnitExtractor
             return false;
         }
 
-        if (TryGetFloorAreaSquareMeters(floor, out double expectedFloorAreaSquareMeters) &&
+        if (CurrentGeometryView == null &&
+            TryGetFloorAreaSquareMeters(floor, out double expectedFloorAreaSquareMeters) &&
             expectedFloorAreaSquareMeters >= MinFloorAreaForSanityCheckSquareMeters)
         {
             double extractedAreaSquareMeters = ComputeTotalAreaSquareMeters(basePolygons);
@@ -138,6 +148,12 @@ public sealed class UnitExtractor
                     basePolygons = sketchPolygons;
                 }
             }
+        }
+
+        basePolygons = ClipPolygonsToSectionBox(basePolygons, $"Floor {elementId}", warnings);
+        if (basePolygons.Count == 0)
+        {
+            return false;
         }
 
         ResolvedFloorCategory resolvedFloorCategory = _floorCategoryResolver.Resolve(rawFloorTypeName, zoneName);
@@ -259,6 +275,12 @@ public sealed class UnitExtractor
         if (!TryExtractRoomPolygons(room, out List<Polygon2D> polygons) || polygons.Count == 0)
         {
             warnings.Add($"Room {room.Id.Value} geometry could not be extracted.");
+            return false;
+        }
+
+        polygons = ClipPolygonsToSectionBox(polygons, $"Room {room.Id.Value}", warnings);
+        if (polygons.Count == 0)
+        {
             return false;
         }
 
@@ -546,9 +568,15 @@ public sealed class UnitExtractor
             return false;
         }
 
+        IReadOnlyList<Polygon2D> clippedPolygons = ClipPolygonsToSectionBox(polygons, $"Stairs {elementId}", warnings);
+        if (clippedPolygons.Count == 0)
+        {
+            return false;
+        }
+
         feature = CreateFeature(
             sourceElement: stairs,
-            polygons: polygons,
+            polygons: clippedPolygons,
             levelId: levelId,
             zoneInfo: _zoneCatalog.StairsDefault,
             sourceLabel: "stairs",
@@ -636,6 +664,12 @@ public sealed class UnitExtractor
             return false;
         }
 
+        polygons = ClipPolygonsToSectionBox(polygons, $"Family instance {elementId}", warnings);
+        if (polygons.Count == 0)
+        {
+            return false;
+        }
+
         feature = CreateFeature(
             sourceElement: familyInstance,
             polygons: polygons,
@@ -679,7 +713,15 @@ public sealed class UnitExtractor
         }
 
         IReadOnlyList<Polygon2D> effectivePolygons = polygons;
-        if (_simplifyEscalatorUnits)
+        if (CurrentGeometryView != null)
+        {
+            Polygon2D? rect = TryCreateEscalatorBoundingRectangle(polygons);
+            if (rect != null)
+            {
+                effectivePolygons = new List<Polygon2D> { rect };
+            }
+        }
+        else if (_simplifyEscalatorUnits)
         {
             double viewLevelElevation = (view?.GenLevel?.Elevation ?? 0d) - (linkZOffset ?? 0d);
             Polygon2D? simplified = TryCreateEscalatorHalfRectangle(escalator, polygons, viewLevelElevation);
@@ -687,6 +729,12 @@ public sealed class UnitExtractor
             {
                 effectivePolygons = new List<Polygon2D> { simplified };
             }
+        }
+
+        effectivePolygons = ClipPolygonsToSectionBox(effectivePolygons, $"Escalator {escalator.Id.Value}", warnings);
+        if (effectivePolygons.Count == 0)
+        {
+            return false;
         }
 
         feature = CreateFeature(
@@ -697,6 +745,158 @@ public sealed class UnitExtractor
             sourceLabel: familyName,
             viewName: viewName,
             warnings: warnings);
+        return true;
+    }
+
+    private Polygon2D? TryCreateEscalatorBoundingRectangle(IReadOnlyList<Polygon2D> polygons)
+    {
+        if (!TryComputeMinAreaRectangle(
+                polygons,
+                out double centerProj,
+                out double centerPerp,
+                out double halfLength,
+                out double halfWidth,
+                out double cosA,
+                out double sinA))
+        {
+            return null;
+        }
+
+        double longAxisCos, longAxisSin, crossCos, crossSin;
+        double halfLong, halfShort;
+        if ((halfLength * 2d) >= (halfWidth * 2d))
+        {
+            longAxisCos = cosA;
+            longAxisSin = sinA;
+            crossCos = -sinA;
+            crossSin = cosA;
+            halfLong = halfLength;
+            halfShort = halfWidth;
+        }
+        else
+        {
+            longAxisCos = -sinA;
+            longAxisSin = cosA;
+            crossCos = cosA;
+            crossSin = sinA;
+            halfLong = halfWidth;
+            halfShort = halfLength;
+        }
+
+        Point2D center = TransformPoint(centerProj, centerPerp, cosA, sinA);
+        return BuildRectanglePolygon(
+            center, halfLong, halfShort,
+            longAxisCos, longAxisSin, crossCos, crossSin);
+    }
+
+    private bool TryComputeMinAreaRectangle(
+        IReadOnlyList<Polygon2D> polygons,
+        out double centerProj,
+        out double centerPerp,
+        out double halfLength,
+        out double halfWidth,
+        out double bestCos,
+        out double bestSin)
+    {
+        centerProj = centerPerp = halfLength = halfWidth = 0d;
+        bestCos = 1d;
+        bestSin = 0d;
+
+        if (polygons == null || polygons.Count == 0)
+        {
+            return false;
+        }
+
+        List<Point2D> allPoints = new();
+        foreach (Polygon2D polygon in polygons)
+        {
+            foreach (Point2D point in polygon.ExteriorRing)
+            {
+                allPoints.Add(point);
+            }
+        }
+
+        if (allPoints.Count < 3)
+        {
+            return false;
+        }
+
+        Coordinate[] coords = allPoints
+            .Select(p => new Coordinate(p.X, p.Y))
+            .ToArray();
+        MultiPoint multiPoint = GeometryFactory.CreateMultiPointFromCoords(coords);
+        Geometry hull = multiPoint.ConvexHull();
+
+        if (hull is not Polygon hullPoly || hullPoly.NumPoints < 4)
+        {
+            return false;
+        }
+
+        LineString shell = hullPoly.ExteriorRing;
+        int n = shell.NumPoints - 1;
+        if (n < 3)
+        {
+            return false;
+        }
+
+        double minArea = double.MaxValue;
+        double bestProjMin = 0d, bestProjMax = 0d;
+        double bestPerpMin = 0d, bestPerpMax = 0d;
+
+        for (int i = 0; i < n; i++)
+        {
+            Coordinate a = shell.GetCoordinateN(i);
+            Coordinate b = shell.GetCoordinateN((i + 1) % n);
+
+            double dx = b.X - a.X;
+            double dy = b.Y - a.Y;
+            double len = Math.Sqrt((dx * dx) + (dy * dy));
+            if (len < 1e-12)
+            {
+                continue;
+            }
+
+            double cosA = dx / len;
+            double sinA = dy / len;
+
+            double projMin = double.MaxValue;
+            double projMax = double.MinValue;
+            double perpMin = double.MaxValue;
+            double perpMax = double.MinValue;
+
+            for (int j = 0; j < n; j++)
+            {
+                Coordinate p = shell.GetCoordinateN(j);
+                double proj = (p.X * cosA) + (p.Y * sinA);
+                double perp = (-p.X * sinA) + (p.Y * cosA);
+                if (proj < projMin) projMin = proj;
+                if (proj > projMax) projMax = proj;
+                if (perp < perpMin) perpMin = perp;
+                if (perp > perpMax) perpMax = perp;
+            }
+
+            double area = (projMax - projMin) * (perpMax - perpMin);
+            if (area < minArea)
+            {
+                minArea = area;
+                bestProjMin = projMin;
+                bestProjMax = projMax;
+                bestPerpMin = perpMin;
+                bestPerpMax = perpMax;
+                bestCos = cosA;
+                bestSin = sinA;
+            }
+        }
+
+        if (minArea >= double.MaxValue)
+        {
+            return false;
+        }
+
+        centerProj = (bestProjMin + bestProjMax) * 0.5d;
+        centerPerp = (bestPerpMin + bestPerpMax) * 0.5d;
+        halfLength = (bestProjMax - bestProjMin) * 0.5d;
+        halfWidth = (bestPerpMax - bestPerpMin) * 0.5d;
         return true;
     }
 
@@ -1427,6 +1627,18 @@ public sealed class UnitExtractor
             return false;
         }
 
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: false, view, out polygons))
+        {
+            return true;
+        }
+
+        if (CurrentGeometryView != null &&
+            TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: true, view, out polygons))
+        {
+            return true;
+        }
+
         List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(
             element,
             includeNonVisibleObjects: false,
@@ -1454,6 +1666,27 @@ public sealed class UnitExtractor
 
         if (element is Floor floor)
         {
+            if (CurrentGeometryView != null)
+            {
+                if (TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: false, view: null, out polygons))
+                {
+                    return true;
+                }
+
+                if (TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: true, view: null, out polygons))
+                {
+                    return true;
+                }
+
+                List<List<XYZ>> clippedLoops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: false);
+                if (clippedLoops.Count == 0)
+                {
+                    clippedLoops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: true);
+                }
+
+                return clippedLoops.Count > 0 && BuildPolygonsFromLoops(clippedLoops, out polygons);
+            }
+
             // 1. Sketch profile — authoritative user-drawn footprint and most
             // robust for complex floors with large interior voids.
             if (TryExtractFloorPolygonsFromSketch(floor, out polygons))
@@ -1492,6 +1725,18 @@ public sealed class UnitExtractor
         }
         else
         {
+            if (CurrentGeometryView != null &&
+                TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: false, view: null, out polygons))
+            {
+                return true;
+            }
+
+            if (CurrentGeometryView != null &&
+                TryExtractProjectedSolidFootprint(element, includeNonVisibleObjects: true, view: null, out polygons))
+            {
+                return true;
+            }
+
             List<List<XYZ>> loops = ExtractLoopsFromSolidGeometry(element, includeNonVisibleObjects: false);
             if (loops.Count == 0)
             {
@@ -1528,6 +1773,351 @@ public sealed class UnitExtractor
 
         polygons = ClassifyLoopsIntoPolygons(projectedLoops);
         return polygons.Count > 0;
+    }
+
+    private bool TryExtractProjectedSolidFootprint(
+        Element element,
+        bool includeNonVisibleObjects,
+        View? view,
+        out List<Polygon2D> polygons)
+    {
+        polygons = null!;
+        View? effectiveView = (View?)CurrentGeometryView ?? view;
+        if (element == null || effectiveView == null)
+        {
+            return false;
+        }
+
+        Options options = new()
+        {
+            ComputeReferences = false,
+            IncludeNonVisibleObjects = includeNonVisibleObjects,
+            View = effectiveView,
+        };
+
+        GeometryElement? geometry;
+        try
+        {
+            geometry = element.get_Geometry(options);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        if (geometry == null)
+        {
+            return false;
+        }
+
+        List<Solid> solids = CollectSolids(geometry);
+        if (solids.Count == 0)
+        {
+            return false;
+        }
+
+        SectionBoxClipping.ZRange? zRange = SectionBoxClipping.TryGetZRange(effectiveView);
+
+        List<Geometry> triangles = new();
+        foreach (Solid solid in solids)
+        {
+            if (solid.Volume <= 0d)
+            {
+                continue;
+            }
+
+            foreach (Face face in solid.Faces)
+            {
+                Mesh mesh;
+                try
+                {
+                    mesh = face.Triangulate();
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < mesh.NumTriangles; i++)
+                {
+                    MeshTriangle triangle = mesh.get_Triangle(i);
+                    XYZ v0 = triangle.get_Vertex(0);
+                    XYZ v1 = triangle.get_Vertex(1);
+                    XYZ v2 = triangle.get_Vertex(2);
+
+                    if (zRange.HasValue)
+                    {
+                        List<XYZ[]> clippedTriangles = SectionBoxClipping.ClipTriangleToZRange(v0, v1, v2, zRange.Value);
+                        foreach (XYZ[] clipped in clippedTriangles)
+                        {
+                            if (TryCreateProjectedTriangleGeometry(clipped[0], clipped[1], clipped[2], out Geometry? cg) && cg != null)
+                            {
+                                triangles.Add(cg);
+                            }
+                        }
+                    }
+                    else if (TryCreateProjectedTriangleGeometry(v0, v1, v2, out Geometry? triangleGeometry) &&
+                             triangleGeometry != null)
+                    {
+                        triangles.Add(triangleGeometry);
+                    }
+                }
+            }
+        }
+
+        Geometry? unioned = UnionProjectedTriangles(triangles);
+        if (unioned == null || unioned.IsEmpty)
+        {
+            return false;
+        }
+
+        polygons = ExtractPolygons(unioned);
+        return polygons.Count > 0;
+    }
+
+    private bool TryCreateProjectedTriangleGeometry(
+        XYZ first,
+        XYZ second,
+        XYZ third,
+        out Geometry? geometry)
+    {
+        geometry = null;
+        Point2D a = ProjectPoint(first);
+        Point2D b = ProjectPoint(second);
+        Point2D c = ProjectPoint(third);
+        if (ComputeTriangleArea(a, b, c) < ProjectedTriangleMinAreaSquareMeters)
+        {
+            return false;
+        }
+
+        Coordinate[] coordinates =
+        {
+            new(a.X, a.Y),
+            new(b.X, b.Y),
+            new(c.X, c.Y),
+            new(a.X, a.Y),
+        };
+
+        try
+        {
+            Polygon triangle = GeometryFactory.CreatePolygon(coordinates);
+            geometry = triangle.IsValid ? triangle : triangle.Buffer(0d);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (TopologyException)
+        {
+            return false;
+        }
+
+        return geometry != null &&
+            !geometry.IsEmpty &&
+            geometry.Area >= ProjectedTriangleMinAreaSquareMeters;
+    }
+
+    private static double ComputeTriangleArea(Point2D a, Point2D b, Point2D c)
+    {
+        return Math.Abs(((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y))) * 0.5d;
+    }
+
+    private static Geometry? UnionProjectedTriangles(IReadOnlyList<Geometry> triangles)
+    {
+        if (triangles == null || triangles.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return triangles.Count == 1
+                ? triangles[0].Buffer(0d)
+                : UnaryUnionOp.Union(triangles).Buffer(0d);
+        }
+        catch (Exception ex) when (ex is TopologyException || ex is ArgumentException)
+        {
+            try
+            {
+                GeometryPrecisionReducer reducer = new(new PrecisionModel(100_000d));
+                List<Geometry> reduced = triangles.Select(reducer.Reduce).ToList();
+                return reduced.Count == 1
+                    ? reduced[0].Buffer(0d)
+                    : UnaryUnionOp.Union(reduced).Buffer(0d);
+            }
+            catch (Exception reducedEx) when (reducedEx is TopologyException || reducedEx is ArgumentException)
+            {
+                return null;
+            }
+        }
+    }
+
+    private Geometry? TryGetSectionBoxFootprintPolygon()
+    {
+        View3D? view3D = CurrentGeometryView;
+        if (view3D == null || !view3D.IsSectionBoxActive)
+        {
+            return null;
+        }
+
+        BoundingBoxXYZ? box;
+        try
+        {
+            box = view3D.GetSectionBox();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        if (box == null)
+        {
+            return null;
+        }
+
+        Transform t = box.Transform ?? Transform.Identity;
+        XYZ[] corners =
+        {
+            t.OfPoint(new XYZ(box.Min.X, box.Min.Y, box.Min.Z)),
+            t.OfPoint(new XYZ(box.Max.X, box.Min.Y, box.Min.Z)),
+            t.OfPoint(new XYZ(box.Max.X, box.Max.Y, box.Min.Z)),
+            t.OfPoint(new XYZ(box.Min.X, box.Max.Y, box.Min.Z)),
+            t.OfPoint(new XYZ(box.Min.X, box.Min.Y, box.Max.Z)),
+            t.OfPoint(new XYZ(box.Max.X, box.Min.Y, box.Max.Z)),
+            t.OfPoint(new XYZ(box.Max.X, box.Max.Y, box.Max.Z)),
+            t.OfPoint(new XYZ(box.Min.X, box.Max.Y, box.Max.Z)),
+        };
+
+        List<Point2D> xyPoints = corners
+            .Select(c => ProjectPoint(c))
+            .Distinct()
+            .ToList();
+
+        if (xyPoints.Count < 3)
+        {
+            return null;
+        }
+
+        List<Point2D> hull = ComputeConvexHull(xyPoints);
+        if (hull.Count < 3)
+        {
+            return null;
+        }
+
+        Coordinate[] coords = hull
+            .Select(p => new Coordinate(p.X, p.Y))
+            .ToArray();
+
+        if (coords.Length < 3)
+        {
+            return null;
+        }
+
+        Coordinate[] ringCoords = new Coordinate[coords.Length + 1];
+        Array.Copy(coords, ringCoords, coords.Length);
+        ringCoords[coords.Length] = coords[0];
+
+        try
+        {
+            LinearRing ring = GeometryFactory.CreateLinearRing(ringCoords);
+            Polygon polygon = GeometryFactory.CreatePolygon(ring);
+            return polygon.IsValid ? polygon : polygon.Buffer(0d);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static List<Point2D> ComputeConvexHull(List<Point2D> points)
+    {
+        if (points.Count <= 3)
+        {
+            return points.ToList();
+        }
+
+        List<Point2D> sorted = points
+            .OrderBy(p => p.X)
+            .ThenBy(p => p.Y)
+            .ToList();
+
+        List<Point2D> lower = new();
+        foreach (Point2D p in sorted)
+        {
+            while (lower.Count >= 2 && Cross(lower[lower.Count - 2], lower[lower.Count - 1], p) <= 0)
+            {
+                lower.RemoveAt(lower.Count - 1);
+            }
+            lower.Add(p);
+        }
+
+        List<Point2D> upper = new();
+        for (int i = sorted.Count - 1; i >= 0; i--)
+        {
+            Point2D p = sorted[i];
+            while (upper.Count >= 2 && Cross(upper[upper.Count - 2], upper[upper.Count - 1], p) <= 0)
+            {
+                upper.RemoveAt(upper.Count - 1);
+            }
+            upper.Add(p);
+        }
+
+        lower.RemoveAt(lower.Count - 1);
+        upper.RemoveAt(upper.Count - 1);
+        lower.AddRange(upper);
+        return lower;
+    }
+
+    private static double Cross(Point2D o, Point2D a, Point2D b)
+    {
+        return ((a.X - o.X) * (b.Y - o.Y)) - ((a.Y - o.Y) * (b.X - o.X));
+    }
+
+    private List<Polygon2D> ClipPolygonsToSectionBox(
+        IReadOnlyList<Polygon2D> polygons,
+        string contextLabel,
+        ICollection<string> warnings)
+    {
+        if (CurrentGeometryView == null || polygons.Count == 0)
+        {
+            return polygons.ToList();
+        }
+
+        Geometry? footprint = TryGetSectionBoxFootprintPolygon();
+        if (footprint == null || footprint.IsEmpty)
+        {
+            return polygons.ToList();
+        }
+
+        Geometry? sourceGeometry = UnionPolygonsToNtsGeometry(polygons);
+        if (sourceGeometry == null || sourceGeometry.IsEmpty)
+        {
+            return polygons.ToList();
+        }
+
+        try
+        {
+            Geometry? clipped = IntersectSafe(sourceGeometry, footprint);
+            if (clipped == null || clipped.IsEmpty)
+            {
+                warnings.Add($"{contextLabel} was fully outside the section box footprint.");
+                return new List<Polygon2D>();
+            }
+
+            List<Polygon2D> clippedPolygons = ExtractPolygons(clipped);
+            if (clippedPolygons.Count == 0)
+            {
+                warnings.Add($"{contextLabel} was fully outside the section box footprint.");
+                return new List<Polygon2D>();
+            }
+
+            return clippedPolygons;
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"{contextLabel} section-box XY clip failed: {ex.Message}. Using unclipped geometry.");
+            return polygons.ToList();
+        }
     }
 
     private bool TryExtractFloorPolygonsFromSketch(Floor floor, out List<Polygon2D> polygons)
@@ -1603,19 +2193,20 @@ public sealed class UnitExtractor
         return loops;
     }
 
-    private static List<List<XYZ>> ExtractLoopsFromSolidGeometry(
+    private List<List<XYZ>> ExtractLoopsFromSolidGeometry(
         Element element,
         bool includeNonVisibleObjects,
         View? view = null)
     {
+        View? effectiveView = (View?)CurrentGeometryView ?? view;
         Options options = new()
         {
             ComputeReferences = false,
             IncludeNonVisibleObjects = includeNonVisibleObjects,
         };
-        if (view != null)
+        if (effectiveView != null)
         {
-            options.View = view;
+            options.View = effectiveView;
         }
         else
         {

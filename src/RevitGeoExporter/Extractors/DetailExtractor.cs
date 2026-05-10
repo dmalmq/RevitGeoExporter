@@ -31,6 +31,14 @@ public sealed class DetailExtractor
     private readonly SchemaProfile _schemaProfile;
     private readonly StairVisibilityResolver _stairVisibilityResolver;
 
+    internal View3D? CurrentGeometryView { get; private set; }
+
+    internal void SetCurrentGeometryView(View3D? geometryView)
+    {
+        CurrentGeometryView = geometryView;
+        _stairVisibilityResolver.CurrentGeometryView = geometryView;
+    }
+
     public DetailExtractor(
         Document document,
         GeometryRepairOptions? geometryRepairOptions = null,
@@ -92,10 +100,17 @@ public sealed class DetailExtractor
             throw new ArgumentNullException(nameof(geometryRepair));
         }
 
+        HashSet<ElementId> invisibleStairCurveIds = CollectInvisibleStairCurveIds(stairs, stairVisibilityResults);
+
         List<ExportLineString> features = new();
         foreach (CurveElement curveElement in detailCurves)
         {
             if (curveElement is not ModelCurve)
+            {
+                continue;
+            }
+
+            if (invisibleStairCurveIds.Contains(curveElement.Id))
             {
                 continue;
             }
@@ -124,6 +139,48 @@ public sealed class DetailExtractor
 
         features.AddRange(ExtractStairStepLines(stairs, levelId, geometryRepair, warnings, view, viewName, stairVisibilityResults));
         return features;
+    }
+
+    private HashSet<ElementId> CollectInvisibleStairCurveIds(
+        IReadOnlyList<Stairs> stairs,
+        IReadOnlyDictionary<long, VerticalCirculationVisibilityResult>? stairVisibilityResults)
+    {
+        HashSet<ElementId> invisibleStairCurveIds = new();
+        if (stairVisibilityResults == null || stairs.Count == 0)
+        {
+            return invisibleStairCurveIds;
+        }
+
+        foreach (Stairs stair in stairs)
+        {
+            bool isInvisible = !stairVisibilityResults.TryGetValue(stair.Id.Value, out VerticalCirculationVisibilityResult? result) ||
+                               result == null ||
+                               result.VisiblePolygons.Count == 0;
+            if (!isInvisible)
+            {
+                continue;
+            }
+
+            ICollection<ElementId> dependentIds;
+            try
+            {
+                dependentIds = stair.GetDependentElements(null);
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            foreach (ElementId dependentId in dependentIds)
+            {
+                if (_document.GetElement(dependentId) is CurveElement)
+                {
+                    invisibleStairCurveIds.Add(dependentId);
+                }
+            }
+        }
+
+        return invisibleStairCurveIds;
     }
 
     private bool TryExtractLineString(CurveElement curveElement, out LineString2D lineString)
@@ -670,19 +727,23 @@ public sealed class DetailExtractor
         return true;
     }
 
-    private static Options CreateGeometryOptions(View? view = null)
+    private Options CreateGeometryOptions(View? view = null)
     {
         Options options = new()
         {
             ComputeReferences = false,
             IncludeNonVisibleObjects = true,
-            DetailLevel = ViewDetailLevel.Fine,
         };
 
-        if (view != null)
+        View? effectiveView = (View?)CurrentGeometryView ?? view;
+        if (effectiveView != null)
         {
-            options.View = view;
+            options.View = effectiveView;
             options.IncludeNonVisibleObjects = false;
+        }
+        else
+        {
+            options.DetailLevel = ViewDetailLevel.Fine;
         }
 
         return options;

@@ -31,7 +31,11 @@ public sealed class ExportPreviewRequest
         string? previewBasemapUrlTemplate,
         string? previewBasemapAttribution,
         bool simplifyStairUnits,
-        bool simplifyEscalatorUnits = false)
+        bool simplifyEscalatorUnits = false,
+        bool use3DSectionBoxExport = false,
+        double sectionBoxAboveFloorMeters = Temp3DViewScope.DefaultAboveFloorMeters,
+        double sectionBoxBelowFloorMeters = Temp3DViewScope.DefaultBelowFloorMeters,
+        bool keep3DTempViewsForDebug = false)
     {
         string normalizedSourceCoordinateSystemId = sourceCoordinateSystemId?.Trim() ?? string.Empty;
         string normalizedSourceCoordinateSystemDefinition = sourceCoordinateSystemDefinition?.Trim() ?? string.Empty;
@@ -74,6 +78,16 @@ public sealed class ExportPreviewRequest
         PreviewBasemapAttribution = normalizedPreviewBasemapAttribution;
         SimplifyStairUnits = simplifyStairUnits;
         SimplifyEscalatorUnits = simplifyEscalatorUnits;
+        Use3DSectionBoxExport = use3DSectionBoxExport;
+        SectionBoxAboveFloorMeters =
+            (sectionBoxAboveFloorMeters > 0d && !double.IsNaN(sectionBoxAboveFloorMeters) && !double.IsInfinity(sectionBoxAboveFloorMeters))
+                ? sectionBoxAboveFloorMeters
+                : Temp3DViewScope.DefaultAboveFloorMeters;
+        SectionBoxBelowFloorMeters =
+            (!double.IsNaN(sectionBoxBelowFloorMeters) && !double.IsInfinity(sectionBoxBelowFloorMeters))
+                ? sectionBoxBelowFloorMeters
+                : Temp3DViewScope.DefaultBelowFloorMeters;
+        Keep3DTempViewsForDebug = keep3DTempViewsForDebug;
     }
 
     public IReadOnlyList<ViewPlan> SelectedViews { get; }
@@ -115,4 +129,12 @@ public sealed class ExportPreviewRequest
     public bool SimplifyStairUnits { get; }
 
     public bool SimplifyEscalatorUnits { get; }
+
+    public bool Use3DSectionBoxExport { get; }
+
+    public double SectionBoxAboveFloorMeters { get; }
+
+    public double SectionBoxBelowFloorMeters { get; }
+
+    public bool Keep3DTempViewsForDebug { get; }
 }

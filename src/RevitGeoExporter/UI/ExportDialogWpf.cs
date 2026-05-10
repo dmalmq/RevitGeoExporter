@@ -79,6 +79,12 @@ namespace RevitGeoExporter.UI;
     private readonly CheckBox _launchQgisCheckBox = new();
     private readonly CheckBox _simplifyStairUnitsCheckBox = new();
     private readonly CheckBox _simplifyEscalatorUnitsCheckBox = new();
+    private readonly CheckBox _use3DSectionBoxExportCheckBox = new();
+    private readonly TextBlock _sectionBoxAboveFloorLabel = new();
+    private readonly TextBox _sectionBoxAboveFloorTextBox = new();
+    private readonly TextBlock _sectionBoxBelowFloorLabel = new();
+    private readonly TextBox _sectionBoxBelowFloorTextBox = new();
+    private readonly CheckBox _keep3DTempViewsForDebugCheckBox = new();
     private readonly CheckBox _includeLinkedModelsCheckBox = new();
     private readonly Button _browseButton = new();
     private readonly Button _cancelButton = new();
@@ -263,6 +269,10 @@ namespace RevitGeoExporter.UI;
             PreviewBasemapAttribution = _previewBasemapSettings.Attribution,
             GeometryRepairOptions = new GeometryRepairOptions(),
             OutputFormat = GetSelectedOutputFormat(),
+            Use3DSectionBoxExport = _use3DSectionBoxExportCheckBox.IsChecked == true,
+            SectionBoxAboveFloorMeters = ParseSectionBoxAboveFloorMeters(),
+            SectionBoxBelowFloorMeters = ParseSectionBoxBelowFloorMeters(),
+            Keep3DTempViewsForDebug = _keep3DTempViewsForDebugCheckBox.IsChecked == true,
         };
     }
 
@@ -833,6 +843,8 @@ namespace RevitGeoExporter.UI;
         ConfigureAdvancedOption(_launchQgisCheckBox);
         ConfigureAdvancedOption(_simplifyStairUnitsCheckBox);
         ConfigureAdvancedOption(_simplifyEscalatorUnitsCheckBox);
+        ConfigureAdvancedOption(_use3DSectionBoxExportCheckBox);
+        ConfigureAdvancedOption(_keep3DTempViewsForDebugCheckBox);
 
         advancedContent.Children.Add(WrapStandaloneOption(_diagnosticsCheckBox, new Thickness(0, 0, 0, 4)));
         advancedContent.Children.Add(WrapStandaloneOption(_packageCheckBox, new Thickness(0, 0, 0, 4)));
@@ -844,6 +856,8 @@ namespace RevitGeoExporter.UI;
         advancedContent.Children.Add(WrapStandaloneOption(_launchQgisCheckBox, new Thickness(0, 4, 0, 0)));
         advancedContent.Children.Add(WrapStandaloneOption(_simplifyStairUnitsCheckBox, new Thickness(0, 4, 0, 0)));
         advancedContent.Children.Add(WrapStandaloneOption(_simplifyEscalatorUnitsCheckBox, new Thickness(0, 4, 0, 0)));
+        advancedContent.Children.Add(BuildSectionBoxOptionRow());
+        advancedContent.Children.Add(WrapStandaloneOption(_keep3DTempViewsForDebugCheckBox, new Thickness(18, 4, 0, 0)));
 
         StyleExpanderHeader(_advancedOptionsHeaderText);
         _advancedOptionsExpander.Header = _advancedOptionsHeaderText;
@@ -978,6 +992,16 @@ namespace RevitGeoExporter.UI;
             _launchQgisCheckBox.IsChecked = settings.PostExportActions?.LaunchQgis == true;
             _simplifyStairUnitsCheckBox.IsChecked = settings.SimplifyStairUnits;
             _simplifyEscalatorUnitsCheckBox.IsChecked = settings.SimplifyEscalatorUnits;
+            _use3DSectionBoxExportCheckBox.IsChecked = settings.Use3DSectionBoxExport;
+            double sectionBoxHeight = settings.SectionBoxAboveFloorMeters > 0d
+                ? settings.SectionBoxAboveFloorMeters
+                : Temp3DViewScope.DefaultAboveFloorMeters;
+            _sectionBoxAboveFloorTextBox.Text = sectionBoxHeight.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            double sectionBoxBottom = !double.IsNaN(settings.SectionBoxBelowFloorMeters)
+                ? settings.SectionBoxBelowFloorMeters
+                : Temp3DViewScope.DefaultBelowFloorMeters;
+            _sectionBoxBelowFloorTextBox.Text = sectionBoxBottom.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            UpdateSectionBoxAboveFloorEnabled();
 
             _languageComboBox.Items.Clear();
             _languageComboBox.Items.Add(new LanguageItem(UiLanguage.English));
@@ -1167,7 +1191,11 @@ namespace RevitGeoExporter.UI;
             _simplifyEscalatorUnitsCheckBox.IsChecked == true,
             BuildLinkExportOptions(),
             GetActiveSchemaProfile(),
-            GetActiveValidationPolicyProfile())
+            GetActiveValidationPolicyProfile(),
+            _use3DSectionBoxExportCheckBox.IsChecked == true,
+            ParseSectionBoxAboveFloorMeters(),
+            ParseSectionBoxBelowFloorMeters(),
+            _keep3DTempViewsForDebugCheckBox.IsChecked == true)
         {
             OutputFormat = GetSelectedOutputFormat(),
         };
@@ -1227,7 +1255,11 @@ namespace RevitGeoExporter.UI;
             _previewBasemapSettings.UrlTemplate,
             _previewBasemapSettings.Attribution,
             _simplifyStairUnitsCheckBox.IsChecked == true,
-            _simplifyEscalatorUnitsCheckBox.IsChecked == true);
+            _simplifyEscalatorUnitsCheckBox.IsChecked == true,
+            _use3DSectionBoxExportCheckBox.IsChecked == true,
+            ParseSectionBoxAboveFloorMeters(),
+            ParseSectionBoxBelowFloorMeters(),
+            _keep3DTempViewsForDebugCheckBox.IsChecked == true);
 
         try
         {
@@ -1811,6 +1843,10 @@ namespace RevitGeoExporter.UI;
         _launchQgisCheckBox.Content = T("Launch QGIS after export", "出力後に QGIS を起動");
         _simplifyStairUnitsCheckBox.Content = T("Simplify stair units (show only floor entries)", "階段ユニットを簡略化（階の出入口のみ表示）");
         _simplifyEscalatorUnitsCheckBox.Content = T("Simplify escalator units (show level-appropriate half)", "エスカレーターユニットを簡略化（階に応じた半分を表示）");
+        _use3DSectionBoxExportCheckBox.Content = T("Use 3D section box per floor (experimental)", "フロアごとに 3D セクション ボックスを使用（試験的）");
+        _sectionBoxAboveFloorLabel.Text = T("Top (m):", "上 (m):");
+        _sectionBoxBelowFloorLabel.Text = T("Bottom (m):", "下 (m):");
+        _keep3DTempViewsForDebugCheckBox.Content = T("Keep temp 3D views for inspection (debug)", "デバッグ用に一時 3D ビューを残す");
         _includeLinkedModelsCheckBox.Content = T("Include selected linked models", "選択したリンク モデルを含める");
 
         _saveProfileButton.Content = T("Save", "保存");
@@ -1911,6 +1947,98 @@ namespace RevitGeoExporter.UI;
             Margin = margin,
             Child = checkBox,
         };
+    }
+
+    private FrameworkElement BuildSectionBoxOptionRow()
+    {
+        _sectionBoxAboveFloorLabel.VerticalAlignment = VerticalAlignment.Center;
+        _sectionBoxAboveFloorLabel.Margin = new Thickness(12, 0, 4, 0);
+        _sectionBoxAboveFloorLabel.Foreground = MutedTextBrush;
+
+        _sectionBoxAboveFloorTextBox.Width = 56;
+        _sectionBoxAboveFloorTextBox.VerticalAlignment = VerticalAlignment.Center;
+        _sectionBoxAboveFloorTextBox.HorizontalContentAlignment = HorizontalAlignment.Right;
+        _sectionBoxAboveFloorTextBox.TextChanged += OnInputChanged;
+        _sectionBoxAboveFloorTextBox.LostFocus += OnSectionBoxAboveFloorLostFocus;
+
+        _sectionBoxBelowFloorLabel.VerticalAlignment = VerticalAlignment.Center;
+        _sectionBoxBelowFloorLabel.Margin = new Thickness(12, 0, 4, 0);
+        _sectionBoxBelowFloorLabel.Foreground = MutedTextBrush;
+
+        _sectionBoxBelowFloorTextBox.Width = 56;
+        _sectionBoxBelowFloorTextBox.VerticalAlignment = VerticalAlignment.Center;
+        _sectionBoxBelowFloorTextBox.HorizontalContentAlignment = HorizontalAlignment.Right;
+        _sectionBoxBelowFloorTextBox.TextChanged += OnInputChanged;
+        _sectionBoxBelowFloorTextBox.LostFocus += OnSectionBoxBelowFloorLostFocus;
+
+        StackPanel panel = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        panel.Children.Add(_use3DSectionBoxExportCheckBox);
+        panel.Children.Add(_sectionBoxBelowFloorLabel);
+        panel.Children.Add(_sectionBoxBelowFloorTextBox);
+        panel.Children.Add(_sectionBoxAboveFloorLabel);
+        panel.Children.Add(_sectionBoxAboveFloorTextBox);
+
+        _use3DSectionBoxExportCheckBox.Checked += OnUse3DSectionBoxExportToggled;
+        _use3DSectionBoxExportCheckBox.Unchecked += OnUse3DSectionBoxExportToggled;
+        UpdateSectionBoxAboveFloorEnabled();
+
+        return panel;
+    }
+
+    private void OnUse3DSectionBoxExportToggled(object sender, RoutedEventArgs e)
+    {
+        UpdateSectionBoxAboveFloorEnabled();
+    }
+
+    private void UpdateSectionBoxAboveFloorEnabled()
+    {
+        bool enabled = _use3DSectionBoxExportCheckBox.IsChecked == true;
+        _sectionBoxAboveFloorTextBox.IsEnabled = enabled;
+        _sectionBoxAboveFloorLabel.Opacity = enabled ? 1.0 : 0.5;
+        _sectionBoxBelowFloorTextBox.IsEnabled = enabled;
+        _sectionBoxBelowFloorLabel.Opacity = enabled ? 1.0 : 0.5;
+        _keep3DTempViewsForDebugCheckBox.IsEnabled = enabled;
+        _keep3DTempViewsForDebugCheckBox.Opacity = enabled ? 1.0 : 0.5;
+    }
+
+    private void OnSectionBoxAboveFloorLostFocus(object sender, RoutedEventArgs e)
+    {
+        double value = ParseSectionBoxAboveFloorMeters();
+        _sectionBoxAboveFloorTextBox.Text = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private void OnSectionBoxBelowFloorLostFocus(object sender, RoutedEventArgs e)
+    {
+        double value = ParseSectionBoxBelowFloorMeters();
+        _sectionBoxBelowFloorTextBox.Text = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private double ParseSectionBoxAboveFloorMeters()
+    {
+        string text = (_sectionBoxAboveFloorTextBox.Text ?? string.Empty).Trim();
+        if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed) &&
+            parsed > 0d &&
+            parsed <= 10d)
+        {
+            return parsed;
+        }
+        return Temp3DViewScope.DefaultAboveFloorMeters;
+    }
+
+    private double ParseSectionBoxBelowFloorMeters()
+    {
+        string text = (_sectionBoxBelowFloorTextBox.Text ?? string.Empty).Trim();
+        if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsed) &&
+            parsed >= -5d &&
+            parsed <= 5d)
+        {
+            return parsed;
+        }
+        return Temp3DViewScope.DefaultBelowFloorMeters;
     }
 
     private static void ConfigureInfoLine(TextBlock block, double bottomMargin = 4)
