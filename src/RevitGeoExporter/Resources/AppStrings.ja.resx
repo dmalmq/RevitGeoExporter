@@ -259,40 +259,40 @@
     <value>書き出しプレビュー</value>
   </data>
   <data name="Preview.Units" xml:space="preserve">
-    <value>Units</value>
+    <value>ユニット</value>
   </data>
   <data name="Preview.Openings" xml:space="preserve">
-    <value>Openings</value>
+    <value>開口部</value>
   </data>
   <data name="Preview.Details" xml:space="preserve">
-    <value>Details</value>
+    <value>詳細</value>
   </data>
   <data name="Preview.Levels" xml:space="preserve">
-    <value>Levels</value>
+    <value>レベル</value>
   </data>
   <data name="Preview.Stairs" xml:space="preserve">
-    <value>Stairs</value>
+    <value>階段</value>
   </data>
   <data name="Preview.Escalators" xml:space="preserve">
-    <value>Escalators</value>
+    <value>エスカレーター</value>
   </data>
   <data name="Preview.Elevators" xml:space="preserve">
-    <value>Elevators</value>
+    <value>エレベーター</value>
   </data>
   <data name="Preview.Warnings" xml:space="preserve">
-    <value>Warnings</value>
+    <value>警告</value>
   </data>
   <data name="Preview.Overrides" xml:space="preserve">
-    <value>Overrides</value>
+    <value>オーバーライド</value>
   </data>
   <data name="Preview.Unassigned" xml:space="preserve">
-    <value>Unassigned</value>
+    <value>未割り当て</value>
   </data>
   <data name="Preview.Fit" xml:space="preserve">
-    <value>Fit</value>
+    <value>全体表示</value>
   </data>
   <data name="Preview.Reset" xml:space="preserve">
-    <value>Reset</value>
+    <value>リセット</value>
   </data>
   <data name="Command.ActiveDocumentRequired" xml:space="preserve">
     <value>アクティブなドキュメントが必要です。</value>
