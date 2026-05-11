@@ -40,6 +40,7 @@
       <ul>
         <li>The output folder is a required step and appears near the top of the dialog.</li>
         <li>Use <strong>Browse...</strong> to select a new folder when needed.</li>
+        <li>Pick the <strong>output format</strong>: GeoPackage (single file with all layers) or Shapefile (one <code>.shp</code> set per layer).</li>
         <li><strong>Export</strong> stays disabled until you have at least one view, at least one feature type, and a destination folder.</li>
       </ul>
     </div>
@@ -47,8 +48,9 @@
     <div class="section">
       <h2>Include in export</h2>
       <ul>
-        <li>Choose the layers you want to export: <strong>Units</strong>, <strong>Details</strong>, <strong>Openings</strong>, and <strong>Levels</strong>.</li>
-        <li>The plain-language labels make the options easier to scan, while the exporter still writes the expected GeoPackage layers such as <code>unit</code> and <code>opening</code>.</li>
+        <li>Choose the layers you want to export: <strong>Units</strong>, <strong>Details</strong>, <strong>Openings</strong>, <strong>Levels</strong>, and <strong>Fixtures</strong>.</li>
+        <li><strong>Fixtures</strong> writes IMDF fixture features (for example ticket gates) from the family names listed in Accepted Openings — see <a href="help:SettingsAndProfiles">Settings and Profiles</a>.</li>
+        <li>The plain-language labels make the options easier to scan, while the exporter still writes the expected layer names such as <code>unit</code>, <code>opening</code>, and <code>fixture</code>.</li>
         <li>Preview is available as soon as at least one plan view and one feature type are selected.</li>
       </ul>
     </div>
@@ -58,16 +60,43 @@
       <ul>
         <li>The status card summarizes the current shared-coordinate context and resolved EPSG when available.</li>
         <li>Expand <strong>Change coordinate settings</strong> only if you need to switch from shared coordinates to a converted target CRS or EPSG.</li>
+        <li>Use the <strong>CRS preset</strong> dropdown to pick a common projected CRS — regional presets including Japan plane zones are grouped for quick selection, and the EPSG field updates to match.</li>
         <li>Expand <strong>View technical details</strong> when you need the longer model-coordinate breakdown for troubleshooting.</li>
       </ul>
     </div>
 
     <div class="section">
       <h2>Advanced options</h2>
+      <p>Advanced options start collapsed so the main export path stays focused. Open them when you need any of the following.</p>
       <ul>
-        <li>Advanced options start collapsed so the main export path stays focused.</li>
-        <li><strong>Unit source</strong> only appears when <strong>Units</strong> is enabled, and the room category parameter only appears when the source is set to rooms.</li>
-        <li>Project mappings, diagnostics output, GIS package output, and legend-file options stay available without crowding the main workflow.</li>
+        <li><strong>Unit source</strong> only appears when <strong>Units</strong> is enabled. The room category parameter only appears when the source is set to rooms.</li>
+        <li><strong>Simplify stair units</strong> and <strong>Simplify escalator units</strong> collapse vertical-circulation geometry into cleaner footprints — helpful when the raw Revit geometry produces noisy plan output.</li>
+        <li><strong>Linked models</strong> — when enabled, a checklist lets you choose which loaded Revit links contribute features to the export. Coordinate mode applies to each link.</li>
+        <li><strong>Incremental mode</strong> exports all selected views by default. Switch to "changed only" to skip views whose output hasn't changed since the last run.</li>
+        <li><strong>Packaging mode</strong> controls how files are grouped on disk: per-view, per-building, or per-level.</li>
+        <li><strong>Profiles</strong> — three independent profile types live here: <em>export profiles</em> (dialog snapshots), <em>schema profiles</em> (which output fields are written), and <em>validation policy profiles</em> (which findings block versus warn). Each has a selector and a <strong>Manage…</strong> button that opens the editor. See <a href="help:SettingsAndProfiles">Settings and Profiles</a> for the distinction.</li>
+        <li><strong>Diagnostics</strong>, <strong>GIS package</strong>, <strong>package legend</strong>, and <strong>QGIS artifacts</strong> toggles control what extra files travel with the export. <strong>Open output folder</strong> and <strong>Launch QGIS</strong> trigger post-export shortcuts.</li>
+        <li><strong>Edit category mappings</strong> opens the project-side override editor (floor types, room categories, family categories).</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>3D section box export (experimental)</h2>
+      <p>For each selected plan view, the exporter can build a temporary 3D view and slice geometry with a section box around the level. This is an alternative path for projects where standard plan extraction loses stairs, escalators, or shaft-clipped geometry.</p>
+      <ul>
+        <li><strong>Use 3D section box per floor (experimental)</strong> enables the mode.</li>
+        <li><strong>Top (m)</strong> sets how far above the level floor the slice extends (default <code>1.2</code> m).</li>
+        <li><strong>Bottom (m)</strong> sets the offset below the level floor (default <code>0.0</code> m).</li>
+        <li><strong>Keep temp 3D views for inspection (debug)</strong> leaves the temporary 3D views in the model after export so you can open them to see exactly what was captured. Leave off for normal runs.</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Footer actions</h2>
+      <ul>
+        <li><strong>Preview</strong> opens the preview workspace for the current selection.</li>
+        <li><strong>Batch…</strong> runs queued exports across multiple view sets without re-opening the dialog each time.</li>
+        <li><strong>Export</strong> validates, writes files, and shows the results summary.</li>
       </ul>
     </div>
 

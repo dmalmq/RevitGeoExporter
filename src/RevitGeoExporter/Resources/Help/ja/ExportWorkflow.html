@@ -40,6 +40,7 @@
       <ul>
         <li>出力フォルダーは必須項目です。ダイアログ上部で早い段階に確認できます。</li>
         <li><strong>Browse...</strong> を使って保存先を変更できます。</li>
+        <li><strong>出力形式</strong>を選択します。GeoPackage（すべてのレイヤーを 1 ファイルにまとめる）か、Shapefile（レイヤーごとに <code>.shp</code> セットを作成する）から選べます。</li>
         <li>ビュー、フィーチャータイプ、出力先がそろうまで <strong>Export</strong> は有効になりません。</li>
       </ul>
     </div>
@@ -47,8 +48,9 @@
     <div class="section">
       <h2>Include in export</h2>
       <ul>
-        <li><strong>Units</strong>、<strong>Details</strong>、<strong>Openings</strong>、<strong>Levels</strong> を選択します。</li>
-        <li>画面上のラベルは分かりやすい表現ですが、GeoPackage には <code>unit</code> や <code>opening</code> など既定のレイヤー名で出力されます。</li>
+        <li><strong>Units</strong>、<strong>Details</strong>、<strong>Openings</strong>、<strong>Levels</strong>、<strong>Fixtures</strong> を選択します。</li>
+        <li><strong>Fixtures</strong> は、Accepted Openings に登録されたファミリ名（例: 自動改札機）から IMDF の fixture フィーチャーを書き出します。詳しくは <a href="help:SettingsAndProfiles">設定とプロファイル</a> を参照してください。</li>
+        <li>画面上のラベルは分かりやすい表現ですが、出力には <code>unit</code>、<code>opening</code>、<code>fixture</code> など既定のレイヤー名が使われます。</li>
         <li>少なくとも 1 つのビューと 1 つのフィーチャータイプを選ぶと、<strong>Preview</strong> を開けます。</li>
       </ul>
     </div>
@@ -58,16 +60,43 @@
       <ul>
         <li>状態カードに、現在の共有座標と解決された EPSG が要約表示されます。</li>
         <li>共有座標ではなく変換出力が必要な場合だけ、<strong>Change coordinate settings</strong> を開いて CRS や EPSG を変更します。</li>
+        <li><strong>CRS プリセット</strong>のドロップダウンから、よく使う投影座標系を選べます。日本の平面直角座標系など地域別のプリセットがグループ化されており、選択すると EPSG 欄も自動で更新されます。</li>
         <li>より詳細なモデル座標の情報が必要なときは、<strong>View technical details</strong> を展開します。</li>
       </ul>
     </div>
 
     <div class="section">
       <h2>Advanced options</h2>
+      <p>Advanced options は初期状態で折りたたまれており、主な作業を邪魔しません。次のような場合に展開してください。</p>
       <ul>
-        <li>Advanced options は初期状態で折りたたまれており、主な作業を邪魔しません。</li>
         <li><strong>Unit source</strong> は Units を有効にしたときだけ表示され、Rooms を選んだ場合のみ部屋カテゴリパラメータが表示されます。</li>
-        <li>プロジェクトマッピング、診断レポート、GIS パッケージ、凡例ファイルの設定も、必要なときにだけ確認できます。</li>
+        <li><strong>Simplify stair units</strong> と <strong>Simplify escalator units</strong> は、階段・エスカレーターのジオメトリを整理した平面形状にまとめます。Revit の生ジオメトリで出力が乱れる場合に有効です。</li>
+        <li><strong>Linked models</strong> — 有効にすると、読み込み済みの Revit リンクのうちどれをエクスポート対象に含めるかをチェックリストで選択できます。座標モードは各リンクにも適用されます。</li>
+        <li><strong>Incremental mode</strong> は既定ですべての選択ビューを書き出します。「changed only」に切り替えると、前回から内容が変わっていないビューをスキップします。</li>
+        <li><strong>Packaging mode</strong> は、出力ファイルのまとめ方を制御します（ビューごと / 建物ごと / レベルごと）。</li>
+        <li><strong>プロファイル</strong> — 独立した 3 種類のプロファイルがあります。<em>エクスポートプロファイル</em>（ダイアログの状態）、<em>スキーマプロファイル</em>（出力フィールドの定義）、<em>検証ポリシープロファイル</em>（どの検証で止めるか / 警告にとどめるか）。それぞれにセレクターと <strong>Manage…</strong> ボタンがあります。詳しくは <a href="help:SettingsAndProfiles">設定とプロファイル</a> を参照してください。</li>
+        <li><strong>Diagnostics</strong>、<strong>GIS package</strong>、<strong>package legend</strong>、<strong>QGIS artifacts</strong> の各トグルで、エクスポートに同梱する追加ファイルを制御します。<strong>Open output folder</strong> と <strong>Launch QGIS</strong> はエクスポート後のショートカット動作です。</li>
+        <li><strong>Edit category mappings</strong> でプロジェクト側の上書きエディター（床タイプ、部屋カテゴリ、ファミリカテゴリ）を開きます。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>3D セクション ボックス エクスポート（試験的）</h2>
+      <p>選択した各プランビューに対して、エクスポーターが一時的な 3D ビューを作成し、レベル付近をセクション ボックスで切り出すモードです。階段・エスカレーター・シャフトの切り抜きが通常の平面抽出ではうまくいかないプロジェクト向けの代替経路です。</p>
+      <ul>
+        <li><strong>Use 3D section box per floor (experimental)</strong> でモードを有効化します。</li>
+        <li><strong>Top (m)</strong> はレベル床面の上方向へ切り出す距離です（既定値 <code>1.2</code> m）。</li>
+        <li><strong>Bottom (m)</strong> はレベル床面より下方向のオフセットです（既定値 <code>0.0</code> m）。</li>
+        <li><strong>Keep temp 3D views for inspection (debug)</strong> を有効にすると、エクスポート後も一時 3D ビューがモデルに残り、何が取得されたかを直接確認できます。通常運用ではオフのままにしてください。</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>フッターのアクション</h2>
+      <ul>
+        <li><strong>Preview</strong> で現在の選択内容のプレビュー画面を開きます。</li>
+        <li><strong>Batch…</strong> は、ダイアログを開き直さずに複数のビュー セットを連続してエクスポートできます。</li>
+        <li><strong>Export</strong> で検証、ファイル書き出し、結果サマリーが行われます。</li>
       </ul>
     </div>
 

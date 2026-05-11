@@ -30,10 +30,9 @@
       <h2>Global defaults</h2>
       <ul>
         <li>Default output folder and UI language.</li>
-        <li>Shared CRS / EPSG defaults.</li>
-        <li>Diagnostics and GIS package defaults.</li>
+        <li>Shared CRS / EPSG defaults, including the CRS preset list.</li>
+        <li>Diagnostics, GIS package, package legend, and geometry repair defaults.</li>
         <li>Basemap source settings for preview.</li>
-        <li>Global export profiles.</li>
       </ul>
     </div>
 
@@ -41,9 +40,19 @@
       <h2>Project data</h2>
       <ul>
         <li>Floor type to category mappings.</li>
+        <li>Room category overrides.</li>
         <li>Family category overrides.</li>
-        <li>Accepted opening family names.</li>
-        <li>Project-scoped export profiles.</li>
+        <li><strong>Accepted opening families</strong> — family names that may export as openings, and that also drive the <strong>Fixtures</strong> layer (for example ticket-gate families).</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>Profiles</h2>
+      <p>Three independent profile families are managed from the settings hub. Keep them in mind when something in the export dialog seems to be set globally but isn't taking effect — the active profile may be overriding it.</p>
+      <ul>
+        <li><strong>Export profiles</strong> — full snapshots of the export dialog (selected layers, coordinate mode, advanced toggles). Save one per recurring handoff.</li>
+        <li><strong>Schema profiles</strong> — define which fields appear on each output layer and how custom attributes are named. The active schema is shown in Advanced options.</li>
+        <li><strong>Validation policy profiles</strong> — decide which validation findings block export versus warn. Tighten or relax checks per project without changing the dialog.</li>
       </ul>
     </div>
 

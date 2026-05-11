@@ -43,7 +43,17 @@
 
     <div class="section">
       <h2>Can the add-in modify the Revit model?</h2>
-      <p>No. Preview assignments, mappings, diagnostics, and help content are exporter-side only. They do not rename Revit elements or write category decisions back into the model.</p>
+      <p>No. Preview assignments, mappings, diagnostics, and help content are exporter-side only. They do not rename Revit elements or write category decisions back into the model. The exception is temporary 3D views created when <strong>3D section box export</strong> is active — these are removed at the end of the export unless the debug toggle is enabled.</p>
+    </div>
+
+    <div class="section">
+      <h2>Stairs or escalators are missing in a plan view</h2>
+      <p>Stairs and escalators are clipped to shaft openings and the view's cut plane. If they don't appear, try the <strong>Simplify stair units</strong> / <strong>Simplify escalator units</strong> toggles in Advanced options, and if the result is still off, enable <strong>3D section box export</strong> for that view.</p>
+    </div>
+
+    <div class="section">
+      <h2>When should I enable 3D section box export?</h2>
+      <p>Try it when standard plan extraction loses vertical circulation, shaft-clipped geometry, or pieces that overlap multiple floors. The exporter builds a temporary 3D view per plan view and slices geometry with a section box around the level. Use <strong>Keep temp 3D views for inspection (debug)</strong> to leave the temporary views in the model and confirm what was captured.</p>
     </div>
 
     <div class="callout">
