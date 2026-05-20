@@ -205,6 +205,8 @@ public sealed class FloorGeoPackageExporter
                 ViewContexts = contexts,
             });
 
+        WriteUnitMetadataBackToModel(parameterManager, prepared, setupWarnings);
+
         List<string> allWarnings = new(setupWarnings.Count + prepared.Warnings.Count);
         allWarnings.AddRange(setupWarnings);
         allWarnings.AddRange(prepared.Warnings);
@@ -932,6 +934,110 @@ public sealed class FloorGeoPackageExporter
 
         manager.EnsureElementIds(uniqueElements.Values.ToList(), warnings);
         transaction.Commit();
+    }
+
+    private static void WriteUnitMetadataBackToModel(
+        SharedParameterManager manager,
+        FloorExportPreparationResult prepared,
+        ICollection<string> warnings)
+    {
+        Dictionary<long, (string Category, int Ordinal, string LevelId)> pending = new();
+        foreach (PreparedViewExportData view in prepared.Views)
+        {
+            ExportLayer? unitLayer = view.UnitLayer;
+            if (unitLayer == null)
+            {
+                continue;
+            }
+
+            int viewOrdinal = view.LevelOrdinal;
+            string viewLevelId = view.LevelId;
+            foreach (IExportFeature feature in unitLayer.Features)
+            {
+                IReadOnlyDictionary<string, object?> attributes = feature.Attributes;
+
+                if (TryGetBoolAttribute(attributes, "is_linked_source", out bool isLinked) && isLinked)
+                {
+                    continue;
+                }
+
+                bool isFloorDerived = TryGetBoolAttribute(attributes, "is_floor_derived", out bool floorFlag) && floorFlag;
+                bool isRoomDerived = TryGetBoolAttribute(attributes, "is_room_derived", out bool roomFlag) && roomFlag;
+                if (!isFloorDerived && !isRoomDerived)
+                {
+                    continue;
+                }
+
+                if (!TryGetLongAttribute(attributes, "source_element_id", out long sourceElementId))
+                {
+                    continue;
+                }
+
+                if (!attributes.TryGetValue("category", out object? categoryValue) || categoryValue is not string category || string.IsNullOrWhiteSpace(category))
+                {
+                    continue;
+                }
+
+                if (!pending.ContainsKey(sourceElementId))
+                {
+                    pending[sourceElementId] = (category, viewOrdinal, viewLevelId);
+                }
+            }
+        }
+
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        using Transaction transaction = new(manager.Document, "IMDF Export - Write Unit Metadata");
+        transaction.Start();
+
+        foreach (KeyValuePair<long, (string Category, int Ordinal, string LevelId)> entry in pending)
+        {
+            Element? element = manager.Document.GetElement(new ElementId(entry.Key));
+            if (element == null)
+            {
+                continue;
+            }
+
+            manager.WriteCategory(element, entry.Value.Category, warnings);
+            manager.WriteOrdinal(element, entry.Value.Ordinal, warnings);
+            manager.WriteLevelId(element, entry.Value.LevelId, warnings);
+        }
+
+        transaction.Commit();
+    }
+
+    private static bool TryGetBoolAttribute(IReadOnlyDictionary<string, object?> attributes, string key, out bool value)
+    {
+        if (attributes.TryGetValue(key, out object? raw) && raw is bool b)
+        {
+            value = b;
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static bool TryGetLongAttribute(IReadOnlyDictionary<string, object?> attributes, string key, out long value)
+    {
+        if (attributes.TryGetValue(key, out object? raw))
+        {
+            switch (raw)
+            {
+                case long l:
+                    value = l;
+                    return true;
+                case int i:
+                    value = i;
+                    return true;
+            }
+        }
+
+        value = 0;
+        return false;
     }
 
     private static IReadOnlyList<LinkedModelSummary> BuildIncludedLinks(IReadOnlyList<ViewExportContext> contexts)

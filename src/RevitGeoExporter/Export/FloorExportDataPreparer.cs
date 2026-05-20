@@ -328,17 +328,17 @@ public sealed class FloorExportDataPreparer
                     viewWarnings);
             }
 
+            int levelOrdinal = ordinalByLevelId.TryGetValue(context.Level.Id.Value, out int computedOrdinal)
+                ? computedOrdinal
+                : 0;
             ExportLayer? levelLayer = null;
             if (featureTypes.HasFlag(ExportFeatureType.Level))
             {
                 levelLayer = LayerDefinition.CreateLevelLayer(activeSchemaProfile, viewWarnings);
-                int ordinal = ordinalByLevelId.TryGetValue(context.Level.Id.Value, out int computedOrdinal)
-                    ? computedOrdinal
-                    : 0;
                 if (levelBoundaryBuilder.TryBuild(
                         context.Level,
                         levelId,
-                        ordinal,
+                        levelOrdinal,
                         unitFeatures,
                         hostSourceDocumentKey,
                         hostSourceDocumentName,
@@ -365,6 +365,7 @@ public sealed class FloorExportDataPreparer
                     context.View,
                     context.Level,
                     levelId,
+                    levelOrdinal,
                     unitLayer,
                     detailLayer,
                     openingLayer,

@@ -11,6 +11,8 @@ public sealed class SharedParameterManager
     public const string ImdfLevelIdParameterName = "level_id";
     public const string ImdfNameParameterName = "name";
     public const string ImdfAltNameParameterName = "short_name";
+    public const string ImdfCategoryParameterName = "category";
+    public const string ImdfOrdinalParameterName = "ordinal";
 
     private const string SharedParameterGroupName = "RevitGeoExporter";
 
@@ -32,9 +34,17 @@ public sealed class SharedParameterManager
         BuiltInCategory.OST_GenericModel,
     };
 
-    private static readonly BuiltInCategory[] LevelCategories =
+    private static readonly BuiltInCategory[] UnitCategoryCategories =
+    {
+        BuiltInCategory.OST_Floors,
+        BuiltInCategory.OST_Rooms,
+    };
+
+    private static readonly BuiltInCategory[] LevelIdBindingCategories =
     {
         BuiltInCategory.OST_Levels,
+        BuiltInCategory.OST_Floors,
+        BuiltInCategory.OST_Rooms,
     };
 
     private readonly Document _document;
@@ -72,9 +82,11 @@ public sealed class SharedParameterManager
             DefinitionGroup? group = file.Groups.get_Item(SharedParameterGroupName) ??
                                      file.Groups.Create(SharedParameterGroupName);
             EnsureStringParameterBinding(group, ImdfIdParameterName, UnitIdCategories, warnings);
-            EnsureStringParameterBinding(group, ImdfLevelIdParameterName, LevelCategories, warnings);
+            EnsureStringParameterBinding(group, ImdfLevelIdParameterName, LevelIdBindingCategories, warnings);
             EnsureStringParameterBinding(group, ImdfNameParameterName, UnitNameCategories, warnings);
             EnsureStringParameterBinding(group, ImdfAltNameParameterName, UnitNameCategories, warnings);
+            EnsureStringParameterBinding(group, ImdfCategoryParameterName, UnitCategoryCategories, warnings);
+            EnsureIntegerParameterBinding(group, ImdfOrdinalParameterName, UnitCategoryCategories, warnings);
         }
         finally
         {
@@ -158,6 +170,129 @@ public sealed class SharedParameterManager
             : string.Empty;
     }
 
+    public bool WriteLevelId(Element element, string levelId, ICollection<string> warnings)
+    {
+        if (element is null)
+        {
+            throw new ArgumentNullException(nameof(element));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        if (string.IsNullOrWhiteSpace(levelId))
+        {
+            return false;
+        }
+
+        Parameter? parameter = element.LookupParameter(ImdfLevelIdParameterName);
+        if (parameter == null || parameter.StorageType != StorageType.String)
+        {
+            warnings.Add($"Element {element.Id.Value} is missing string parameter '{ImdfLevelIdParameterName}', so the level id could not be written.");
+            return false;
+        }
+
+        string? currentValue = parameter.AsString();
+        if (!string.IsNullOrWhiteSpace(currentValue))
+        {
+            return false;
+        }
+
+        return TrySetStringParameter(element, ImdfLevelIdParameterName, levelId, warnings);
+    }
+
+    public bool WriteOrdinal(Element element, int ordinal, ICollection<string> warnings)
+    {
+        if (element is null)
+        {
+            throw new ArgumentNullException(nameof(element));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        Parameter? parameter = element.LookupParameter(ImdfOrdinalParameterName);
+        if (parameter == null)
+        {
+            warnings.Add($"Element {element.Id.Value} is missing parameter '{ImdfOrdinalParameterName}', so the ordinal could not be written.");
+            return false;
+        }
+
+        if (parameter.IsReadOnly)
+        {
+            warnings.Add($"Element {element.Id.Value} parameter '{ImdfOrdinalParameterName}' is read-only, so the ordinal could not be written.");
+            return false;
+        }
+
+        switch (parameter.StorageType)
+        {
+            case StorageType.Integer:
+                if (parameter.AsInteger() == ordinal)
+                {
+                    return false;
+                }
+
+                if (!parameter.Set(ordinal))
+                {
+                    warnings.Add($"Failed to update parameter '{ImdfOrdinalParameterName}' for element {element.Id.Value}.");
+                    return false;
+                }
+
+                return true;
+
+            case StorageType.String:
+                string newText = ordinal.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                string? currentText = parameter.AsString();
+                if (string.Equals(currentText, newText, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                return TrySetStringParameter(element, ImdfOrdinalParameterName, newText, warnings);
+
+            default:
+                warnings.Add($"Element {element.Id.Value} parameter '{ImdfOrdinalParameterName}' has unsupported storage type '{parameter.StorageType}'.");
+                return false;
+        }
+    }
+
+    public bool WriteCategory(Element element, string category, ICollection<string> warnings)
+    {
+        if (element is null)
+        {
+            throw new ArgumentNullException(nameof(element));
+        }
+
+        if (warnings is null)
+        {
+            throw new ArgumentNullException(nameof(warnings));
+        }
+
+        if (string.IsNullOrWhiteSpace(category))
+        {
+            return false;
+        }
+
+        Parameter? parameter = element.LookupParameter(ImdfCategoryParameterName);
+        if (parameter == null || parameter.StorageType != StorageType.String)
+        {
+            warnings.Add($"Element {element.Id.Value} is missing string parameter '{ImdfCategoryParameterName}', so the category could not be written.");
+            return false;
+        }
+
+        string? currentValue = parameter.AsString();
+        if (string.Equals(currentValue, category, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return TrySetStringParameter(element, ImdfCategoryParameterName, category, warnings);
+    }
+
     private static string GetDefaultSharedParameterFilePath()
     {
         string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -185,11 +320,30 @@ public sealed class SharedParameterManager
         IReadOnlyList<BuiltInCategory> categories,
         ICollection<string> warnings)
     {
+        EnsureParameterBinding(group, parameterName, SpecTypeId.String.Text, categories, warnings);
+    }
+
+    private void EnsureIntegerParameterBinding(
+        DefinitionGroup group,
+        string parameterName,
+        IReadOnlyList<BuiltInCategory> categories,
+        ICollection<string> warnings)
+    {
+        EnsureParameterBinding(group, parameterName, SpecTypeId.Int.Integer, categories, warnings);
+    }
+
+    private void EnsureParameterBinding(
+        DefinitionGroup group,
+        string parameterName,
+        ForgeTypeId specTypeId,
+        IReadOnlyList<BuiltInCategory> categories,
+        ICollection<string> warnings)
+    {
         Definition? definition = group.Definitions.get_Item(parameterName);
         if (definition == null)
         {
             ExternalDefinitionCreationOptions options =
-                new(parameterName, SpecTypeId.String.Text)
+                new(parameterName, specTypeId)
                 {
                     UserModifiable = true,
                     Visible = true,

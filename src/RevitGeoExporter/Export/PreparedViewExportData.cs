@@ -12,6 +12,7 @@ public sealed class PreparedViewExportData
         ViewPlan view,
         Level level,
         string levelId,
+        int levelOrdinal,
         ExportLayer? unitLayer,
         ExportLayer? detailLayer,
         ExportLayer? openingLayer,
@@ -23,6 +24,7 @@ public sealed class PreparedViewExportData
         View = view ?? throw new ArgumentNullException(nameof(view));
         Level = level ?? throw new ArgumentNullException(nameof(level));
         LevelId = levelId ?? throw new ArgumentNullException(nameof(levelId));
+        LevelOrdinal = levelOrdinal;
         UnitLayer = unitLayer;
         DetailLayer = detailLayer;
         OpeningLayer = openingLayer;
@@ -37,6 +39,8 @@ public sealed class PreparedViewExportData
     public Level Level { get; }
 
     public string LevelId { get; }
+
+    public int LevelOrdinal { get; }
 
     public ExportLayer? UnitLayer { get; }
 
